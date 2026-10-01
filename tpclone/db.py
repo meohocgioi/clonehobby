@@ -58,6 +58,18 @@ class DB:
             self.conn.executescript(SCHEMA)
             self.conn.commit()
 
+    def backup_to(self, dest: str) -> None:
+        """Consistent copy of the whole ledger (safe while the app is running)."""
+        Path(dest).parent.mkdir(parents=True, exist_ok=True)
+        tmp = str(dest) + ".part"
+        with self.lock:
+            out = sqlite3.connect(tmp)
+            try:
+                self.conn.backup(out)
+            finally:
+                out.close()
+        Path(tmp).replace(dest)
+
     # ---- helpers -------------------------------------------------------
     def _x(self, sql: str, args: Iterable[Any] = ()) -> sqlite3.Cursor:
         with self.lock:

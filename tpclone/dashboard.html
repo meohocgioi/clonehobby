@@ -53,6 +53,7 @@
     <p class="stats" id="stats"></p>
     <p class="mut" id="last"></p>
     <div class="row"><button id="verify">Check channel for deleted posts</button><span class="mut" id="verify-out"></span></div>
+    <p class="mut" id="bk"></p>
   </div>
 
   <div class="card" id="setup">
@@ -123,6 +124,7 @@ async function refresh(){
   for(const [n,l] of [['posted','Published'],['pending','Queued'],['uncertain','Uncertain'],['failed','Failed'],['skipped','Seen (not posted)'],['total','Tracked']]){
     const sp=document.createElement('span'); sp.textContent=l+': '+(k[n]||0); $('stats').appendChild(sp);}
   $('next').textContent=(s.pending&&s.state==='running')?('next post in ~'+s.next_post_in+'s (delay '+s.delay+'s)'):(s.pending&&s.state!=='running'?'queue waits for Start':'');
+  $('bk').innerHTML=''; {const t=document.createTextNode(s.last_backup?('Automatic backup of your posted-list: '+fmt(s.last_backup)+' (kept 14 days) · '):'Automatic backup runs daily · '); const a=document.createElement('a'); a.href='/api/backup'; a.textContent='Download a backup'; $('bk').append(t,a)}
   $('last').textContent=s.last_posted?('Last published: '+(s.last_posted.title||s.last_posted.post_id)+' — '+fmt(s.last_posted.posted_at)):'';
   const lg=$('log'); lg.innerHTML='';
   for(const e of s.events){const d=document.createElement('div'); d.className=e.level; d.textContent=fmt(e.ts)+'  '+e.message; lg.appendChild(d);}

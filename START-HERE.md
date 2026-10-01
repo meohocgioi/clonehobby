@@ -55,3 +55,9 @@ To update later: `cd clonehobby && git pull && docker compose up -d --build`
 
 ## If something looks wrong
 Use **Preview a post**: if the title, photos, date or text show as missing (⚠), tell me which post number and what's missing, and I'll adjust it.
+
+## Your data is backed up automatically
+Once a day the app saves a copy of its "what was posted" list in the `data/backups` folder (the last 14 are kept) – you don't
+have to do anything. If you move to a new computer/server, click **Download a backup** on the dashboard first (or copy the
+whole `data` folder) and put it in the same place on the new machine. If you ever lose it completely, the app can still
+rebuild it from a Telegram "Export chat history" file of your channel (`python -m tpclone import-history result.json`).

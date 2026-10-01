@@ -269,3 +269,23 @@ def test_plan_date_saves_titles_for_new_rows(env):
     seed_site(f, {1: "2026-09-30"})
     plan = e.plan_date("2026-09-30", margin=1)
     assert plan["posts"][0]["title"] == "Post 1" and db.get(1)["title"] == "Post 1" and db.get(1)["post_date"] == "2026-09-30"
+
+
+def test_automatic_backup_daily_retention_and_restore(env, tmp_path):
+    from tpclone.db import DB
+    e, f, tg, db = env
+    e.s.db_path = str(tmp_path / "data" / "tpclone.db")
+    e.BACKUP_KEEP = 3
+    bdir = tmp_path / "data" / "backups"
+    bdir.mkdir(parents=True)
+    for d in range(1, 6):                                          # five old backups already there
+        (bdir / f"tpclone-2020-01-0{d}_0000.db").write_bytes(b"old")
+    seed_site(f, {1: "2026-09-30"})
+    e.plan_date("2026-09-30", margin=1)
+    db.mark_posted(1, 77)
+    new = e.maybe_backup()
+    assert new and e.maybe_backup() is None                        # only once a day
+    names = sorted(p.name for p in bdir.glob("tpclone-*.db"))
+    assert len(names) == 3 and names[0] == "tpclone-2020-01-04_0000.db" and new.endswith(names[-1])  # oldest pruned
+    restored = DB(new)                                             # a backup is a complete, usable ledger
+    assert restored.get(1)["status"] == "posted" and restored.get(1)["tg_message_id"] == 77

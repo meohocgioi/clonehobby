@@ -57,6 +57,7 @@ def make_server(engine: Engine, worker: Worker) -> ThreadingHTTPServer:
             "events": db.recent_events(40),
             "uncertain": db.by_status("uncertain", 50), "failed": db.by_status("failed", 50),
             "chat": s.telegram_chat_id, "configured": s.telegram_ready,
+            "last_backup": float(db.kv_get("last_backup_ts", "0") or 0) or None,
         }
 
     def settings_view() -> dict:
@@ -145,6 +146,16 @@ def make_server(engine: Engine, worker: Worker) -> ThreadingHTTPServer:
                 return self._json(status())
             if u.path == "/api/settings":
                 return self._json(settings_view())
+            if u.path == "/api/backup":      # fresh consistent copy for the user to keep somewhere safe
+                import tempfile
+                from pathlib import Path
+                with tempfile.TemporaryDirectory() as td:
+                    dest = Path(td) / "backup.db"
+                    engine.db.backup_to(str(dest))
+                    data = dest.read_bytes()
+                name = time.strftime("tpclone-backup-%Y-%m-%d.db")
+                return self._send(200, data, "application/octet-stream",
+                                  {"Content-Disposition": f'attachment; filename="{name}"'})
             if u.path.startswith("/api/jobs/"):
                 j = jobs.jobs.get(u.path.rsplit("/", 1)[1])
                 return self._json(j or {"error": "no such job"}, 200 if j else 404)

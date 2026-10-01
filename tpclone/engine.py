@@ -242,6 +242,26 @@ class Engine:
         self.db.log("info", f"posted {pid}: {row.get('title') or ''}")
         return "posted"
 
+    # ------------------------------------------------------------------ automatic backups
+    BACKUP_KEEP = 14
+
+    def backup_dir(self):
+        return self.s.data_dir / "backups"
+
+    def maybe_backup(self, every: float = 86400.0) -> str | None:
+        """Once a day: dated copy of the ledger in <data>/backups, keeping the newest BACKUP_KEEP."""
+        last = float(self.db.kv_get("last_backup_ts", "0") or 0)
+        if time.time() - last < every:
+            return None
+        d = self.backup_dir()
+        dest = d / f"tpclone-{time.strftime('%Y-%m-%d_%H%M')}.db"
+        self.db.backup_to(str(dest))
+        self.db.kv_set("last_backup_ts", time.time())
+        for old in sorted(d.glob("tpclone-*.db"))[:-self.BACKUP_KEEP]:
+            old.unlink(missing_ok=True)
+        self.db.log("info", f"automatic backup saved: {dest.name}")
+        return str(dest)
+
     # ------------------------------------------------------------------ channel verification / manual post
     def verify_posted(self, ids=None, progress: Callable[[str], None] | None = None, limit: int = 300) -> dict:
         """Check that posts we think are published still exist in the channel; deleted ones become publishable again."""
@@ -463,6 +483,10 @@ class Worker:
         try:
             while not self._stop.is_set():
                 if time.time() >= self.next_poll:
+                    try:
+                        e.maybe_backup()
+                    except Exception as ex:   # a failed backup must never stop publishing
+                        log.warning("backup failed: %s", ex)
                     try:
                         e.discover()
                     except ChallengeError as ex:
