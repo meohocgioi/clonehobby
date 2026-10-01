@@ -72,6 +72,7 @@
     <label>Wait between posts (seconds)</label><input type="number" id="s_delay" min="3" step="1">
     <label>"Show More" button style</label>
     <select id="s_style"></select>
+    <label>Emoji on both sides of the button text</label><input type="text" id="s_emoji" maxlength="4" style="max-width:120px" placeholder="👇">
     <p class="mut" style="margin:4px 0 0">Not sure which looks best? <button id="samples" type="button">Send style samples to my channel</button> then pick the one that works on your phone. “Plain toggle” is the safest.</p>
     <div id="samples-out" class="mut"></div>
     <details class="adv"><summary>Advanced</summary>
@@ -188,14 +189,14 @@ async function loadSettings(force){
   $('setup-help').hidden=v.configured; $('setup-title').textContent=v.configured?'Settings':'Step 1 — Connect Telegram';
   if(settingsLoaded&&!force) return; settingsLoaded=true;
   $('s_token').value=v.telegram_bot_token; $('s_chat').value=v.telegram_chat_id; $('s_delay').value=v.post_delay_seconds;
-  $('s_poll').value=v.poll_interval_seconds; $('s_init').value=v.initial_post_latest; $('s_hash').value=v.hashtag_style; fillStyles(v); $('s_urepo').value=v.update_repo; $('s_ubranch').value=v.update_branch; $('s_utoken').value=v.update_token;
+  $('s_poll').value=v.poll_interval_seconds; $('s_init').value=v.initial_post_latest; $('s_hash').value=v.hashtag_style; fillStyles(v); $('s_emoji').value=v.show_more_emoji; $('s_urepo').value=v.update_repo; $('s_ubranch').value=v.update_branch; $('s_utoken').value=v.update_token;
 }
 function fillStyles(v){
   const sel=$('s_style'); if(sel.options.length===0){ for(const [k,d] of Object.entries(v.show_more_styles||{})){const o=document.createElement('option'); o.value=k; o.textContent=d; sel.appendChild(o)} }
   sel.value=v.show_more_style;
 }
 $('samples').onclick=async()=>{
-  $('samples').disabled=true; $('samples-out').textContent='Sending 4 sample posts (takes ~15 seconds)…';
+  $('samples').disabled=true; $('samples-out').textContent='Sending sample posts (takes ~15 seconds)…';
   const r=await api('/api/send-style-samples',{}); $('samples').disabled=false;
   if(r.error){$('samples-out').textContent='❌ '+r.error;return}
   $('samples-out').innerHTML=''; for(const [k,v] of Object.entries(r.results)){const d=document.createElement('div'); d.textContent=(v==='sent'?'✅ ':'❌ ')+k+(v==='sent'?' – open your channel and tap it':(' – '+v)); $('samples-out').appendChild(d)}
@@ -203,7 +204,7 @@ $('samples').onclick=async()=>{
 $('save').onclick=async()=>{
   $('save-out').textContent='Saving…'; $('save-out').className='mut';
   const r=await api('/api/settings',{telegram_bot_token:$('s_token').value,telegram_chat_id:$('s_chat').value,post_delay_seconds:$('s_delay').value,
-    poll_interval_seconds:$('s_poll').value,initial_post_latest:$('s_init').value,hashtag_style:$('s_hash').value,show_more_style:$('s_style').value,update_repo:$('s_urepo').value,update_branch:$('s_ubranch').value,update_token:$('s_utoken').value});
+    poll_interval_seconds:$('s_poll').value,initial_post_latest:$('s_init').value,hashtag_style:$('s_hash').value,show_more_style:$('s_style').value,show_more_emoji:$('s_emoji').value,update_repo:$('s_urepo').value,update_branch:$('s_ubranch').value,update_token:$('s_utoken').value});
   if(r.telegram){$('save-out').className='good';$('save-out').textContent='✅ Connected: bot @'+r.telegram.bot+' can post in “'+r.telegram.chat+'”. Now press ▶ Start at the top.'}
   else if(r.telegram_error){$('save-out').className='error';$('save-out').textContent='❌ '+r.telegram_error}
   else $('save-out').textContent=r.configured?'Saved.':'Saved. Now fill in the bot token and channel.';
@@ -226,9 +227,11 @@ function showPreview(a){
   const el=(t,txt,cls)=>{const e=document.createElement(t); if(txt!==undefined)e.textContent=txt; if(cls)e.className=cls; b.appendChild(e); return e};
   el('h6',a.title||'(no title found!)');
   if(a.cover){const i=el('img'); i.src=a.cover; i.referrerPolicy='no-referrer'} else el('div','(no cover photo found)','mut');
-  {const m=el('div',a.show_more_style==='bold'?'▼ Show More ▼':'▾ Show More','more'); const st=a.show_more_style||'classic';
-   if(st==='pill'||st==='pill_centered'){m.textContent='Show More'; m.style.cssText='display:inline-block;background:#3a9ee0;color:#fff;border-radius:99px;padding:5px 18px;margin:8px 0'; if(st==='pill_centered'){const w=el('div'); w.style.textAlign='center'; b.removeChild(m); w.appendChild(m)}}
-   if(st==='bold') m.style.color='inherit'}
+  {const st=a.show_more_style||'classic'; const e=a.show_more_emoji||'';
+   const loud=(e?e+' ':'')+(a.show_more_label||'Show More').toUpperCase()+(e?' '+e:'');
+   const m=el('div', st==='plain'?('▾ '+(a.show_more_label||'Show More')):(st==='pill'?(a.show_more_label||'Show More'):loud), 'more');
+   if(st==='classic'||st==='highlight'){m.style.cssText='font-weight:800;font-size:15px;margin:10px 0;color:inherit'; if(st==='highlight') m.style.background='#fff3a3'}
+   if(st==='pill') m.style.cssText='display:inline-block;background:#3a9ee0;color:#fff;border-radius:99px;padding:5px 18px;margin:8px 0;opacity:.8'}
   const inner=el('div',undefined,'inner');
   const add=(t,txt,st)=>{const e=document.createElement(t); e.textContent=txt; if(st)e.style.fontStyle=st; inner.appendChild(e)};
   if(a.scheduled) add('p',a.scheduled,'italic');

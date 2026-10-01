@@ -14,7 +14,7 @@ def test_structure_and_order():
     h = render.build_html(a, S, plan, ident)
     # preview part: heading 6 (plain, no link), cover, then the Show More toggle
     assert h.startswith('<h6>A Title</h6><img src="https://x/cover.jpg"/>'
-                        '<details><summary>Show More</summary>')
+                        '<details><summary><b>👇 SHOW MORE 👇</b></summary>')
     # full post order: scheduled, hashtags, body, collage, credit
     order = [h.index(x) for x in ("<p><i>Scheduled Release", "<p><i>Japanese Series", "<p>Hello", "<tg-collage>", "<p><i>via:")]
     assert order == sorted(order)
@@ -89,14 +89,20 @@ def test_empty_details_omitted():
 
 def test_show_more_styles():
     a = make_article()
+
+    def html(**kw):
+        return render.build_html(a, Settings(**kw), render.plan_media(a), ident)
+
+    assert set(render.SHOW_MORE_STYLES) == {"classic", "highlight", "pill", "plain"}
     for style in render.SHOW_MORE_STYLES:
-        h = render.build_html(a, Settings(show_more_style=style), render.plan_media(a), ident)
-        assert "<details><summary>" in h and "</summary>" in h and h.count("<summary>") == 1
-        assert "Show More" in h
-    h = render.build_html(a, Settings(show_more_style="pill_centered"), render.plan_media(a), ident)
-    assert '<tg-button-row align="center"><tg-button type="disabled" style="primary">Show More</tg-button></tg-button-row>' in h
-    h = render.build_html(a, Settings(show_more_style="pill"), render.plan_media(a), ident)
-    assert '<summary><tg-button type="disabled" style="primary">Show More</tg-button></summary>' in h
-    assert "<summary><b>▼ Show More ▼</b></summary>" in render.build_html(a, Settings(show_more_style="bold"), render.plan_media(a), ident)
-    assert "<summary>Show More</summary>" in render.build_html(a, Settings(), render.plan_media(a), ident)   # default stays safe
-    assert "<summary>A &amp; B</summary>" in render.build_html(a, Settings(show_more_label="A & B"), render.plan_media(a), ident)
+        h = html(show_more_style=style)
+        assert "<details><summary>" in h and h.count("<summary>") == 1 and "</summary>" in h
+    # default: bold CAPITALS with the emoji on both sides
+    assert "<summary><b>👇 SHOW MORE 👇</b></summary>" in html()
+    assert "<summary><b><mark>👇 SHOW MORE 👇</mark></b></summary>" in html(show_more_style="highlight")
+    assert "<summary><b>🔥 SHOW MORE 🔥</b></summary>" in html(show_more_emoji="🔥")
+    assert "<summary><b>SHOW MORE</b></summary>" in html(show_more_emoji="")
+    assert '<summary><tg-button type="disabled" style="primary">Show More</tg-button></summary>' in html(show_more_style="pill")
+    assert "<summary>Show More</summary>" in html(show_more_style="plain")
+    assert "<summary><b>👇 SHOW MORE 👇</b></summary>" in html(show_more_style="pill_centered")      # retired name -> default
+    assert "<summary><b>👇 A &amp; B 👇</b></summary>" in html(show_more_label="a & b")

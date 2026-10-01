@@ -108,6 +108,7 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
         html = render.build_html(art, s, plan, lambda k: k)
         d = art.to_dict()
         d.update(tags_line=render.tags_line(art.tags, s.hashtag_style), hashtag=s.hashtag_style in ('hashtag', 'true', '1'), show_more_style=s.show_more_style,
+                 show_more_emoji=s.show_more_emoji, show_more_label=s.show_more_label,
                  slots_used=plan.slots_used, overflow=len(plan.overflow), html=html, max_media=s.max_media)
         return d
 
@@ -206,7 +207,7 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
                     results = {}
                     for key, desc in render.SHOW_MORE_STYLES.items():
                         html = (f"<h6>Style sample: {key}</h6>"
-                                f"<details>{render.summary_html(s.show_more_label, key)}"
+                                f"<details>{render.summary_html(s.show_more_label, key, s.show_more_emoji)}"
                                 f"<p><i>This is the expanded text. If you read this, the style “{key}” works.</i></p></details>")
                         try:
                             res = engine.tg.send_rich(html)

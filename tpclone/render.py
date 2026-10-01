@@ -55,25 +55,26 @@ def plan_media(art: Article, max_media: int = 50) -> MediaPlan:
 
 
 SHOW_MORE_STYLES = {
-    "classic": "Plain toggle text (safest)",
-    "bold": "▼ bold, with arrows",
-    "pill": "Blue pill button (like the Refresh button)",
-    "pill_centered": "Blue pill button, centered",
+    "classic": "Bold CAPITALS with emoji on both sides (recommended)",
+    "highlight": "Same, with a highlighted background",
+    "pill": "Blue pill button (Telegram shows its text faded)",
+    "plain": "Plain toggle text",
 }
 
 
-def summary_html(label: str, style: str) -> str:
-    """The clickable toggle of the collapsed post. Anything but 'classic' relies on Telegram rendering a button
-    inside <summary>; use the 'Send style samples' button in the dashboard to see them in your own Telegram."""
+def summary_html(label: str, style: str, emoji: str = "👇") -> str:
+    """The clickable toggle of the collapsed post. Telegram rich text has no font sizes, so 'bigger / more eye-catching'
+    is done with bold CAPITALS, emoji on both sides (they render large) and optionally a highlighted background."""
     t = escape(label, quote=False)
-    if style == "bold":
-        return f"<summary><b>▼ {t} ▼</b></summary>"
+    e = escape(emoji.strip(), quote=False)
+    loud = f"{e} {escape(label.upper(), quote=False)} {e}".strip() if e else escape(label.upper(), quote=False)
+    if style == "highlight":
+        return f"<summary><b><mark>{loud}</mark></b></summary>"
     if style == "pill":
         return f'<summary><tg-button type="disabled" style="primary">{t}</tg-button></summary>'
-    if style == "pill_centered":
-        return (f'<summary><tg-button-row align="center"><tg-button type="disabled" style="primary">{t}'
-                f'</tg-button></tg-button-row></summary>')
-    return f"<summary>{t}</summary>"
+    if style == "plain":
+        return f"<summary>{t}</summary>"
+    return f"<summary><b>{loud}</b></summary>"      # "classic" and any retired style name
 
 
 def tags_line(tags: list[str], hashtag_style: str) -> str:
@@ -130,7 +131,7 @@ def build_html(art: Article, settings: Settings, plan: MediaPlan, src: Callable[
 
     if not inner:   # nothing to expand
         return "".join(head)
-    summary = summary_html(settings.show_more_label, settings.show_more_style)
+    summary = summary_html(settings.show_more_label, settings.show_more_style, settings.show_more_emoji)
     return "".join(head) + f"<details>{summary}{''.join(inner)}</details>"
 
 

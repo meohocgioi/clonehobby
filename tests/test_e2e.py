@@ -101,7 +101,7 @@ def test_full_flow_over_http(stack):
     assert db.count("posted") == 1 and len(SENT) == 1
     sent = SENT[0]
     assert sent["path"].endswith("/sendRichMessage") and sent["ct"].startswith("multipart/form-data")
-    assert b"attach://f0" in sent["body"] and b"Title 6" in sent["body"] and b"Show More" in sent["body"]
+    assert b"attach://f0" in sent["body"] and b"Title 6" in sent["body"] and b"SHOW+MORE" in sent["body"] or b"SHOW MORE" in sent["body"] or b"SHOW%20MORE" in sent["body"]
     assert post(base, "/api/stop")["state"] in ("stopping", "stopped")
     # date repost through the API
     job = post(base, "/api/date/plan", {"date": "2026-09-25"})["job"]
@@ -154,7 +154,7 @@ def test_settings_from_browser_and_start_gate(stack, tmp_path):
 def test_style_setting_and_samples(stack):
     e, w, db, base = stack
     v = httpx.get(base + "/api/settings").json()
-    assert set(v["show_more_styles"]) == {"classic", "bold", "pill", "pill_centered"} and v["show_more_style"] == "classic"
+    assert set(v["show_more_styles"]) == {"classic", "highlight", "pill", "plain"} and v["show_more_style"] == "classic"
     post(base, "/api/settings", {"show_more_style": "pill"})
     assert e.s.show_more_style == "pill"
     n0 = len(SENT)

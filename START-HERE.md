@@ -79,6 +79,6 @@ back automatically. The app also checks twice a day by itself and shows a **"�
 * Needs the launcher window (or Docker/systemd) to be how you started the app, so it can start again by itself.
 
 ## Changing the look of the "Show More" button
-Settings → **"Show More" button style** → press **Send style samples to my channel**: it posts 4 small sample posts (plain,
-bold, blue pill, blue centered pill). Open your channel on your phone, see which ones look right *and expand when tapped*,
-then choose that style and **Save**. (Plain toggle is the default because it is guaranteed to work.)
+Settings → **"Show More" button style** (and the emoji next to it). The default is bold CAPITALS with an emoji on both sides,
+e.g. **👇 SHOW MORE 👇**. Press **Send style samples to my channel** to see every style in your own Telegram first, then choose and **Save**.
+(Telegram rich text has no font sizes, so "bigger" is done with capitals and emoji, which display large.)
