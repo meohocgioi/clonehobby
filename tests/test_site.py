@@ -44,3 +44,40 @@ def test_parse_article_fixture():
     # structured bits must not be duplicated in the body
     assert "Scheduled Release" not in joined and "bandaispirits" not in joined
     assert "Share this" not in joined and "Japanese Series" not in joined
+
+
+MENU = ('<div class="topmenu"><a href="/en/trending">Trending This Week</a><a href="/en/schedule">Release Schedule</a>'
+        '<a href="/en/unboxing">Unboxing Report</a><a href="/en/column">Column</a><a href="/en/nikkan">Nikkan Denden</a>'
+        '<a href="/en/screen">SCREEN FANDOM</a></div>')
+
+
+def page(body_extra="", menu=MENU):
+    return (f'<html><head><meta property="og:image" content="https://c/x.jpg"></head><body>{menu}'
+            f'<header><div class="tags"><a href="/en/tag/a">ANIPLEX</a></div><h1>Title</h1></header>'
+            f'<article><div class="entry-content"><p>Hello</p>{body_extra}</div></article></body></html>')
+
+
+def sched(html):
+    return parse_article(html, "https://www.toy-people.com/en/?p=1", 1, S).scheduled
+
+
+def test_site_menu_is_never_taken_as_release_schedule():
+    assert sched(page()) is None                                       # the bug: menu tabs were posted as the line
+    assert sched(page(menu='<nav><ul><li>Release Schedule</li><li>Column</li></ul></nav>')) is None
+
+
+def test_release_schedule_needs_a_date_beside_it():
+    assert sched(page("<p>Release Schedule: 2026/12/15</p>")) == "Release Schedule: 2026/12/15"
+    assert sched(page("<p><b>Scheduled Release</b>: December 2026</p>")) == "Scheduled Release: December 2026"
+    assert sched(page("<p><strong>Release Schedule</strong></p><p>2027年3月</p>")) == "Release Schedule: 2027年3月"
+    assert sched(page("<p>Release Date: TBA</p>")) == "Release Date: TBA"
+    assert sched(page("<p>Release Schedule:</p>")) is None             # label without a date -> skip the line
+    assert sched(page("<p>Release Schedule is a section we update weekly.</p>")) is None
+    assert sched(page("<p>See our <a href='/s'>Release Schedule</a> page 2026</p>")) is None
+
+
+def test_release_schedule_in_title_banner_but_not_menu():
+    html = ('<html><body>' + MENU + '<header><div class="tags"><a href="/en/tag/a">A</a></div>'
+            '<div class="rel">Release Schedule: 2026/11</div><h1>Title</h1></header>'
+            '<article><div class="entry-content"><p>Hello</p></div></article></body></html>')
+    assert sched(html) == "Release Schedule: 2026/11"

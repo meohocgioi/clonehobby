@@ -131,9 +131,9 @@ def test_settings_from_browser_and_start_gate(stack, tmp_path):
     assert "Set the bot token" in post(base, "/api/start")["error"]          # cannot start before setup
     assert w.state() == "stopped"
     r = post(base, "/api/settings", {"telegram_bot_token": "123:SECRETTOKEN", "telegram_chat_id": "@mine",
-                                     "post_delay_seconds": "1", "link_title": False})
+                                     "post_delay_seconds": "1"})
     assert r["configured"] is True and e.tg is not None
-    assert e.s.post_delay_seconds == 3 and e.s.link_title is False           # delay floor enforced
+    assert e.s.post_delay_seconds == 3           # delay floor enforced
     v = httpx.get(base + "/api/settings").json()
     assert v["telegram_bot_token"].endswith("OKEN") and "SECRET" not in v["telegram_bot_token"]
     saved = json.loads((e.s.data_dir / "settings.json").read_text())

@@ -27,6 +27,15 @@
   details.adv{margin-top:10px} ol.how{margin:6px 0 0;padding-left:20px} .good{color:var(--ok)} .tg{max-width:430px;border:1px solid var(--line);border-radius:12px;padding:10px;background:var(--bg);margin-top:10px}
   .tg img{max-width:100%;border-radius:8px;display:block;margin:6px 0} .tg h3{margin:4px 0} .tg .more{color:var(--acc);font-weight:600;margin:6px 0} .tg .inner{border-top:1px solid var(--line);margin-top:6px;padding-top:6px}
   .tg .imgs{display:flex;flex-wrap:wrap;gap:3px} .tg .imgs img{width:calc(33% - 3px);height:80px;object-fit:cover;margin:0}
+
+  table.grid{width:100%;border-collapse:separate;border-spacing:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:12px}
+  table.grid th{background:color-mix(in srgb,var(--fg) 5%,transparent);font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);padding:9px 12px}
+  table.grid td{padding:9px 12px;vertical-align:middle;border-bottom:1px solid var(--line)} table.grid tr:last-child td{border-bottom:0}
+  table.grid td.id{width:78px;color:var(--mut);font-variant-numeric:tabular-nums} table.grid td.act,table.grid th.act{width:112px;text-align:center}
+  .rowbtn{width:92px;height:32px;padding:0;white-space:nowrap;font-size:13px;font-weight:600;border-radius:8px}
+  .rowbtn.go{background:var(--ok);border-color:var(--ok);color:#fff} .rowbtn.done{background:color-mix(in srgb,var(--mut) 25%,transparent);border-color:transparent;color:var(--mut)}
+  .rowbtn.warn{background:var(--warn);border-color:var(--warn);color:#fff} .rowbtn.err{background:var(--bad);border-color:var(--bad);color:#fff}
+  .tg .hl{color:#2481cc} .tg h6{margin:4px 0;font-size:15px}
 </style>
 </head>
 <body>
@@ -63,7 +72,6 @@
       <label>Check the website every (seconds)</label><input type="number" id="s_poll" min="60">
       <label>On the very first start, also publish the latest N posts (0 = none, only future posts)</label><input type="number" id="s_init" min="0">
       <label>Hashtags</label><select id="s_hash"><option value="plain">Same text as on the website</option><option value="hashtag">Clickable #Hashtags</option></select>
-      <label><input type="checkbox" id="s_link"> Make the title a link to the original post</label>
     </details>
     <p class="row"><button class="go" id="save">Save &amp; test connection</button><button id="sendtest">Send a test post</button></p>
     <div id="save-out" class="mut"></div>
@@ -139,8 +147,10 @@ $('plan').onclick=async()=>{
     $('prog').textContent=''; planData=j.result; $('plan-out').hidden=false; $('plan-msg').textContent=planData.message;
     const n=planData.to_publish.length; $('pub').hidden=!n;
     $('pub').textContent=planData.state==='new_since'?('Publish only the '+n+' new post(s)'):('Publish '+n+' post(s)');
-    const t=$('plan-tbl'); t.innerHTML=''; for(const p of planData.posts){const tr=t.insertRow();tr.insertCell().textContent=p.id;tr.insertCell().textContent=p.title||'';
-      const c=tr.insertCell(); c.style.textAlign='right'; c.appendChild(postButton(p.id,p.status))}};
+    const t=$('plan-tbl'); t.innerHTML=''; t.className='grid';
+    const h=t.createTHead().insertRow(); for(const [n,c] of [['ID','id'],['Title',''],['Action','act']]){const th=document.createElement('th'); th.textContent=n; if(c)th.className=c; h.appendChild(th)}
+    const tb=t.createTBody(); for(const p of planData.posts){const tr=tb.insertRow(); const c0=tr.insertCell(); c0.className='id'; c0.textContent=p.id; tr.insertCell().textContent=p.title||'(no title)';
+      const c=tr.insertCell(); c.className='act'; c.appendChild(postButton(p.id,p.status))}};
   tick();
 };
 $('pub').onclick=async()=>{const r=await api('/api/date/publish',{date:planData.date,ids:planData.to_publish});
@@ -153,12 +163,12 @@ async function loadSettings(force){
   $('setup-help').hidden=v.configured; $('setup-title').textContent=v.configured?'Settings':'Step 1 — Connect Telegram';
   if(settingsLoaded&&!force) return; settingsLoaded=true;
   $('s_token').value=v.telegram_bot_token; $('s_chat').value=v.telegram_chat_id; $('s_delay').value=v.post_delay_seconds;
-  $('s_poll').value=v.poll_interval_seconds; $('s_init').value=v.initial_post_latest; $('s_hash').value=v.hashtag_style; $('s_link').checked=v.link_title;
+  $('s_poll').value=v.poll_interval_seconds; $('s_init').value=v.initial_post_latest; $('s_hash').value=v.hashtag_style;
 }
 $('save').onclick=async()=>{
   $('save-out').textContent='Saving…'; $('save-out').className='mut';
   const r=await api('/api/settings',{telegram_bot_token:$('s_token').value,telegram_chat_id:$('s_chat').value,post_delay_seconds:$('s_delay').value,
-    poll_interval_seconds:$('s_poll').value,initial_post_latest:$('s_init').value,hashtag_style:$('s_hash').value,link_title:$('s_link').checked});
+    poll_interval_seconds:$('s_poll').value,initial_post_latest:$('s_init').value,hashtag_style:$('s_hash').value});
   if(r.telegram){$('save-out').className='good';$('save-out').textContent='✅ Connected: bot @'+r.telegram.bot+' can post in “'+r.telegram.chat+'”. Now press ▶ Start at the top.'}
   else if(r.telegram_error){$('save-out').className='error';$('save-out').textContent='❌ '+r.telegram_error}
   else $('save-out').textContent=r.configured?'Saved.':'Saved. Now fill in the bot token and channel.';
@@ -166,23 +176,28 @@ $('save').onclick=async()=>{
 };
 $('sendtest').onclick=async()=>{const r=await api('/api/send-test',{}); $('save-out').className=r.error?'error':'good'; $('save-out').textContent=r.error?('❌ '+r.error):'✅ Test post sent — check your channel and tap “Show More”.'};
 $('pv_go').onclick=async()=>{
+  if($('pv_go').dataset.mode==='clear'){clearPreview();return}
   $('pv_out').hidden=true; $('pv_go').disabled=true; $('pv_prog').textContent='working…';
   const {job,error}=await api('/api/preview',{target:$('pv_in').value}); if(error){$('pv_prog').textContent=error;$('pv_go').disabled=false;return}
   const tick=async()=>{const j=await api('/api/jobs/'+job);
     if(j.state==='running'){$('pv_prog').textContent=j.progress;return setTimeout(tick,1000)}
     $('pv_go').disabled=false; if(j.state==='error'){$('pv_prog').textContent='❌ '+j.error;return}
-    $('pv_prog').textContent=''; showPreview(j.result)}; tick();
+    $('pv_prog').textContent=''; showPreview(j.result); $('pv_go').textContent='Clear preview'; $('pv_go').dataset.mode='clear'}; tick();
 };
+function clearPreview(){$('pv_out').hidden=true; $('pv_box').innerHTML=''; $('pv_go').textContent='Show preview'; delete $('pv_go').dataset.mode; $('pv_prog').textContent=''}
+$('pv_in').addEventListener('input',()=>{if($('pv_go').dataset.mode==='clear')clearPreview()});
 function showPreview(a){
   const b=$('pv_box'); b.innerHTML=''; $('pv_out').hidden=false;
   const el=(t,txt,cls)=>{const e=document.createElement(t); if(txt!==undefined)e.textContent=txt; if(cls)e.className=cls; b.appendChild(e); return e};
-  el('h3',a.title||'(no title found!)');
+  el('h6',a.title||'(no title found!)');
   if(a.cover){const i=el('img'); i.src=a.cover; i.referrerPolicy='no-referrer'} else el('div','(no cover photo found)','mut');
   el('div','▾ Show More','more');
   const inner=el('div',undefined,'inner');
   const add=(t,txt,st)=>{const e=document.createElement(t); e.textContent=txt; if(st)e.style.fontStyle=st; inner.appendChild(e)};
   if(a.scheduled) add('p',a.scheduled,'italic');
-  if(a.tags.length) add('p',a.tags.join('  ·  '),'italic');
+  if(a.tags.length){const e=document.createElement('p'); e.style.fontStyle='italic';
+    if(a.hashtag){a.tags_line.split('  ').forEach((h,i)=>{if(i)e.appendChild(document.createTextNode('  ')); const sp=document.createElement('span'); sp.className='hl'; sp.textContent=h; e.appendChild(sp)})}
+    else e.textContent=a.tags_line; inner.appendChild(e)}
   for(const p of a.paragraphs){const e=document.createElement('p'); e.textContent=new DOMParser().parseFromString(p.replace(/<br>/g,'\n'),'text/html').body.textContent; inner.appendChild(e)}
   const g=document.createElement('div'); g.className='imgs'; for(const u of a.images.slice(0,12)){const i=document.createElement('img'); i.src=u; i.referrerPolicy='no-referrer'; g.appendChild(i)} inner.appendChild(g);
   if(a.credits.length) add('p',a.credit_label+': '+a.credits.map(c=>c[0]).join(', '),'italic');
@@ -192,11 +207,12 @@ function showPreview(a){
 
 // ---- Post Now / Posted buttons -------------------------------------------------------------
 function setBtn(b,state,msg){
-  b.className=''; b.disabled=false; b.title='';
-  if(state==='posted'){b.textContent='Posted'; b.disabled=true; b.style.background='#8b949e'; b.style.borderColor='#8b949e'; b.style.color='#fff'}
-  else if(state==='busy'){b.textContent='Posting…'; b.disabled=true}
-  else if(state==='uncertain'){b.textContent='Check channel'; b.disabled=true; b.title='Delivery was uncertain - see "Needs your attention" below'; b.style.background='#9a6700'; b.style.color='#fff'}
-  else {b.textContent=state==='error'?'Retry':'Post Now'; b.className='go'; b.removeAttribute('style'); if(msg) b.title=msg}
+  b.className='rowbtn'; b.disabled=false; b.title=msg||'';
+  if(state==='posted'){b.textContent='Posted'; b.disabled=true; b.classList.add('done')}
+  else if(state==='busy'){b.textContent='Posting…'; b.disabled=true; b.classList.add('done')}
+  else if(state==='uncertain'){b.textContent='Uncertain'; b.disabled=true; b.classList.add('warn'); b.title='Delivery was uncertain - see "Needs your attention" below'}
+  else if(state==='error'){b.textContent='Retry'; b.classList.add('err')}
+  else {b.textContent='Post'; b.classList.add('go')}
 }
 function postButton(id,status){
   const b=document.createElement('button'); setBtn(b,status==='posted'?'posted':status==='uncertain'?'uncertain':'now');

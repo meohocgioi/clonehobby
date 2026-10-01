@@ -330,19 +330,42 @@ def _find_tags(soup: BeautifulSoup, h1: Tag | None, selectors: dict) -> tuple[li
     return tags, els
 
 
+_SCHED_LINE = re.compile(
+    r"^\s*(scheduled\s*release|release\s*schedule|release\s*date|expected\s*release)\s*[:：\-–]?\s*(.*)$", re.I | re.S)
+_DATEISH = re.compile(r"\d|jan(uary)?\b|feb(ruary)?\b|mar(ch)?\b|apr(il)?\b|may\b|june?\b|july?\b|aug(ust)?\b|"
+                      r"sep(tember)?\b|oct(ober)?\b|nov(ember)?\b|dec(ember)?\b|\btb[ad]\b|to be (announced|determined)",
+                      re.I)
+_NAV_PARENTS = ["a", "nav", "footer", "button", "select", "option"]
+
+
+def _sched_value(text: str) -> tuple[str, str] | None:
+    m = _SCHED_LINE.match(text)
+    if not m:
+        return None
+    return re.sub(r"\s+", " ", text[m.start(1):m.end(1)]).strip(), m.group(2).strip()
+
+
 def _find_scheduled(root: Tag, selectors: dict) -> tuple[str | None, Tag | None]:
+    """A line such as 'Release Schedule: 2026/12'. It must START with the label and carry a date beside it, so the
+    site's own 'Release Schedule' menu tab (a link, no date) can never match. Posts without one return (None, None)."""
     if selectors.get("scheduled"):
         el = root.select_one(selectors["scheduled"])
         return (_txt(el) or None), el
-    for cand in root.find_all(["p", "div", "span", "li", "h4", "h5", "h6", "strong", "b", "dt", "td", "em", "i"]):
+    for cand in root.find_all(["p", "div", "span", "li", "h4", "h5", "h6", "strong", "b", "dt", "dd", "td", "em", "i"]):
+        if cand.find_parent(_NAV_PARENTS) or len(cand.find_all("a")) > 1:
+            continue
         t = _txt(cand)
-        if len(t) <= 160 and _SCHED_RX.search(t):
-            if len(_txt(cand)) <= len(_SCHED_RX.search(t).group(0)) + 2:
-                # label only -> value is in the next sibling element
-                sib = cand.find_next_sibling()
-                if sib is not None:
-                    return f"{t.rstrip(':：')}: {_txt(sib)}", cand
-            return t, cand
+        if len(t) > 120:
+            continue
+        got = _sched_value(t)
+        if not got:
+            continue
+        label, value = got
+        if not value:   # label in one element, the date in the next one
+            sib = cand.find_next_sibling()
+            value = _txt(sib) if sib is not None and len(_txt(sib)) <= 80 else ""
+        if value and _DATEISH.search(value):
+            return f"{label}: {value}".replace(": :", ":"), cand
     return None, None
 
 
@@ -458,8 +481,15 @@ def parse_article(html: str, url: str, post_id: int, settings: Settings, selecto
     if ced is not None:
         ced.decompose()
     sched, sel_el = _find_scheduled(body, selectors)
-    if sched is None:  # often sits in the header next to the title
-        sched, sel_el = _find_scheduled(soup, selectors)
+    if sched is None and h1 is not None:   # may sit in the title banner (never in the site menu)
+        scope = h1
+        for _ in range(3):
+            if scope.parent is None or scope.parent.name in ("body", "html", "[document]"):
+                break
+            scope = scope.parent
+            if scope.find("nav") is not None:
+                break
+        sched, sel_el = _find_scheduled(scope, selectors)
     art.scheduled = sched
     if sel_el is not None and not _gone(sel_el):
         sel_el.decompose()

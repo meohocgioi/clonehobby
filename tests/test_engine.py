@@ -37,7 +37,7 @@ def test_new_posts_queued_posted_once(env):
         assert e.process(row) == "posted"
     assert len(tg.sent) == 2 and db.count("posted") == 2
     assert e.discover() == 0 and db.pending_count() == 0           # nothing re-queued
-    assert tg.sent[0]["html"].startswith("<h3>")
+    assert tg.sent[0]["html"].startswith("<h6>")
     # a second engine instance on the same DB ("app restarted after days off") must not repost anything
     from tpclone.engine import Engine
     e2 = Engine(e.s, db, f, tg)

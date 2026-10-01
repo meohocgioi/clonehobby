@@ -1,7 +1,7 @@
 """Article -> Telegram Rich Message (HTML style).
 
 Preview post (what the channel shows):
-    <h3>Title</h3>
+    <h6>Title</h6>
     cover photo
     [Show More]   <- a collapsed <details>; tapping it expands the full post in place
 
@@ -54,7 +54,7 @@ def plan_media(art: Article, max_media: int = 50) -> MediaPlan:
     return MediaPlan(cover, gallery[:keep], gallery[keep:])
 
 
-def _tags_line(tags: list[str], hashtag_style: str) -> str:
+def tags_line(tags: list[str], hashtag_style: str) -> str:
     if hashtag_style in ("hashtag", "true", "1"):
         return "  ".join("#" + re.sub(r"\W+", "_", t, flags=re.U).strip("_") for t in tags)
     return "  ·  ".join(escape(t, quote=False) for t in tags)
@@ -63,9 +63,7 @@ def _tags_line(tags: list[str], hashtag_style: str) -> str:
 def build_html(art: Article, settings: Settings, plan: MediaPlan, src: Callable[[str], str]) -> str:
     """`src` maps a source image URL (or OVERFLOW_KEY) to the src to embed (http URL or tg://photo?id=...)."""
     title = escape(art.title or f"Post {art.post_id}", quote=False)
-    if settings.link_title:
-        title = f'<a href="{escape(art.url, quote=True)}">{title}</a>'
-    head = [f"<h3>{title}</h3>"]
+    head = [f"<h6>{title}</h6>"]
     if plan.cover:
         head.append(f'<img src="{escape(src(plan.cover), quote=True)}"/>')
 
@@ -73,7 +71,7 @@ def build_html(art: Article, settings: Settings, plan: MediaPlan, src: Callable[
     if art.scheduled:
         inner.append(f"<p><i>{escape(art.scheduled, quote=False)}</i></p>")
     if art.tags:
-        inner.append(f"<p><i>{_tags_line(art.tags, settings.hashtag_style)}</i></p>")
+        inner.append(f"<p><i>{tags_line(art.tags, settings.hashtag_style)}</i></p>")
 
     paras = list(art.paragraphs)
     truncated = False

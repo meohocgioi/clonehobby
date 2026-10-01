@@ -4,7 +4,7 @@ from conftest import make_article
 from tpclone import render
 from tpclone.config import Settings
 
-S = Settings(link_title=True)
+S = Settings()
 ident = lambda k: k
 
 
@@ -12,8 +12,8 @@ def test_structure_and_order():
     a = make_article(n_images=3)
     plan = render.plan_media(a, 50)
     h = render.build_html(a, S, plan, ident)
-    # preview part: heading 3, cover, then the Show More toggle
-    assert h.startswith('<h3><a href="https://www.toy-people.com/en/?p=1">A Title</a></h3><img src="https://x/cover.jpg"/>'
+    # preview part: heading 6 (plain, no link), cover, then the Show More toggle
+    assert h.startswith('<h6>A Title</h6><img src="https://x/cover.jpg"/>'
                         '<details><summary>Show More</summary>')
     # full post order: scheduled, hashtags, body, collage, credit
     order = [h.index(x) for x in ("<p><i>Scheduled Release", "<p><i>Japanese Series", "<p>Hello", "<tg-collage>", "<p><i>via:")]

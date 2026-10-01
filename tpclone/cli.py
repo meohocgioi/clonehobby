@@ -167,7 +167,7 @@ def cmd_scan(s: Settings, a) -> None:
 
 def cmd_send_test(s: Settings, a) -> None:
     engine, _ = build(s)
-    html = ("<h3>tpclone test</h3><details><summary>Show More</summary><p><i>If you can expand this, "
+    html = ("<h6>tpclone test</h6><details><summary>Show More</summary><p><i>If you can expand this, "
             "rich messages work in this channel.</i></p></details>")
     print(engine.tg.send_rich(html))
 

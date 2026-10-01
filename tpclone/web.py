@@ -98,7 +98,8 @@ def make_server(engine: Engine, worker: Worker) -> ThreadingHTTPServer:
         plan = render.plan_media(art, s.max_media)
         html = render.build_html(art, s, plan, lambda k: k)
         d = art.to_dict()
-        d.update(slots_used=plan.slots_used, overflow=len(plan.overflow), html=html, max_media=s.max_media)
+        d.update(tags_line=render.tags_line(art.tags, s.hashtag_style), hashtag=s.hashtag_style in ('hashtag', 'true', '1'),
+                 slots_used=plan.slots_used, overflow=len(plan.overflow), html=html, max_media=s.max_media)
         return d
 
     class H(BaseHTTPRequestHandler):
@@ -165,7 +166,7 @@ def make_server(engine: Engine, worker: Worker) -> ThreadingHTTPServer:
                     if not engine.tg:
                         return self._json({"error": "Set the bot token and channel first (Settings)."}, 400)
                     try:
-                        engine.tg.send_rich("<h3>Test post</h3><details><summary>Show More</summary>"
+                        engine.tg.send_rich("<h6>Test post</h6><details><summary>Show More</summary>"
                                             "<p><i>If you can open this, rich messages work in your channel.</i></p></details>")
                     except TelegramError as e:
                         return self._json({"error": str(e)}, 400)

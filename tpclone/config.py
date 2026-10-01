@@ -41,7 +41,6 @@ class Settings:
     max_media: int = 50
     media_mode: str = "auto"
     hashtag_style: str = "plain"
-    link_title: bool = True
     show_more_label: str = "Show More"
     fetch_backend: str = "auto"
     flaresolverr_url: str = ""
@@ -85,7 +84,7 @@ class Settings:
 
 # Fields editable from the dashboard (saved to <data>/settings.json, which wins over .env)
 UI_FIELDS = ("telegram_bot_token", "telegram_chat_id", "post_delay_seconds", "poll_interval_seconds",
-             "initial_post_latest", "hashtag_style", "link_title", "media_mode", "show_more_label",
+             "initial_post_latest", "hashtag_style", "media_mode", "show_more_label",
              "max_posts_per_hour", "site_tz")
 
 

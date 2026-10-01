@@ -6,7 +6,7 @@ Watches <https://www.toy-people.com/en/> 24/7 and republishes every new post to 
 **Rich Message** (`sendRichMessage`, HTML style), in the same structure as the website.
 
 ```
-<h3>Title</h3>                 ← preview post
+<h6>Title</h6>                 ← preview post
 cover photo
 [ Show More ]                  ← collapsed <details>; tapping expands the full post in place
    Scheduled Release (italic, omitted when the post has none)
@@ -56,8 +56,8 @@ For 24/7 operation on a VPS use `deploy/tpclone.service` (systemd restarts it an
 * **"Scan the Telegram channel" is impossible with a bot** – the Bot API cannot read channel history. The ledger is the
   source of truth. If you lose it (or want to seed it from posts made before this app), either
   `python -m tpclone import-history result.json` (Telegram Desktop → channel → Export chat history → JSON) or
-  `python -m tpclone scan-channel` (optional, uses your own account via Telethon). Posts are recognised by the
-  toy-people link on the H3 title (`LINK_TITLE=true`, default) or by title text.
+  `python -m tpclone scan-channel` (optional, uses your own account via Telethon). Posts are recognised by a
+  toy-people link in the message, or by title text.
 * **First start never floods the channel**: all posts currently on the site are marked *seen, not posted*
   (`INITIAL_POST_LATEST=N` also posts the latest N). If > `MAX_AUTO_QUEUE` unseen posts appear in one poll, they are
   not auto-queued (looks like a site reshuffle); use *Repost by date*.
