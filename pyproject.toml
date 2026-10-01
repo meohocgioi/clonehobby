@@ -1,0 +1,23 @@
+[project]
+name = "tpclone"
+version = "0.1.0"
+description = "Clone toy-people.com posts to a Telegram channel as Rich Messages"
+requires-python = ">=3.11"
+dependencies = ["httpx>=0.27", "beautifulsoup4>=4.12", "lxml>=5.0", "Pillow>=10.0"]
+
+[project.optional-dependencies]
+browser = ["playwright"]
+scan = ["telethon"]
+dev = ["pytest"]
+
+[project.scripts]
+tpclone = "tpclone.cli:main"
+
+[tool.setuptools]
+packages = ["tpclone"]
+
+[tool.setuptools.package-data]
+tpclone = ["dashboard.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

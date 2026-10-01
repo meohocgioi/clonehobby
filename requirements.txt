@@ -1,0 +1,8 @@
+httpx>=0.27
+beautifulsoup4>=4.12
+lxml>=5.0
+Pillow>=10.0
+# optional: Cloudflare fallback (real browser)   -> pip install playwright && playwright install chromium
+# optional: scan the channel history via MTProto  -> pip install telethon
+# dev
+pytest>=8.0

@@ -1,0 +1,21 @@
+# /etc/systemd/system/tpclone.service   (adjust User / paths)
+#   sudo systemctl daemon-reload && sudo systemctl enable --now tpclone
+# journalctl -u tpclone -f      to watch it.   The app resumes by itself after reboots/crashes (AUTO_RESUME=true).
+[Unit]
+Description=toy-people.com -> Telegram rich-message cloner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tpclone
+WorkingDirectory=/opt/tpclone
+ExecStart=/opt/tpclone/.venv/bin/python -m tpclone run
+Restart=always
+RestartSec=10
+# let an in-flight post finish before systemd kills the process
+TimeoutStopSec=200
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

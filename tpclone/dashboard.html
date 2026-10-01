@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Toy-People → Telegram</title>
+<style>
+  :root{--bg:#f6f7f9;--card:#fff;--fg:#1c2128;--mut:#6a737d;--line:#e3e6ea;--ok:#1a7f37;--bad:#cf222e;--warn:#9a6700;--acc:#d6232f}
+  @media (prefers-color-scheme:dark){:root{--bg:#0f1318;--card:#171c23;--fg:#e6edf3;--mut:#8b949e;--line:#2a313a;--ok:#3fb950;--bad:#f85149;--warn:#d29922;--acc:#ff4d5a}}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,sans-serif}
+  main{max-width:960px;margin:0 auto;padding:16px}
+  h1{font-size:20px;margin:0 0 12px} h2{font-size:15px;margin:0 0 10px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  button{font:inherit;padding:8px 16px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+  button.go{background:var(--ok);border-color:var(--ok);color:#fff} button.stop{background:var(--bad);border-color:var(--bad);color:#fff}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  input[type=date]{font:inherit;padding:7px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+  .pill{padding:2px 10px;border-radius:99px;font-weight:600;font-size:13px;border:1px solid currentColor}
+  .running{color:var(--ok)} .stopped{color:var(--mut)} .stopping{color:var(--warn)} .error{color:var(--bad)}
+  .mut{color:var(--mut)} .stats span{margin-right:16px;white-space:nowrap}
+  table{width:100%;border-collapse:collapse} td,th{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left;font-size:13px;vertical-align:top}
+  .log{font:12px/1.5 ui-monospace,monospace;max-height:260px;overflow:auto}
+  .log .warn{color:var(--warn)} .log .error{color:var(--bad)}
+  .msg{padding:10px;border-radius:8px;background:color-mix(in srgb,var(--acc) 10%,transparent);margin:10px 0}
+</style>
+</head>
+<body>
+<main>
+  <h1>Toy-People → Telegram <span class="mut" id="chat"></span></h1>
+
+  <div class="card">
+    <div class="row">
+      <span class="pill stopped" id="state">…</span>
+      <button class="go" id="start">▶ Start</button>
+      <button class="stop" id="stop">■ Stop</button>
+      <span class="mut" id="next"></span>
+    </div>
+    <div class="msg error" id="err" hidden></div>
+    <p class="stats" id="stats"></p>
+    <p class="mut" id="last"></p>
+  </div>
+
+  <div class="card">
+    <h2>Repost older posts by date</h2>
+    <div class="row">
+      <input type="date" id="date"> <button id="plan">Check date</button>
+      <span class="mut" id="prog"></span>
+    </div>
+    <div id="plan-out" hidden>
+      <div class="msg" id="plan-msg"></div>
+      <div class="row"><button class="go" id="pub"></button><button id="cancel">Cancel</button></div>
+      <table id="plan-tbl"></table>
+    </div>
+    <p class="mut">Queued reposts are published by the worker (press Start) at the configured delay; they never repeat posts already published.</p>
+  </div>
+
+  <div class="card" id="review" hidden>
+    <h2>Needs your attention</h2>
+    <p class="mut">“uncertain” = the request may have reached Telegram (look in the channel). “failed” = gave up after several errors.</p>
+    <table id="review-tbl"></table>
+  </div>
+
+  <div class="card"><h2>Activity</h2><div class="log" id="log"></div></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const api=(p,body)=>fetch(p,body===undefined?{}:{method:'POST',headers:{'X-Requested-With':'tpclone','Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+let planData=null;
+function fmt(ts){return ts?new Date(ts*1000).toLocaleString():''}
+async function refresh(){
+  const s=await api('/api/status');
+  $('chat').textContent=s.chat?('· '+s.chat):'';
+  const st=$('state'); st.textContent=s.state.toUpperCase()+(s.dry_run?' (dry-run)':''); st.className='pill '+s.state;
+  $('start').disabled=(s.state==='running'); $('stop').disabled=(s.state!=='running');
+  $('err').hidden=!s.error; $('err').textContent=s.error||'';
+  const k=s.stats; $('stats').innerHTML='';
+  for(const [n,l] of [['posted','Published'],['pending','Queued'],['uncertain','Uncertain'],['failed','Failed'],['skipped','Seen (not posted)'],['total','Tracked']]){
+    const sp=document.createElement('span'); sp.textContent=l+': '+(k[n]||0); $('stats').appendChild(sp);}
+  $('next').textContent=(s.pending&&s.state==='running')?('next post in ~'+s.next_post_in+'s (delay '+s.delay+'s)'):(s.pending&&s.state!=='running'?'queue waits for Start':'');
+  $('last').textContent=s.last_posted?('Last published: '+(s.last_posted.title||s.last_posted.post_id)+' — '+fmt(s.last_posted.posted_at)):'';
+  const lg=$('log'); lg.innerHTML='';
+  for(const e of s.events){const d=document.createElement('div'); d.className=e.level; d.textContent=fmt(e.ts)+'  '+e.message; lg.appendChild(d);}
+  const rows=[...s.uncertain.map(r=>[r,'uncertain']),...s.failed.map(r=>[r,'failed'])];
+  $('review').hidden=!rows.length; const t=$('review-tbl'); t.innerHTML='';
+  for(const [r,kind] of rows){
+    const tr=t.insertRow(); tr.insertCell().textContent=kind; tr.insertCell().textContent=r.post_id;
+    tr.insertCell().textContent=(r.title||'')+' — '+(r.last_error||'');
+    const c=tr.insertCell();
+    for(const [a,l] of [['posted','It is in the channel'],['retry','Send again'],['skip','Ignore']]){
+      const b=document.createElement('button'); b.textContent=l; b.onclick=async()=>{await api('/api/post/resolve',{id:r.post_id,action:a});refresh()}; c.appendChild(b);}
+  }
+}
+$('start').onclick=async()=>{await api('/api/start',{});refresh()};
+$('stop').onclick=async()=>{await api('/api/stop',{});refresh()};
+$('plan').onclick=async()=>{
+  const d=$('date').value; if(!d) return; $('plan').disabled=true; $('plan-out').hidden=true; $('prog').textContent='scanning…';
+  const {job,error}=await api('/api/date/plan',{date:d}); if(error){$('prog').textContent=error;$('plan').disabled=false;return}
+  const tick=async()=>{const j=await api('/api/jobs/'+job);
+    if(j.state==='running'){$('prog').textContent=j.progress;return setTimeout(tick,1500)}
+    $('plan').disabled=false; if(j.state==='error'){$('prog').textContent='error: '+j.error;return}
+    $('prog').textContent=''; planData=j.result; $('plan-out').hidden=false; $('plan-msg').textContent=planData.message;
+    const n=planData.to_publish.length; $('pub').hidden=!n;
+    $('pub').textContent=planData.state==='new_since'?('Publish only the '+n+' new post(s)'):('Publish '+n+' post(s)');
+    const t=$('plan-tbl'); t.innerHTML=''; for(const p of planData.posts){const tr=t.insertRow();tr.insertCell().textContent=p.id;tr.insertCell().textContent=p.title||'';tr.insertCell().textContent=p.status}};
+  tick();
+};
+$('pub').onclick=async()=>{const r=await api('/api/date/publish',{date:planData.date,ids:planData.to_publish});
+  $('plan-msg').textContent='Queued '+r.queued+' post(s).'+(r.worker!=='running'?' Press Start to publish them.':''); $('pub').hidden=true; refresh()};
+$('cancel').onclick=()=>{$('plan-out').hidden=true};
+refresh(); setInterval(refresh,4000);
+</script>
+</body>
+</html>

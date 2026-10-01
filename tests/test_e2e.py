@@ -1,0 +1,123 @@
+"""Real HTTP stack end to end: mock website + mock Telegram, real Fetcher/Telegram client/web API/worker."""
+import json
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs
+
+import httpx
+import pytest
+
+from conftest import png
+from tpclone.config import Settings
+from tpclone.db import DB
+from tpclone.engine import Engine, Worker
+from tpclone.fetch import Fetcher
+from tpclone.telegram import Telegram
+from tpclone.web import make_server
+
+POSTS = {i: ("2026-09-25" if i >= 3 else "2026-09-20") for i in range(1, 6)}
+SENT: list[dict] = []
+
+
+class Site(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+
+    def do_GET(self):
+        if self.path.startswith("/sitemap"):
+            u = "".join(f"<url><loc>http://127.0.0.1:{self.server.server_port}/en/?p={i}</loc></url>" for i in POSTS)
+            return self._r(200, f'<urlset>{u}</urlset>'.encode(), "application/xml")
+        if self.path.endswith(".jpg"):
+            return self._r(200, png(), "image/png")
+        pid = int(self.path.split("p=")[1])
+        port = self.server.server_port
+        html = f"""<html><head><meta property="og:image" content="http://127.0.0.1:{port}/c{pid}.jpg">
+        <meta property="article:published_time" content="{POSTS[pid]}T09:00:00+08:00"></head><body><h1>Title {pid}</h1>
+        <div class="tags"><a href="/en/tag/a">Alpha</a></div>
+        <article><div class="entry-content"><p>Body {pid}</p><img src="http://127.0.0.1:{port}/{pid}a.jpg">
+        <img src="http://127.0.0.1:{port}/{pid}b.jpg"><p>via: <a href="https://src.example/x">src</a></p></div></article></body></html>"""
+        self._r(200, html.encode(), "text/html")
+
+    def _r(self, code, body, ct):
+        self.send_response(code); self.send_header("Content-Type", ct); self.send_header("Content-Length", str(len(body)))
+        self.end_headers(); self.wfile.write(body)
+
+
+class TG(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+
+    def do_POST(self):
+        n = int(self.headers["Content-Length"]); body = self.rfile.read(n)
+        SENT.append({"path": self.path, "ct": self.headers["Content-Type"], "body": body})
+        out = json.dumps({"ok": True, "result": {"message_id": len(SENT)}}).encode()
+        self.send_response(200); self.send_header("Content-Length", str(len(out))); self.end_headers(); self.wfile.write(out)
+
+
+def serve(handler):
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+@pytest.fixture
+def stack(tmp_path):
+    SENT.clear()
+    site, tgs = serve(Site), serve(TG)
+    s = Settings(telegram_bot_token="T", telegram_chat_id="@c", db_path=str(tmp_path / "t.db"), site_delay_seconds=0,
+                 post_delay_seconds=0, poll_interval_seconds=1, media_mode="upload", web_port=0,
+                 site_base=f"http://127.0.0.1:{site.server_port}/en/",
+                 sitemap_url=f"http://127.0.0.1:{site.server_port}/sitemap.xml",
+                 telegram_api_base=f"http://127.0.0.1:{tgs.server_port}")
+    s.MIN_DELAY = 0
+    db = DB(s.db_path)
+    e = Engine(s, db, Fetcher(s), Telegram("T", "@c", base=s.telegram_api_base))
+    e.pacer.delay = 0
+    w = Worker(e)
+    api = make_server(e, w)
+    threading.Thread(target=api.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{api.server_port}"
+    yield e, w, db, base
+    w.stop(wait=True); api.shutdown()
+
+
+def post(base, path, body=None):
+    return httpx.post(base + path, json=body or {}, headers={"X-Requested-With": "tpclone"}).json()
+
+
+def test_full_flow_over_http(stack):
+    e, w, db, base = stack
+    assert httpx.get(base + "/").text.count("Toy-People") >= 1
+    assert httpx.post(base + "/api/start", json={}).status_code == 400            # CSRF guard
+    e.discover()                                                                   # baseline: nothing posted
+    assert SENT == [] and db.count("skipped") == 5
+    # live new post appears -> worker publishes it once
+    POSTS[6] = "2026-09-26"
+    assert post(base, "/api/start")["state"] == "running"
+    for _ in range(100):
+        if db.count("posted") == 1:
+            break
+        time.sleep(0.1)
+    assert db.count("posted") == 1 and len(SENT) == 1
+    sent = SENT[0]
+    assert sent["path"].endswith("/sendRichMessage") and sent["ct"].startswith("multipart/form-data")
+    assert b"attach://f0" in sent["body"] and b"Title 6" in sent["body"] and b"Show More" in sent["body"]
+    assert post(base, "/api/stop")["state"] in ("stopping", "stopped")
+    # date repost through the API
+    job = post(base, "/api/date/plan", {"date": "2026-09-25"})["job"]
+    for _ in range(100):
+        j = httpx.get(f"{base}/api/jobs/{job}").json()
+        if j["state"] != "running":
+            break
+        time.sleep(0.1)
+    assert j["state"] == "done" and j["result"]["to_publish"] == [3, 4, 5], j
+    assert post(base, "/api/date/publish", {"date": "2026-09-25", "ids": j["result"]["to_publish"]})["queued"] == 3
+    w.stop(wait=True)
+    post(base, "/api/start")
+    for _ in range(150):
+        if db.count("posted") == 4:
+            break
+        time.sleep(0.1)
+    w.stop(wait=True)
+    assert db.count("posted") == 4 and len(SENT) == 4
+    st = httpx.get(base + "/api/status").json()
+    assert st["stats"]["posted"] == 4 and st["state"] == "stopped"
