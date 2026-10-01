@@ -41,6 +41,7 @@
 <body>
 <main>
   <h1>Toy-People → Telegram <span class="mut" id="chat"></span></h1>
+  <div class="msg" id="upd_banner" hidden>🔔 A new version is available. <button class="go" id="upd_go2">Update now</button></div>
 
   <div class="card">
     <div class="row">
@@ -107,6 +108,13 @@
     <table id="review-tbl"></table>
   </div>
 
+  <div class="card">
+    <h2>Updates</h2>
+    <p class="mut" id="ver"></p>
+    <div class="row"><button id="upd_check">Check for updates</button><button class="go" id="upd_go" hidden>Update now</button><span class="mut" id="upd_out"></span></div>
+    <p class="mut">Updating downloads the newest version, tests it, restarts the app by itself (a post in progress finishes first) and reloads this page. Your settings and posted-list are never touched. If the new version fails to start, the old one comes back automatically.</p>
+  </div>
+
   <div class="card"><h2>Activity</h2><div class="log" id="log"></div></div>
 </main>
 <script>
@@ -115,7 +123,7 @@ const api=(p,body)=>fetch(p,body===undefined?{}:{method:'POST',headers:{'X-Reque
 let planData=null;
 function fmt(ts){return ts?new Date(ts*1000).toLocaleString():''}
 async function refresh(){
-  const s=await api('/api/status');
+  const s=await api('/api/status'); showUpdate(s);
   $('chat').textContent=s.chat?('· '+s.chat):'';
   const st=$('state'); st.textContent=s.state.toUpperCase()+(s.dry_run?' (dry-run)':''); st.className='pill '+s.state;
   $('start').disabled=(s.state==='running')||!s.configured; $('stop').disabled=(s.state!=='running');
@@ -253,6 +261,36 @@ $('verify').onclick=async()=>{
     $('verify').disabled=false; if(j.state==='error'){$('verify-out').textContent='❌ '+j.error;return}
     const r=j.result; $('verify-out').textContent='Checked '+r.checked+' post(s): '+r.deleted.length+' deleted from the channel (now publishable again)'+(r.unknown?(', '+r.unknown+' could not be checked'):''); refresh()}; tick();
 };
+
+// ---- updates ------------------------------------------------------------------------------------
+let curVersion=null;
+function showUpdate(s){
+  curVersion=s.version; const u=s.update; const avail=!!(u&&u.available);
+  $('ver').textContent='Current version: '+s.version+(u&&u.checked_at?(' · last checked '+fmt(u.checked_at)):'');
+  $('upd_go').hidden=!avail; $('upd_banner').hidden=!avail;
+  if(avail && !$('upd_out').textContent) $('upd_out').textContent='New version '+u.remote+' ('+u.changed.length+' file(s) changed)';
+}
+async function pollJob(job,onProg){ for(;;){ const j=await api('/api/jobs/'+job); if(j.state==='running'){onProg&&onProg(j.progress); await new Promise(r=>setTimeout(r,800)); continue} return j } }
+$('upd_check').onclick=async()=>{
+  $('upd_check').disabled=true; $('upd_out').textContent='checking…';
+  const {job,error}=await api('/api/update/check',{}); if(error){$('upd_out').textContent='❌ '+error;$('upd_check').disabled=false;return}
+  const j=await pollJob(job,m=>$('upd_out').textContent=m); $('upd_check').disabled=false;
+  if(j.state==='error'){$('upd_out').textContent='❌ '+j.error;return}
+  $('upd_out').textContent=j.result.available?('New version '+j.result.remote+' is available ('+j.result.changed.length+' file(s) changed).'):'✅ You have the newest version.'; refresh();
+};
+async function doUpdate(){
+  if(!confirm('Update now? The app restarts by itself (a post in progress finishes first) and this page reloads.')) return;
+  for(const id of ['upd_go','upd_go2','upd_check']) $(id).disabled=true;
+  $('upd_out').textContent='starting…';
+  const {job,error}=await api('/api/update/apply',{}); if(error){$('upd_out').textContent='❌ '+error; for(const id of ['upd_go','upd_go2','upd_check']) $(id).disabled=false; return}
+  const j=await pollJob(job,m=>$('upd_out').textContent=m);
+  if(j.state==='error'){$('upd_out').textContent='❌ '+j.error+' (nothing was changed)'; for(const id of ['upd_go','upd_go2','upd_check']) $(id).disabled=false; return}
+  const target=j.result.version; $('upd_out').textContent='Updated to '+target+' — restarting, this page will reload…';
+  for(let i=0;i<120;i++){ await new Promise(r=>setTimeout(r,1500));
+    try{ const r=await fetch('/api/status',{cache:'no-store'}); if(r.ok){ const s=await r.json(); if(s.version===target){location.reload(); return} } }catch(e){} }
+  $('upd_out').textContent='Taking longer than expected — wait a minute and reload this page.';
+}
+$('upd_go').onclick=doUpdate; $('upd_go2').onclick=doUpdate;
 refresh(); loadSettings(); setInterval(refresh,4000); setInterval(loadSettings,8000);
 </script>
 </body>

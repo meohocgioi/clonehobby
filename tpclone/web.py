@@ -8,10 +8,11 @@ import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from importlib import resources
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import render
+import tpclone
+from . import render, updater
 from .config import UI_FIELDS, _coerce, save_ui_settings
 from .engine import Engine, Worker
 from .telegram import TelegramError
@@ -41,10 +42,11 @@ class Jobs:
         return jid
 
 
-def make_server(engine: Engine, worker: Worker) -> ThreadingHTTPServer:
+def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPServer:
     s = engine.s
     jobs = Jobs()
-    page = resources.files("tpclone").joinpath("dashboard.html").read_text(encoding="utf8")
+    update_lock = threading.Lock()
+    page = Path(__file__).with_name("dashboard.html").read_text(encoding="utf8")
 
     def status() -> dict:
         db = engine.db
@@ -58,6 +60,7 @@ def make_server(engine: Engine, worker: Worker) -> ThreadingHTTPServer:
             "uncertain": db.by_status("uncertain", 50), "failed": db.by_status("failed", 50),
             "chat": s.telegram_chat_id, "configured": s.telegram_ready,
             "last_backup": float(db.kv_get("last_backup_ts", "0") or 0) or None,
+            "version": tpclone.code_version(), "code_dir": tpclone.__path__[0], "update": db.kv_json("update_info"),
         }
 
     def settings_view() -> dict:
@@ -182,6 +185,31 @@ def make_server(engine: Engine, worker: Worker) -> ThreadingHTTPServer:
                     except TelegramError as e:
                         return self._json({"error": str(e)}, 400)
                     return self._json({"ok": True})
+                if path == "/api/update/check":
+                    def do_check(prog):
+                        prog("looking for a newer version")
+                        info = updater.check(s)
+                        engine.db.kv_set("update_info", json.dumps(info))
+                        engine.db.kv_set("last_update_check", time.time())
+                        return info
+                    return self._json({"job": jobs.run(do_check)})
+                if path == "/api/update/apply":
+                    if restart is None:
+                        return self._json({"error": "this app cannot restart itself"}, 400)
+                    if not update_lock.acquire(blocking=False):
+                        return self._json({"error": "an update is already running"}, 409)
+
+                    def do_apply(prog):
+                        try:
+                            res = updater.apply(s, prog)
+                            engine.db.kv_set("update_info", json.dumps({"available": False, "remote": res["version"],
+                                                                         "local": res["version"], "changed": []}))
+                            engine.db.log("info", f"updated to version {res['version']} - restarting")
+                            threading.Timer(1.5, restart).start()     # let this answer reach the browser first
+                            return {**res, "restarting": True}
+                        finally:
+                            update_lock.release()
+                    return self._json({"job": jobs.run(do_apply)})
                 if path == "/api/post-now":
                     pid, force = int(body["id"]), bool(body.get("force"))
                     jid = jobs.run(lambda prog: engine.post_now(pid, force))

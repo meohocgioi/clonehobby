@@ -61,3 +61,14 @@ Once a day the app saves a copy of its "what was posted" list in the `data/backu
 have to do anything. If you move to a new computer/server, click **Download a backup** on the dashboard first (or copy the
 whole `data` folder) and put it in the same place on the new machine. If you ever lose it completely, the app can still
 rebuild it from a Telegram "Export chat history" file of your channel (`python -m tpclone import-history result.json`).
+
+## Updating the app (one click)
+Scroll to the **Updates** card on the dashboard → **Check for updates** → **Update now**.
+The app downloads the new version, tests it, restarts itself (a post in progress finishes first) and the page reloads
+on its own. Your settings and posted-list are never touched, and if a new version ever fails to start the old one comes
+back automatically. The app also checks twice a day by itself and shows a **"🔔 A new version is available"** bar.
+
+* The very first time (to get the Update button) you still need the manual update once: re-download the ZIP / run
+  `git pull && docker compose up -d --build`. After that, only the button.
+* It works the same on your computer and on the VPS/Docker (updates are stored in the `data` folder).
+* Needs the launcher window (or Docker/systemd) to be how you started the app, so it can start again by itself.

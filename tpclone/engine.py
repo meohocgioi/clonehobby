@@ -8,7 +8,7 @@ import time
 from typing import Callable
 
 from . import media as media_mod
-from . import render, site
+from . import render, site, updater
 from .config import Settings
 from .db import DB
 from .fetch import ChallengeError, Fetcher, FetchError, NotFound
@@ -241,6 +241,17 @@ class Engine:
         row = self.db.get(pid) or {}
         self.db.log("info", f"posted {pid}: {row.get('title') or ''}")
         return "posted"
+
+    # ------------------------------------------------------------------ update check
+    def maybe_check_update(self, every: float = 43200.0) -> None:
+        """Twice a day look for a newer version (only records it: the user presses the button)."""
+        if time.time() - float(self.db.kv_get("last_update_check", "0") or 0) < every:
+            return
+        self.db.kv_set("last_update_check", time.time())
+        try:
+            self.db.kv_set("update_info", json.dumps(updater.check(self.s)))
+        except updater.UpdateError as e:
+            log.info("update check: %s", e)
 
     # ------------------------------------------------------------------ automatic backups
     BACKUP_KEEP = 14
@@ -487,6 +498,10 @@ class Worker:
                         e.maybe_backup()
                     except Exception as ex:   # a failed backup must never stop publishing
                         log.warning("backup failed: %s", ex)
+                    try:
+                        e.maybe_check_update()
+                    except Exception as ex:
+                        log.info("update check failed: %s", ex)
                     try:
                         e.discover()
                     except ChallengeError as ex:

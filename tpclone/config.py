@@ -53,6 +53,10 @@ class Settings:
     auto_resume: bool = True
     dry_run: bool = False
     selectors_file: str = ""
+    update_repo: str = "meohocgioi/clonehobby"
+    update_branch: str = "claude/vibrant-tesla-uen2xl"
+    update_token: str = ""              # only for a private repository (GitHub token, read access)
+    update_api_base: str = "https://api.github.com"
     user_agent: str = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"

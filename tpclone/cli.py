@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import re
 import signal
 import sys
@@ -13,6 +14,7 @@ from pathlib import Path
 
 import httpx
 
+import tpclone
 from . import reconcile, render
 from .config import Settings, load_settings
 from .db import DB
@@ -39,6 +41,16 @@ def _post_id(arg: str) -> int:
     return int(m.group(1))
 
 
+def restart_process(worker: Worker) -> None:
+    """Apply an update: let the in-flight post finish, then start again (same command, new code)."""
+    worker.halt()          # keeps the saved Start/Stop state, so AUTO_RESUME continues exactly as before
+    logging.info("restarting to apply the update")
+    if sys.platform == "win32" or getattr(sys, "frozen", False):
+        os._exit(0)        # the Start-Windows.bat loop starts it again
+    argv = [a for a in sys.orig_argv[1:] if a != "--open"]     # don't open a second browser tab
+    os.execv(sys.executable, [sys.executable] + argv)
+
+
 def cmd_run(s: Settings, a) -> None:
     engine, db = build(s, need_tg=False)      # starts even before Telegram is configured (Settings page)
     if engine.tg:
@@ -48,7 +60,7 @@ def cmd_run(s: Settings, a) -> None:
         except (TelegramError, httpx.HTTPError) as e:
             raise SystemExit(f"Telegram check failed: {e}")
     worker = Worker(engine)
-    server = make_server(engine, worker)
+    server = make_server(engine, worker, restart=lambda: restart_process(worker))
     stopping = threading.Event()
 
     def shutdown(*_):
@@ -72,6 +84,7 @@ def cmd_run(s: Settings, a) -> None:
                      s.web_token, s.web_port, s.web_token)
     if a.open:
         threading.Timer(1.0, lambda: webbrowser.open(url + (f"?token={s.web_token}" if s.web_token else ""))).start()
+    tpclone.mark_boot_ok()      # this (possibly just updated) version started fine -> no rollback
     server.serve_forever()
     server.server_close()
 
