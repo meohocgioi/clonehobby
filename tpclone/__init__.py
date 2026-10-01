@@ -11,15 +11,37 @@ from pathlib import Path
 __path__ = list(__path__)   # noqa: F821  (package search path; we may prepend the update folder)
 
 
+def app_dir() -> Path:
+    return Path(sys.executable).parent if getattr(sys, "frozen", False) else Path.cwd()
+
+
+def default_data_dir() -> Path:
+    """Where the posted-list, settings and backups live.
+
+    * DB_PATH (Docker/VPS) wins.
+    * An existing <app folder>/data/tpclone.db keeps being used (older installs).
+    * Otherwise a per-user folder that does NOT depend on where the app was unzipped, so re-downloading, moving or
+      updating the app can never lose the posted-list.
+    """
+    db = os.environ.get("DB_PATH")
+    if db:
+        return Path(db).parent
+    legacy = app_dir() / "data"
+    if (legacy / "tpclone.db").is_file():
+        return legacy
+    home = Path.home()
+    if sys.platform == "win32":
+        return Path(os.environ.get("APPDATA") or home / "AppData" / "Roaming") / "TpClone"
+    if sys.platform == "darwin":
+        return home / "Library" / "Application Support" / "TpClone"
+    return Path(os.environ.get("XDG_DATA_HOME") or home / ".local" / "share") / "tpclone"
+
+
 def overlay_root() -> Path:
     env = os.environ.get("TPCLONE_CODE_DIR")
     if env:
         return Path(env)
-    db = os.environ.get("DB_PATH")
-    if db:
-        return Path(db).parent / "code"
-    base = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path.cwd()
-    return base / "data" / "code"
+    return default_data_dir() / "code"
 
 
 def _rollback(root: Path) -> None:

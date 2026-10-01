@@ -70,6 +70,38 @@ class DB:
                 out.close()
         Path(tmp).replace(dest)
 
+    def merge_posted_from(self, path: str) -> dict:
+        """Import the 'already posted' knowledge from another ledger file (old backup / old folder).
+        Only ever ADDS: nothing already known here is deleted or downgraded."""
+        src = sqlite3.connect(path)
+        src.row_factory = sqlite3.Row
+        try:
+            if not src.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='posts'").fetchone():
+                raise ValueError("this file is not a tpclone backup (no posts table)")
+            rows = src.execute("SELECT * FROM posts WHERE status='posted'").fetchall()
+        finally:
+            pass
+        added = updated = 0
+        with self.lock:
+            for r in rows:
+                cur = self.conn.execute("SELECT status FROM posts WHERE post_id=?", (r["post_id"],)).fetchone()
+                if cur is None:
+                    self.conn.execute(
+                        "INSERT INTO posts(post_id,url,title,post_date,lastmod,status,priority,source,tg_message_id,"
+                        "attempts,discovered_at,posted_at) VALUES(?,?,?,?,?,'posted',?,?,?,0,?,?)",
+                        (r["post_id"], r["url"], r["title"], r["post_date"], r["lastmod"], r["priority"], "restored",
+                         r["tg_message_id"], r["discovered_at"], r["posted_at"]))
+                    added += 1
+                elif cur["status"] != "posted":
+                    self.conn.execute("UPDATE posts SET status='posted', tg_message_id=?, posted_at=?, "
+                                      "title=COALESCE(title,?), post_date=COALESCE(post_date,?), last_error=NULL "
+                                      "WHERE post_id=?", (r["tg_message_id"], r["posted_at"], r["title"],
+                                                          r["post_date"], r["post_id"]))
+                    updated += 1
+            self.conn.commit()
+        src.close()
+        return {"in_file": len(rows), "added": added, "updated": updated}
+
     # ---- helpers -------------------------------------------------------
     def _x(self, sql: str, args: Iterable[Any] = ()) -> sqlite3.Cursor:
         with self.lock:

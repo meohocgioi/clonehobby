@@ -75,6 +75,9 @@
     <p class="mut" style="margin:4px 0 0">Not sure which looks best? <button id="samples" type="button">Send style samples to my channel</button> then pick the one that works on your phone. “Plain toggle” is the safest.</p>
     <div id="samples-out" class="mut"></div>
     <details class="adv"><summary>Advanced</summary>
+      <label>Update source: repository</label><input type="text" id="s_urepo" placeholder="owner/name">
+      <label>Update source: branch</label><input type="text" id="s_ubranch">
+      <label>Update access token (only needed if the repository is private)</label><input type="password" id="s_utoken" autocomplete="off" placeholder="github_pat_...">
       <label>Check the website every (seconds)</label><input type="number" id="s_poll" min="60">
       <label>On the very first start, also publish the latest N posts (0 = none, only future posts)</label><input type="number" id="s_init" min="0">
       <label>Hashtags</label><select id="s_hash"><option value="plain">Same text as on the website</option><option value="hashtag">Clickable #Hashtags</option></select>
@@ -119,6 +122,12 @@
     <p class="mut">Updating downloads the newest version, tests it, restarts the app by itself (a post in progress finishes first) and reloads this page. Your settings and posted-list are never touched. If the new version fails to start, the old one comes back automatically.</p>
   </div>
 
+  <div class="card">
+    <h2>Import an old posted-list</h2>
+    <p class="mut">Moved or re-downloaded the app and it forgot what it already posted? Choose your old <code>tpclone.db</code> (or a file from the old <code>backups</code> folder, or a downloaded backup). Posts it knew as posted are added here, so they won't be posted twice. Nothing is deleted.</p>
+    <div class="row"><input type="file" id="imp_file" accept=".db"><button id="imp_go">Import</button><span class="mut" id="imp_out"></span></div>
+  </div>
+
   <div class="card"><h2>Activity</h2><div class="log" id="log"></div></div>
 </main>
 <script>
@@ -136,7 +145,9 @@ async function refresh(){
   for(const [n,l] of [['posted','Published'],['pending','Queued'],['uncertain','Uncertain'],['failed','Failed'],['skipped','Seen (not posted)'],['total','Tracked']]){
     const sp=document.createElement('span'); sp.textContent=l+': '+(k[n]||0); $('stats').appendChild(sp);}
   $('next').textContent=(s.pending&&s.state==='running')?('next post in ~'+s.next_post_in+'s (delay '+s.delay+'s)'):(s.pending&&s.state!=='running'?'queue waits for Start':'');
-  $('bk').innerHTML=''; {const t=document.createTextNode(s.last_backup?('Automatic backup of your posted-list: '+fmt(s.last_backup)+' (kept 14 days) · '):'Automatic backup runs daily · '); const a=document.createElement('a'); a.href='/api/backup'; a.textContent='Download a backup'; $('bk').append(t,a)}
+  $('bk').innerHTML=''; {const t=document.createTextNode(s.last_backup?('Automatic backup of your posted-list: '+fmt(s.last_backup)+' (kept 14 days) · '):'Automatic backup runs daily · '); const a=document.createElement('a'); a.href='/api/backup'; a.textContent='Download a backup'; $('bk').append(t,a);
+    const d=document.createElement('div'); d.className='mut'; d.textContent='Your data folder: '+s.data_dir; $('bk').append(d);
+    if(s.probe==='0'){const w=document.createElement('div'); w.className='error'; w.textContent='⚠ Deleted-post detection is OFF (Telegram did not answer reliably). Nothing is re-posted automatically.'; $('bk').append(w)}}
   $('last').textContent=s.last_posted?('Last published: '+(s.last_posted.title||s.last_posted.post_id)+' — '+fmt(s.last_posted.posted_at)):'';
   const lg=$('log'); lg.innerHTML='';
   for(const e of s.events){const d=document.createElement('div'); d.className=e.level; d.textContent=fmt(e.ts)+'  '+e.message; lg.appendChild(d);}
@@ -177,7 +188,7 @@ async function loadSettings(force){
   $('setup-help').hidden=v.configured; $('setup-title').textContent=v.configured?'Settings':'Step 1 — Connect Telegram';
   if(settingsLoaded&&!force) return; settingsLoaded=true;
   $('s_token').value=v.telegram_bot_token; $('s_chat').value=v.telegram_chat_id; $('s_delay').value=v.post_delay_seconds;
-  $('s_poll').value=v.poll_interval_seconds; $('s_init').value=v.initial_post_latest; $('s_hash').value=v.hashtag_style; fillStyles(v);
+  $('s_poll').value=v.poll_interval_seconds; $('s_init').value=v.initial_post_latest; $('s_hash').value=v.hashtag_style; fillStyles(v); $('s_urepo').value=v.update_repo; $('s_ubranch').value=v.update_branch; $('s_utoken').value=v.update_token;
 }
 function fillStyles(v){
   const sel=$('s_style'); if(sel.options.length===0){ for(const [k,d] of Object.entries(v.show_more_styles||{})){const o=document.createElement('option'); o.value=k; o.textContent=d; sel.appendChild(o)} }
@@ -192,7 +203,7 @@ $('samples').onclick=async()=>{
 $('save').onclick=async()=>{
   $('save-out').textContent='Saving…'; $('save-out').className='mut';
   const r=await api('/api/settings',{telegram_bot_token:$('s_token').value,telegram_chat_id:$('s_chat').value,post_delay_seconds:$('s_delay').value,
-    poll_interval_seconds:$('s_poll').value,initial_post_latest:$('s_init').value,hashtag_style:$('s_hash').value,show_more_style:$('s_style').value});
+    poll_interval_seconds:$('s_poll').value,initial_post_latest:$('s_init').value,hashtag_style:$('s_hash').value,show_more_style:$('s_style').value,update_repo:$('s_urepo').value,update_branch:$('s_ubranch').value,update_token:$('s_utoken').value});
   if(r.telegram){$('save-out').className='good';$('save-out').textContent='✅ Connected: bot @'+r.telegram.bot+' can post in “'+r.telegram.chat+'”. Now press ▶ Start at the top.'}
   else if(r.telegram_error){$('save-out').className='error';$('save-out').textContent='❌ '+r.telegram_error}
   else $('save-out').textContent=r.configured?'Saved.':'Saved. Now fill in the bot token and channel.';
@@ -306,6 +317,14 @@ async function doUpdate(){
   $('upd_out').textContent='Taking longer than expected — wait a minute and reload this page.';
 }
 $('upd_go').onclick=doUpdate; $('upd_go2').onclick=doUpdate;
+
+$('imp_go').onclick=async()=>{
+  const f=$('imp_file').files[0]; if(!f){$('imp_out').textContent='choose a file first';return}
+  $('imp_out').textContent='importing…';
+  const r=await fetch('/api/import-backup',{method:'POST',headers:{'X-Requested-With':'tpclone','Content-Type':'application/octet-stream'},body:f}).then(x=>x.json());
+  $('imp_out').className=r.error?'error':'good';
+  $('imp_out').textContent=r.error?('❌ '+r.error):('✅ '+r.in_file+' posted items in the file: '+r.added+' added, '+r.updated+' corrected'); refresh();
+};
 refresh(); loadSettings(); setInterval(refresh,4000); setInterval(loadSettings,8000);
 </script>
 </body>

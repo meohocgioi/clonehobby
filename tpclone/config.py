@@ -90,11 +90,11 @@ class Settings:
 # Fields editable from the dashboard (saved to <data>/settings.json, which wins over .env)
 UI_FIELDS = ("telegram_bot_token", "telegram_chat_id", "post_delay_seconds", "poll_interval_seconds",
              "initial_post_latest", "hashtag_style", "media_mode", "show_more_label", "show_more_style",
-             "max_posts_per_hour", "site_tz")
+             "max_posts_per_hour", "site_tz", "update_repo", "update_branch", "update_token")
 
 
 def app_dir() -> Path:
-    """Folder that holds the data: next to the .exe when packaged, otherwise the current folder."""
+    """Folder the app was started from (next to the .exe when packaged)."""
     return Path(sys.executable).parent if getattr(sys, "frozen", False) else Path.cwd()
 
 
@@ -145,7 +145,8 @@ def load_settings(env_file: str = ".env") -> Settings:
         else:
             setattr(s, f.name, raw)
     if not s.db_path:
-        s.db_path = str(base / "data" / "tpclone.db")
+        import tpclone
+        s.db_path = str(tpclone.default_data_dir() / "tpclone.db")
     path = settings_path(s)
     if path.is_file():                                   # saved from the dashboard
         for k, v in json.loads(path.read_text(encoding="utf8")).items():

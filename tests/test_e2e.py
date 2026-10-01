@@ -48,7 +48,8 @@ class TG(BaseHTTPRequestHandler):
 
     def do_POST(self):
         n = int(self.headers["Content-Length"]); body = self.rfile.read(n)
-        SENT.append({"path": self.path, "ct": self.headers["Content-Type"], "body": body})
+        if self.path.endswith("/sendRichMessage"):      # (other calls, e.g. the existence probe, are not posts)
+            SENT.append({"path": self.path, "ct": self.headers["Content-Type"], "body": body})
         out = json.dumps({"ok": True, "result": {"message_id": len(SENT)}}).encode()
         self.send_response(200); self.send_header("Content-Length", str(len(out))); self.end_headers(); self.wfile.write(out)
 
@@ -162,3 +163,20 @@ def test_style_setting_and_samples(stack):
     assert set(r["results"].values()) == {"sent"} and len(SENT) - n0 == 4
     bodies = b"".join(x["body"] for x in SENT[n0:])
     assert bodies.count(b"Style+sample") + bodies.count(b"Style%20sample") + bodies.count(b"Style sample") >= 4
+
+
+def test_import_backup_endpoint_and_masked_update_token(stack, tmp_path):
+    import sqlite3
+    e, w, db, base = stack
+    old = DB(str(tmp_path / "old.db")); old.upsert_seen(5, "u", None, "known", "x"); old.mark_posted(5, 9); old.conn.close()
+    raw = (tmp_path / "old.db").read_bytes()
+    r = httpx.post(base + "/api/import-backup", content=raw, headers={"X-Requested-With": "tpclone"}).json()
+    assert r == {"in_file": 1, "added": 1, "updated": 0} and db.get(5)["status"] == "posted"
+    bad = httpx.post(base + "/api/import-backup", content=b"not a database at all", headers={"X-Requested-With": "tpclone"})
+    assert bad.status_code == 400 and "not a usable backup" in bad.json()["error"]
+    post(base, "/api/settings", {"update_token": "ghp_SECRET1234"})
+    v = httpx.get(base + "/api/settings").json()
+    assert v["update_token"].endswith("1234") and "SECRET" not in v["update_token"] and e.s.update_token == "ghp_SECRET1234"
+    post(base, "/api/settings", {"update_token": v["update_token"]})                 # masked value keeps the real one
+    assert e.s.update_token == "ghp_SECRET1234"
+    assert httpx.get(base + "/api/status").json()["data_dir"]

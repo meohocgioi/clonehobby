@@ -239,6 +239,7 @@ def test_partial_delete_and_unknown_kept(env):
     e.plan_date("2026-09-30", margin=1)
     for p, m in ((1, 11), (2, 12)):
         db.mark_posted(p, m)
+    db.kv_set("probe_ok", "1")
     tg.deleted.add(11); tg.unknown.add(12)
     res = e.verify_posted()
     assert res == {"checked": 2, "deleted": [1], "unknown": 1}
@@ -289,3 +290,45 @@ def test_automatic_backup_daily_retention_and_restore(env, tmp_path):
     assert len(names) == 3 and names[0] == "tpclone-2020-01-04_0000.db" and new.endswith(names[-1])  # oldest pruned
     restored = DB(new)                                             # a backup is a complete, usable ledger
     assert restored.get(1)["status"] == "posted" and restored.get(1)["tg_message_id"] == 77
+
+
+def test_untrusted_probe_never_causes_duplicates(env):
+    """If the 'deleted?' probe lies (says a message we just posted is gone) nothing may be re-posted silently."""
+    e, f, tg, db = env
+    seed_site(f, {7: "2026-09-30"})
+    tg.deleted_always = True
+    orig = tg.message_exists
+    tg.message_exists = lambda mid: False                 # a broken probe: claims everything is deleted
+    assert e.post_now(7)["status"] == "posted" and len(tg.sent) == 1
+    assert db.kv_get("probe_ok") == "0"                   # calibration right after the send caught it
+    assert e.post_now(7) == {"status": "posted", "already": True} and len(tg.sent) == 1   # no silent duplicate
+    assert e.verify_posted() ["deleted"] == [] and db.get(7)["status"] == "posted"
+    seed_site(f, {8: "2026-09-30"})
+    assert e.plan_date("2026-09-30", margin=2)["deleted_from_channel"] == []
+    tg.message_exists = orig
+
+
+def test_merge_posted_list_from_old_backup(env, tmp_path):
+    from tpclone.db import DB
+    e, f, tg, db = env
+    seed_site(f, {1: "2026-09-30", 2: "2026-09-30"})
+    old = DB(str(tmp_path / "old.db"))
+    old.upsert_seen(1, "u1", None, "known", "x"); old.set_meta(1, "T1", "2026-09-30"); old.mark_posted(1, 55)
+    old.upsert_seen(99, "u99", None, "known", "x"); old.mark_posted(99, 56)
+    old.upsert_seen(2, "u2", None, "pending", "x")                       # not posted there: must NOT be imported
+    old.conn.commit()
+    e.plan_date("2026-09-30", margin=1)
+    assert db.get(1)["status"] == "known"
+    res = db.merge_posted_from(str(tmp_path / "old.db"))
+    assert res == {"in_file": 2, "added": 1, "updated": 1}
+    assert db.get(1)["status"] == "posted" and db.get(1)["tg_message_id"] == 55 and db.get(99)["status"] == "posted"
+    assert db.get(2)["status"] == "known"
+    assert db.merge_posted_from(str(tmp_path / "old.db")) == {"in_file": 2, "added": 0, "updated": 0}   # idempotent
+    plan = e.plan_date("2026-09-30", margin=1)
+    assert plan["published"] == [1] and plan["to_publish"] == [2]
+
+
+def test_plan_warns_when_nothing_ever_posted(env):
+    e, f, tg, db = env
+    seed_site(f, {1: "2026-09-30"})
+    assert "no record of having posted anything" in e.plan_date("2026-09-30", margin=1)["message"]

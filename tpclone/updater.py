@@ -30,25 +30,68 @@ class UpdateError(Exception):
     pass
 
 
-def _download(s: Settings) -> bytes:
-    url = f"{s.update_api_base.rstrip('/')}/repos/{s.update_repo}/zipball/{s.update_branch}"
-    headers = {"Accept": "application/vnd.github+json", "User-Agent": "tpclone-updater"}
+def _headers(s: Settings) -> dict:
+    h = {"Accept": "application/vnd.github+json", "User-Agent": "tpclone-updater"}
     if s.update_token:
-        headers["Authorization"] = f"Bearer {s.update_token}"
+        h["Authorization"] = f"Bearer {s.update_token}"
+    return h
+
+
+def _fetch_zip(s: Settings, branch: str) -> bytes | int:
+    """Zip bytes, or the HTTP status code when GitHub says no."""
+    url = f"{s.update_api_base.rstrip('/')}/repos/{s.update_repo}/zipball/{branch}"
+    with httpx.stream("GET", url, headers=_headers(s), follow_redirects=True, timeout=60) as r:
+        if r.status_code != 200:
+            return r.status_code
+        buf = io.BytesIO()
+        for chunk in r.iter_bytes():
+            buf.write(chunk)
+            if buf.tell() > MAX_ZIP:
+                raise UpdateError("update file is unexpectedly large - refusing")
+        return buf.getvalue()
+
+
+def _explain_missing(s: Settings) -> UpdateError:
+    """GitHub answered 404/401/403: work out WHY so the message tells the user what to do."""
     try:
-        with httpx.stream("GET", url, headers=headers, follow_redirects=True, timeout=60) as r:
-            if r.status_code == 404:
-                raise UpdateError("Update source not found. If the repository is private, set UPDATE_TOKEN "
-                                  "(a GitHub token with read access).")
-            if r.status_code in (401, 403):
-                raise UpdateError(f"GitHub refused the download (HTTP {r.status_code}); try again later or set UPDATE_TOKEN.")
-            r.raise_for_status()
-            buf = io.BytesIO()
-            for chunk in r.iter_bytes():
-                buf.write(chunk)
-                if buf.tell() > MAX_ZIP:
-                    raise UpdateError("update file is unexpectedly large - refusing")
-            return buf.getvalue()
+        r = httpx.get(f"{s.update_api_base.rstrip('/')}/repos/{s.update_repo}", headers=_headers(s), timeout=30,
+                      follow_redirects=True)
+    except httpx.HTTPError as e:
+        return UpdateError(f"cannot reach GitHub: {e}")
+    if r.status_code == 401:
+        return UpdateError("GitHub rejected the update access token. Create a new one (GitHub → Settings → Developer "
+                           "settings → Personal access tokens, read access to the repository) and paste it in "
+                           "Settings → Advanced → Update access token.")
+    if r.status_code in (403, 429):
+        return UpdateError("GitHub is limiting requests right now; try again in a few minutes.")
+    if r.status_code == 404:
+        hint = ("The token you entered has no access to it. " if s.update_token else "")
+        return UpdateError(f"GitHub can't see the repository “{s.update_repo}”. {hint}It is most likely PRIVATE. Fix it "
+                           "either by making the repository public (GitHub → the repository → Settings → scroll to "
+                           "“Danger Zone” → Change visibility → Public) or by pasting a GitHub access token in "
+                           "Settings → Advanced → Update access token.")
+    return UpdateError(f"GitHub answered HTTP {r.status_code} for the repository.")
+
+
+def _download(s: Settings) -> tuple[bytes, str]:
+    """-> (zip bytes, branch actually used). Falls back to the repository's default branch if yours is gone."""
+    try:
+        got = _fetch_zip(s, s.update_branch)
+        if isinstance(got, bytes):
+            return got, s.update_branch
+        err = _explain_missing(s)
+        if "most likely PRIVATE" in str(err) or "token" in str(err) or "limiting" in str(err) or "cannot reach" in str(err):
+            raise err
+        # repository is reachable, so the BRANCH is the problem: use the default branch
+        r = httpx.get(f"{s.update_api_base.rstrip('/')}/repos/{s.update_repo}", headers=_headers(s), timeout=30)
+        default = r.json().get("default_branch") if r.status_code == 200 else None
+        if default and default != s.update_branch:
+            got = _fetch_zip(s, default)
+            if isinstance(got, bytes):
+                return got, default
+        raise UpdateError(f"The update branch “{s.update_branch}” was not found"
+                          + (f" (the repository's main branch is “{default}”)" if default else "")
+                          + ". Set the right name in Settings → Advanced → Update branch.")
     except httpx.HTTPError as e:
         raise UpdateError(f"cannot reach GitHub: {e}") from e
 
@@ -103,14 +146,14 @@ def check(s: Settings) -> dict:
     """-> {available, remote, local, changed:[files]} ; raises UpdateError."""
     if getattr(sys, "frozen", False):
         raise UpdateError("This packaged app can't update itself: download the new version from the Releases page.")
-    data = _download(s)
+    data, branch = _download(s)
     with zipfile.ZipFile(io.BytesIO(data)) as z:
         top, members = _members(z)
         remote = _remote_files(z, top, members)
     local = _local_files()
     changed = sorted(n for n in set(remote) | set(local) if remote.get(n) != local.get(n))
     return {"available": bool(changed) and _hash_tree(remote) != _hash_tree(local), "remote": _version_from_top(top),
-            "local": tpclone.code_version(), "changed": changed, "checked_at": time.time()}
+            "local": tpclone.code_version(), "changed": changed, "checked_at": time.time(), "branch": branch}
 
 
 def apply(s: Settings, progress=lambda m: None) -> dict:
@@ -118,7 +161,7 @@ def apply(s: Settings, progress=lambda m: None) -> dict:
     if getattr(sys, "frozen", False):
         raise UpdateError("This packaged app can't update itself: download the new version from the Releases page.")
     progress("downloading the new version")
-    data = _download(s)
+    data, _branch = _download(s)
     root = tpclone.overlay_root()
     staging = root / "staging"
     shutil.rmtree(staging, ignore_errors=True)

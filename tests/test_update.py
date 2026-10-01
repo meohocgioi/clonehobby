@@ -147,3 +147,50 @@ def test_update_that_crashes_on_start_rolls_back(stack):
     assert st["version"] == "original download" and "data/code/current" not in st["code_dir"]
     assert (tmp / "data" / "code" / "broken").exists()
     assert p2.poll() is None
+
+
+class Diag(BaseHTTPRequestHandler):
+    """Mock GitHub that can play: private repo / missing branch / token required."""
+    mode = "private"
+    seen_auth: list = []
+
+    def log_message(self, *a): pass
+
+    def _send(self, code, body=b"{}"):
+        self.send_response(code); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+
+    def do_GET(self):
+        Diag.seen_auth.append(self.headers.get("Authorization"))
+        if Diag.mode == "private":
+            return self._send(404)
+        if Diag.mode == "token_needed" and self.headers.get("Authorization") != "Bearer sekret":
+            return self._send(404)
+        if self.path.endswith("/zipball/main") and Diag.mode == "branch_gone":
+            return self._send(404)
+        if self.path.endswith("/repos/o/r"):
+            return self._send(200, b'{"default_branch": "dev"}')
+        return self._send(200, ZIP["data"])
+
+
+def test_update_explains_private_repo_and_uses_token_and_default_branch(tmp_path):
+    from tpclone import updater
+    from tpclone.config import Settings
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), Diag)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    s = Settings(update_api_base=f"http://127.0.0.1:{srv.server_port}", update_repo="o/r", update_branch="main")
+    ZIP["data"] = make_zip("aaaaaaa")
+    try:
+        Diag.mode = "private"
+        with pytest.raises(updater.UpdateError) as e:
+            updater.check(s)
+        assert "PRIVATE" in str(e.value) and "Update access token" in str(e.value)
+        Diag.mode = "token_needed"
+        with pytest.raises(updater.UpdateError):
+            updater.check(s)
+        s.update_token = "sekret"
+        assert updater.check(s)["remote"] == "aaaaaaa"                    # the token is sent as a Bearer header
+        Diag.mode = "branch_gone"; s.update_token = ""
+        r = updater.check(s)                                              # repo reachable, branch gone -> default branch
+        assert r["branch"] == "dev"
+    finally:
+        srv.shutdown()

@@ -238,6 +238,7 @@ class Engine:
             return "known"
         self.db.mark_posted(pid, mid)
         self.pacer.mark_sent()
+        self._calibrate_probe(mid)
         row = self.db.get(pid) or {}
         self.db.log("info", f"posted {pid}: {row.get('title') or ''}")
         return "posted"
@@ -274,12 +275,36 @@ class Engine:
         return str(dest)
 
     # ------------------------------------------------------------------ channel verification / manual post
+    def _calibrate_probe(self, mid) -> None:
+        """Right after a send we KNOW the message exists: use it to prove that the 'was it deleted?' probe is honest.
+        If the probe claims a just-posted message is gone, deletion detection is switched off (no silent reposts)."""
+        if not mid or self.tg is None:
+            return
+        try:
+            res = self.tg.message_exists(mid)
+        except Exception:   # noqa: BLE001  (never let calibration disturb posting)
+            return
+        if res is True:
+            if self.db.kv_get("probe_ok") != "1":
+                self.db.kv_set("probe_ok", "1")
+        elif res is False:
+            self.db.kv_set("probe_ok", "0")
+            self.db.log("warn", "deleted-post detection switched OFF: Telegram answered 'not found' for a message that "
+                                "was just posted, so it can't be trusted. Nothing will be re-posted automatically.")
+
+    def probe_trusted(self) -> bool:
+        return self.db.kv_get("probe_ok") == "1"
+
     def verify_posted(self, ids=None, progress: Callable[[str], None] | None = None, limit: int = 300) -> dict:
         """Check that posts we think are published still exist in the channel; deleted ones become publishable again."""
         say = progress or (lambda m: None)
         rows = self.db.posted_with_message(ids, limit)
         res = {"checked": 0, "deleted": [], "unknown": 0}
         if self.tg is None or not rows:
+            return res
+        if not self.probe_trusted():       # not proven yet (needs one successful post) -> never mark anything deleted
+            res["unknown"] = len(rows)
+            res["note"] = "deleted-post detection becomes active after the next successful post"
             return res
         for k, r in enumerate(rows):
             ok = self.tg.message_exists(r["tg_message_id"])
@@ -309,7 +334,7 @@ class Engine:
             return {"status": "sending", "error": "this post is being sent right now"}
         if row["status"] == "posted" and not force:
             ok = self.tg.message_exists(row["tg_message_id"]) if row.get("tg_message_id") else None
-            if ok is False:
+            if ok is False and self.probe_trusted():
                 self.db.mark_deleted(post_id)
             else:
                 return {"status": "posted", "already": True}
@@ -408,6 +433,10 @@ class Engine:
                    f"Publish the remaining {len(unpublished)}?")
         else:
             state, msg = "none", f"Found {total} post(s) from {date}, none published yet. Publish them all?"
+        if not self.db.count("posted") and state in ("none", "partial"):
+            msg += (" ⚠ This app has no record of having posted anything yet. If your channel ALREADY contains posts of "
+                    "this date (for example you moved or re-downloaded the app), first import your old posted-list "
+                    "(Backup card → Import) to avoid duplicates.")
         if gone:
             msg += f" ({len(gone)} post(s) of this date were deleted from the channel and can be published again.)"
         if uncertain:

@@ -57,9 +57,11 @@ To update later: `cd clonehobby && git pull && docker compose up -d --build`
 Use **Preview a post**: if the title, photos, date or text show as missing (⚠), tell me which post number and what's missing, and I'll adjust it.
 
 ## Your data is backed up automatically
-Once a day the app saves a copy of its "what was posted" list in the `data/backups` folder (the last 14 are kept) – you don't
-have to do anything. If you move to a new computer/server, click **Download a backup** on the dashboard first (or copy the
-whole `data` folder) and put it in the same place on the new machine. If you ever lose it completely, the app can still
+Once a day the app saves a copy of its "what was posted" list in the `backups` folder inside your data folder (the last 14
+are kept) – you don't have to do anything. The dashboard shows where your data folder is. New installs keep it in your
+user folder (not next to the app), so **re-downloading or moving the app no longer loses it**.
+If the app ever "forgets" what it posted (e.g. you started it from a new folder of an older version), use the
+**Import an old posted-list** card on the dashboard and pick your old `tpclone.db` – posts it knew are added, nothing is deleted. If you ever lose it completely, the app can still
 rebuild it from a Telegram "Export chat history" file of your channel (`python -m tpclone import-history result.json`).
 
 ## Updating the app (one click)
@@ -68,6 +70,9 @@ The app downloads the new version, tests it, restarts itself (a post in progress
 on its own. Your settings and posted-list are never touched, and if a new version ever fails to start the old one comes
 back automatically. The app also checks twice a day by itself and shows a **"🔔 A new version is available"** bar.
 
+* **Private repository?** GitHub then refuses the download ("Update source not found"). Fix it once: either make the
+  repository public (GitHub → repository → Settings → Danger Zone → Change visibility), or create a GitHub access token
+  with read access and paste it in Settings → Advanced → *Update access token*.
 * The very first time (to get the Update button) you still need the manual update once: re-download the ZIP / run
   `git pull && docker compose up -d --build`. After that, only the button.
 * It works the same on your computer and on the VPS/Docker (updates are stored in the `data` folder).

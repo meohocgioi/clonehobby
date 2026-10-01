@@ -60,13 +60,15 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
             "uncertain": db.by_status("uncertain", 50), "failed": db.by_status("failed", 50),
             "chat": s.telegram_chat_id, "configured": s.telegram_ready,
             "last_backup": float(db.kv_get("last_backup_ts", "0") or 0) or None,
-            "version": tpclone.code_version(), "code_dir": tpclone.__path__[0], "update": db.kv_json("update_info"),
+            "data_dir": str(s.data_dir.resolve()), "probe": db.kv_get("probe_ok"), "version": tpclone.code_version(), "code_dir": tpclone.__path__[0], "update": db.kv_json("update_info"),
         }
 
     def settings_view() -> dict:
         out = {k: getattr(s, k) for k in UI_FIELDS}
         t = s.telegram_bot_token
         out["telegram_bot_token"] = ("••••••" + t[-4:]) if t else ""
+        u = s.update_token
+        out["update_token"] = ("••••••" + u[-4:]) if u else ""
         out["configured"] = s.telegram_ready
         out["show_more_styles"] = render.SHOW_MORE_STYLES
         return out
@@ -77,8 +79,10 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
             if k not in body:
                 continue
             v = body[k]
-            if k == "telegram_bot_token" and (not str(v).strip() or str(v).startswith("•")):
+            if k in ("telegram_bot_token", "update_token") and str(v).startswith("•"):
                 continue                                   # unchanged (masked) token
+            if k == "telegram_bot_token" and not str(v).strip():
+                continue
             changes[k] = _coerce(getattr(s, k), v)
         if "post_delay_seconds" in changes and changes["post_delay_seconds"] < s.MIN_DELAY:
             changes["post_delay_seconds"] = s.MIN_DELAY
@@ -139,6 +143,22 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
             n = int(self.headers.get("Content-Length") or 0)
             return json.loads(self.rfile.read(n) or b"{}") if n else {}
 
+        def _import_backup(self):
+            import sqlite3
+            import tempfile
+            n = int(self.headers.get("Content-Length") or 0)
+            if not 0 < n <= 300 * 1024 * 1024:
+                return self._json({"error": "file is empty or too large"}, 400)
+            with tempfile.TemporaryDirectory() as td:
+                f = Path(td) / "upload.db"
+                f.write_bytes(self.rfile.read(n))
+                try:
+                    res = engine.db.merge_posted_from(str(f))
+                except (sqlite3.DatabaseError, ValueError) as e:
+                    return self._json({"error": f"that is not a usable backup file: {e}"}, 400)
+            engine.db.log("info", f"imported posted-list from a backup file: {res['added']} added, {res['updated']} corrected")
+            self._json(res)
+
         def do_GET(self):
             if not self._auth():
                 return self._json({"error": "unauthorized"}, 401)
@@ -170,7 +190,10 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
                 return self._json({"error": "unauthorized"}, 401)
             if self.headers.get("X-Requested-With") != "tpclone":   # CSRF guard for the cookie-auth case
                 return self._json({"error": "missing X-Requested-With"}, 400)
-            path, body = urlparse(self.path).path, self._body()
+            path = urlparse(self.path).path
+            if path == "/api/import-backup":          # raw file upload (an old tpclone .db backup)
+                return self._import_backup()
+            body = self._body()
             try:
                 if path == "/api/settings":
                     return self._json(save_settings(body))
