@@ -54,6 +54,28 @@ def plan_media(art: Article, max_media: int = 50) -> MediaPlan:
     return MediaPlan(cover, gallery[:keep], gallery[keep:])
 
 
+SHOW_MORE_STYLES = {
+    "classic": "Plain toggle text (safest)",
+    "bold": "▼ bold, with arrows",
+    "pill": "Blue pill button (like the Refresh button)",
+    "pill_centered": "Blue pill button, centered",
+}
+
+
+def summary_html(label: str, style: str) -> str:
+    """The clickable toggle of the collapsed post. Anything but 'classic' relies on Telegram rendering a button
+    inside <summary>; use the 'Send style samples' button in the dashboard to see them in your own Telegram."""
+    t = escape(label, quote=False)
+    if style == "bold":
+        return f"<summary><b>▼ {t} ▼</b></summary>"
+    if style == "pill":
+        return f'<summary><tg-button type="disabled" style="primary">{t}</tg-button></summary>'
+    if style == "pill_centered":
+        return (f'<summary><tg-button-row align="center"><tg-button type="disabled" style="primary">{t}'
+                f'</tg-button></tg-button-row></summary>')
+    return f"<summary>{t}</summary>"
+
+
 def tags_line(tags: list[str], hashtag_style: str) -> str:
     if hashtag_style in ("hashtag", "true", "1"):
         return "  ".join("#" + re.sub(r"\W+", "_", t, flags=re.U).strip("_") for t in tags)
@@ -106,10 +128,10 @@ def build_html(art: Article, settings: Settings, plan: MediaPlan, src: Callable[
         label = escape(art.credit_label, quote=False)
         inner.append(f"<p><i>{label}: {', '.join(parts)}</i></p>")
 
-    label = escape(settings.show_more_label, quote=False)
     if not inner:   # nothing to expand
         return "".join(head)
-    return "".join(head) + f"<details><summary>{label}</summary>{''.join(inner)}</details>"
+    summary = summary_html(settings.show_more_label, settings.show_more_style)
+    return "".join(head) + f"<details>{summary}{''.join(inner)}</details>"
 
 
 def count_media(html: str) -> int:

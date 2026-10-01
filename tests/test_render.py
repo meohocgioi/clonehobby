@@ -85,3 +85,18 @@ def test_empty_details_omitted():
     a = make_article(n_images=0)
     a.scheduled, a.tags, a.paragraphs, a.credits = None, [], [], []
     assert "<details>" not in render.build_html(a, S, render.plan_media(a), ident)
+
+
+def test_show_more_styles():
+    a = make_article()
+    for style in render.SHOW_MORE_STYLES:
+        h = render.build_html(a, Settings(show_more_style=style), render.plan_media(a), ident)
+        assert "<details><summary>" in h and "</summary>" in h and h.count("<summary>") == 1
+        assert "Show More" in h
+    h = render.build_html(a, Settings(show_more_style="pill_centered"), render.plan_media(a), ident)
+    assert '<tg-button-row align="center"><tg-button type="disabled" style="primary">Show More</tg-button></tg-button-row>' in h
+    h = render.build_html(a, Settings(show_more_style="pill"), render.plan_media(a), ident)
+    assert '<summary><tg-button type="disabled" style="primary">Show More</tg-button></summary>' in h
+    assert "<summary><b>▼ Show More ▼</b></summary>" in render.build_html(a, Settings(show_more_style="bold"), render.plan_media(a), ident)
+    assert "<summary>Show More</summary>" in render.build_html(a, Settings(), render.plan_media(a), ident)   # default stays safe
+    assert "<summary>A &amp; B</summary>" in render.build_html(a, Settings(show_more_label="A & B"), render.plan_media(a), ident)

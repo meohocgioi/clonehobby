@@ -68,6 +68,7 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
         t = s.telegram_bot_token
         out["telegram_bot_token"] = ("••••••" + t[-4:]) if t else ""
         out["configured"] = s.telegram_ready
+        out["show_more_styles"] = render.SHOW_MORE_STYLES
         return out
 
     def save_settings(body: dict) -> dict:
@@ -102,7 +103,7 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
         plan = render.plan_media(art, s.max_media)
         html = render.build_html(art, s, plan, lambda k: k)
         d = art.to_dict()
-        d.update(tags_line=render.tags_line(art.tags, s.hashtag_style), hashtag=s.hashtag_style in ('hashtag', 'true', '1'),
+        d.update(tags_line=render.tags_line(art.tags, s.hashtag_style), hashtag=s.hashtag_style in ('hashtag', 'true', '1'), show_more_style=s.show_more_style,
                  slots_used=plan.slots_used, overflow=len(plan.overflow), html=html, max_media=s.max_media)
         return d
 
@@ -176,6 +177,21 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
                 if path == "/api/preview":
                     jid = jobs.run(lambda prog: preview(str(body.get("target", "")), prog))
                     return self._json({"job": jid})
+                if path == "/api/send-style-samples":
+                    if not engine.tg:
+                        return self._json({"error": "Set the bot token and channel first (Settings)."}, 400)
+                    results = {}
+                    for key, desc in render.SHOW_MORE_STYLES.items():
+                        html = (f"<h6>Style sample: {key}</h6>"
+                                f"<details>{render.summary_html(s.show_more_label, key)}"
+                                f"<p><i>This is the expanded text. If you read this, the style “{key}” works.</i></p></details>")
+                        try:
+                            engine.tg.send_rich(html)
+                            results[key] = "sent"
+                        except Exception as e:  # noqa: BLE001
+                            results[key] = f"Telegram refused it: {e}"
+                        time.sleep(min(3, s.effective_delay))
+                    return self._json({"results": results})
                 if path == "/api/send-test":
                     if not engine.tg:
                         return self._json({"error": "Set the bot token and channel first (Settings)."}, 400)

@@ -72,3 +72,8 @@ back automatically. The app also checks twice a day by itself and shows a **"�
   `git pull && docker compose up -d --build`. After that, only the button.
 * It works the same on your computer and on the VPS/Docker (updates are stored in the `data` folder).
 * Needs the launcher window (or Docker/systemd) to be how you started the app, so it can start again by itself.
+
+## Changing the look of the "Show More" button
+Settings → **"Show More" button style** → press **Send style samples to my channel**: it posts 4 small sample posts (plain,
+bold, blue pill, blue centered pill). Open your channel on your phone, see which ones look right *and expand when tapped*,
+then choose that style and **Save**. (Plain toggle is the default because it is guaranteed to work.)

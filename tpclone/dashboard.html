@@ -70,6 +70,10 @@
     <label>Bot token</label><input type="password" id="s_token" autocomplete="off" placeholder="123456:ABC-DEF...">
     <label>Channel</label><input type="text" id="s_chat" placeholder="@mychannel">
     <label>Wait between posts (seconds)</label><input type="number" id="s_delay" min="3" step="1">
+    <label>"Show More" button style</label>
+    <select id="s_style"></select>
+    <p class="mut" style="margin:4px 0 0">Not sure which looks best? <button id="samples" type="button">Send style samples to my channel</button> then pick the one that works on your phone. “Plain toggle” is the safest.</p>
+    <div id="samples-out" class="mut"></div>
     <details class="adv"><summary>Advanced</summary>
       <label>Check the website every (seconds)</label><input type="number" id="s_poll" min="60">
       <label>On the very first start, also publish the latest N posts (0 = none, only future posts)</label><input type="number" id="s_init" min="0">
@@ -173,12 +177,22 @@ async function loadSettings(force){
   $('setup-help').hidden=v.configured; $('setup-title').textContent=v.configured?'Settings':'Step 1 — Connect Telegram';
   if(settingsLoaded&&!force) return; settingsLoaded=true;
   $('s_token').value=v.telegram_bot_token; $('s_chat').value=v.telegram_chat_id; $('s_delay').value=v.post_delay_seconds;
-  $('s_poll').value=v.poll_interval_seconds; $('s_init').value=v.initial_post_latest; $('s_hash').value=v.hashtag_style;
+  $('s_poll').value=v.poll_interval_seconds; $('s_init').value=v.initial_post_latest; $('s_hash').value=v.hashtag_style; fillStyles(v);
 }
+function fillStyles(v){
+  const sel=$('s_style'); if(sel.options.length===0){ for(const [k,d] of Object.entries(v.show_more_styles||{})){const o=document.createElement('option'); o.value=k; o.textContent=d; sel.appendChild(o)} }
+  sel.value=v.show_more_style;
+}
+$('samples').onclick=async()=>{
+  $('samples').disabled=true; $('samples-out').textContent='Sending 4 sample posts (takes ~15 seconds)…';
+  const r=await api('/api/send-style-samples',{}); $('samples').disabled=false;
+  if(r.error){$('samples-out').textContent='❌ '+r.error;return}
+  $('samples-out').innerHTML=''; for(const [k,v] of Object.entries(r.results)){const d=document.createElement('div'); d.textContent=(v==='sent'?'✅ ':'❌ ')+k+(v==='sent'?' – open your channel and tap it':(' – '+v)); $('samples-out').appendChild(d)}
+};
 $('save').onclick=async()=>{
   $('save-out').textContent='Saving…'; $('save-out').className='mut';
   const r=await api('/api/settings',{telegram_bot_token:$('s_token').value,telegram_chat_id:$('s_chat').value,post_delay_seconds:$('s_delay').value,
-    poll_interval_seconds:$('s_poll').value,initial_post_latest:$('s_init').value,hashtag_style:$('s_hash').value});
+    poll_interval_seconds:$('s_poll').value,initial_post_latest:$('s_init').value,hashtag_style:$('s_hash').value,show_more_style:$('s_style').value});
   if(r.telegram){$('save-out').className='good';$('save-out').textContent='✅ Connected: bot @'+r.telegram.bot+' can post in “'+r.telegram.chat+'”. Now press ▶ Start at the top.'}
   else if(r.telegram_error){$('save-out').className='error';$('save-out').textContent='❌ '+r.telegram_error}
   else $('save-out').textContent=r.configured?'Saved.':'Saved. Now fill in the bot token and channel.';
@@ -201,7 +215,9 @@ function showPreview(a){
   const el=(t,txt,cls)=>{const e=document.createElement(t); if(txt!==undefined)e.textContent=txt; if(cls)e.className=cls; b.appendChild(e); return e};
   el('h6',a.title||'(no title found!)');
   if(a.cover){const i=el('img'); i.src=a.cover; i.referrerPolicy='no-referrer'} else el('div','(no cover photo found)','mut');
-  el('div','▾ Show More','more');
+  {const m=el('div',a.show_more_style==='bold'?'▼ Show More ▼':'▾ Show More','more'); const st=a.show_more_style||'classic';
+   if(st==='pill'||st==='pill_centered'){m.textContent='Show More'; m.style.cssText='display:inline-block;background:#3a9ee0;color:#fff;border-radius:99px;padding:5px 18px;margin:8px 0'; if(st==='pill_centered'){const w=el('div'); w.style.textAlign='center'; b.removeChild(m); w.appendChild(m)}}
+   if(st==='bold') m.style.color='inherit'}
   const inner=el('div',undefined,'inner');
   const add=(t,txt,st)=>{const e=document.createElement(t); e.textContent=txt; if(st)e.style.fontStyle=st; inner.appendChild(e)};
   if(a.scheduled) add('p',a.scheduled,'italic');
@@ -212,7 +228,7 @@ function showPreview(a){
   const g=document.createElement('div'); g.className='imgs'; for(const u of a.images.slice(0,12)){const i=document.createElement('img'); i.src=u; i.referrerPolicy='no-referrer'; g.appendChild(i)} inner.appendChild(g);
   if(a.credits.length) add('p',a.credit_label+': '+a.credits.map(c=>c[0]).join(', '),'italic');
   const warn=[]; if(!a.title) warn.push('no title'); if(!a.cover) warn.push('no cover photo'); if(!a.post_date) warn.push('no date'); if(!a.paragraphs.length) warn.push('no text'); if(!a.images.length) warn.push('no photos');
-  $('pv_info').textContent='Date: '+(a.post_date||'?')+' · '+a.images.length+' photos · photo slots used '+a.slots_used+'/'+a.max_media+(a.overflow?(' ('+a.overflow+' photos merged into the last collage)'):'')+(warn.length?(' · ⚠ missing: '+warn.join(', ')):' · looks complete ✅');
+  $('pv_info').textContent=(a.show_more_style&&a.show_more_style!=='classic'?'(button style shown approximately) · ':'')+'Date: '+(a.post_date||'?')+' · '+a.images.length+' photos · photo slots used '+a.slots_used+'/'+a.max_media+(a.overflow?(' ('+a.overflow+' photos merged into the last collage)'):'')+(warn.length?(' · ⚠ missing: '+warn.join(', ')):' · looks complete ✅');
 }
 
 // ---- Post Now / Posted buttons -------------------------------------------------------------
@@ -242,7 +258,6 @@ async function postNow(id,b,force){
 }
 $('pv_post').onclick=async()=>{
   const m=($('pv_in').value||'').match(/(\d+)\s*$/); if(!m){$('pv_prog').textContent='enter a post number first';return}
-  if(!confirm('Post '+m[1]+' to your Telegram channel now?')) return;
   const b=$('pv_post'); const old=b.textContent; b.disabled=true; $('pv_prog').textContent='posting…';
   const {job,error}=await api('/api/post-now',{id:+m[1],force:false}); if(error){$('pv_prog').textContent='❌ '+error;b.disabled=false;return}
   const tick=async()=>{const j=await api('/api/jobs/'+job);
