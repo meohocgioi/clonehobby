@@ -1,0 +1,19 @@
+# VPS: `docker compose up -d`  - starts now, restarts after crashes and server reboots.
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data              # your settings + the list of posted items live here (keep it!)
+    environment:
+      FLARESOLVERR_URL: http://flaresolverr:8191/v1
+      TZ: Asia/Taipei
+    stop_grace_period: 200s       # lets an in-flight post finish when stopping
+    depends_on: [flaresolverr]
+  flaresolverr:                   # passes the website's Cloudflare check
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    restart: unless-stopped
+    environment:
+      LOG_LEVEL: info

@@ -68,7 +68,15 @@ class BrowserBackend:
         kw = {"headless": True, "args": ["--disable-blink-features=AutomationControlled"]}
         if self.s.proxy_url:
             kw["proxy"] = {"server": self.s.proxy_url}
-        self._browser = self._pw.chromium.launch(**kw)
+        last: Exception | None = None
+        for channel in ([self.s.browser_channel] if self.s.browser_channel else []) + [None, "chrome", "msedge"]:
+            try:   # bundled Chromium first, then the Chrome / Edge already installed on the computer
+                self._browser = self._pw.chromium.launch(**kw, **({"channel": channel} if channel else {}))
+                break
+            except Exception as e:  # noqa: BLE001
+                last = e
+        else:
+            raise ChallengeError(f"no usable browser for the Cloudflare check: {last}")
         self._ctx = self._browser.new_context(user_agent=self.s.user_agent, locale="en-US")
 
     def _get(self, url: str, timeout: float) -> tuple[int, str, list[dict]]:

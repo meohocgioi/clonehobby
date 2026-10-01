@@ -8,6 +8,7 @@ import signal
 import sys
 import threading
 import time
+import webbrowser
 from pathlib import Path
 
 import httpx
@@ -24,6 +25,7 @@ from .web import make_server
 
 def build(s: Settings, need_tg: bool = True):
     s.validate(need_telegram=need_tg)
+    logging.getLogger("tpclone").info("data folder: %s", s.data_dir.resolve())
     db = DB(s.db_path)
     fetcher = Fetcher(s)
     tg = Telegram(s.telegram_bot_token, s.telegram_chat_id, base=s.telegram_api_base) if (s.telegram_bot_token and not s.dry_run) else None
@@ -38,7 +40,7 @@ def _post_id(arg: str) -> int:
 
 
 def cmd_run(s: Settings, a) -> None:
-    engine, db = build(s)
+    engine, db = build(s, need_tg=False)      # starts even before Telegram is configured (Settings page)
     if engine.tg:
         try:
             info = engine.tg.check()
@@ -63,7 +65,13 @@ def cmd_run(s: Settings, a) -> None:
         logging.info("resumed (it was running when the app last stopped)")
     elif a.start:
         worker.start()
-    logging.info("dashboard: http://%s:%s/   state=%s", s.web_host, s.web_port, worker.state())
+    url = f"http://{'127.0.0.1' if s.web_host in ('0.0.0.0', '') else s.web_host}:{server.server_port}/"
+    logging.info("dashboard: %s   state=%s", url, worker.state())
+    if s.web_token and s.web_host not in ("127.0.0.1", "localhost", "::1"):
+        logging.info("dashboard password: %s   (open  http://<this-server-ip>:%s/?token=%s )",
+                     s.web_token, s.web_port, s.web_token)
+    if a.open:
+        threading.Timer(1.0, lambda: webbrowser.open(url + (f"?token={s.web_token}" if s.web_token else ""))).start()
     server.serve_forever()
     server.server_close()
 
@@ -171,6 +179,7 @@ def main() -> None:
     sub = p.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run", help="run the app (worker + dashboard)")
     r.add_argument("--start", action="store_true", help="begin publishing immediately")
+    r.add_argument("--open", action="store_true", help="open the dashboard in the browser")
     c = sub.add_parser("ctl", help="start/stop/status a running instance")
     c.add_argument("action", choices=["start", "stop", "status"])
     sub.add_parser("check", help="verify Telegram token/channel, sitemap and article parsing")

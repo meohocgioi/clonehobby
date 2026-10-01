@@ -23,6 +23,10 @@
   .log{font:12px/1.5 ui-monospace,monospace;max-height:260px;overflow:auto}
   .log .warn{color:var(--warn)} .log .error{color:var(--bad)}
   .msg{padding:10px;border-radius:8px;background:color-mix(in srgb,var(--acc) 10%,transparent);margin:10px 0}
+  label{display:block;margin:8px 0 3px;font-weight:600;font-size:13px} input[type=text],input[type=password],input[type=number],select{font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);width:100%;max-width:420px}
+  details.adv{margin-top:10px} ol.how{margin:6px 0 0;padding-left:20px} .good{color:var(--ok)} .tg{max-width:430px;border:1px solid var(--line);border-radius:12px;padding:10px;background:var(--bg);margin-top:10px}
+  .tg img{max-width:100%;border-radius:8px;display:block;margin:6px 0} .tg h3{margin:4px 0} .tg .more{color:var(--acc);font-weight:600;margin:6px 0} .tg .inner{border-top:1px solid var(--line);margin-top:6px;padding-top:6px}
+  .tg .imgs{display:flex;flex-wrap:wrap;gap:3px} .tg .imgs img{width:calc(33% - 3px);height:80px;object-fit:cover;margin:0}
 </style>
 </head>
 <body>
@@ -39,6 +43,38 @@
     <div class="msg error" id="err" hidden></div>
     <p class="stats" id="stats"></p>
     <p class="mut" id="last"></p>
+  </div>
+
+  <div class="card" id="setup">
+    <h2 id="setup-title">Settings</h2>
+    <div id="setup-help" hidden>
+      <b>First, connect your Telegram channel (one time, 2 minutes):</b>
+      <ol class="how">
+        <li>In Telegram open <b>@BotFather</b> → send <code>/newbot</code> → follow the steps. It gives you a long <b>token</b>; paste it below.</li>
+        <li>Open your channel → <b>Administrators</b> → <b>Add Administrator</b> → search your new bot → allow <b>Post messages</b>.</li>
+        <li>Type your channel name below (like <code>@mychannel</code>). For a private channel use its number (starts with -100).</li>
+      </ol>
+    </div>
+    <label>Bot token</label><input type="password" id="s_token" autocomplete="off" placeholder="123456:ABC-DEF...">
+    <label>Channel</label><input type="text" id="s_chat" placeholder="@mychannel">
+    <label>Wait between posts (seconds)</label><input type="number" id="s_delay" min="3" step="1">
+    <details class="adv"><summary>Advanced</summary>
+      <label>Check the website every (seconds)</label><input type="number" id="s_poll" min="60">
+      <label>On the very first start, also publish the latest N posts (0 = none, only future posts)</label><input type="number" id="s_init" min="0">
+      <label>Hashtags</label><select id="s_hash"><option value="plain">Same text as on the website</option><option value="hashtag">Clickable #Hashtags</option></select>
+      <label><input type="checkbox" id="s_link"> Make the title a link to the original post</label>
+    </details>
+    <p class="row"><button class="go" id="save">Save &amp; test connection</button><button id="sendtest">Send a test post</button></p>
+    <div id="save-out" class="mut"></div>
+  </div>
+
+  <div class="card">
+    <h2>Preview a post (nothing is sent)</h2>
+    <div class="row"><input type="text" id="pv_in" placeholder="post number or link, e.g. 114949" style="max-width:340px"> <button id="pv_go">Show preview</button> <span class="mut" id="pv_prog"></span></div>
+    <div id="pv_out" hidden>
+      <div class="tg" id="pv_box"></div>
+      <p class="mut" id="pv_info"></p>
+    </div>
   </div>
 
   <div class="card">
@@ -72,7 +108,7 @@ async function refresh(){
   const s=await api('/api/status');
   $('chat').textContent=s.chat?('· '+s.chat):'';
   const st=$('state'); st.textContent=s.state.toUpperCase()+(s.dry_run?' (dry-run)':''); st.className='pill '+s.state;
-  $('start').disabled=(s.state==='running'); $('stop').disabled=(s.state!=='running');
+  $('start').disabled=(s.state==='running')||!s.configured; $('stop').disabled=(s.state!=='running');
   $('err').hidden=!s.error; $('err').textContent=s.error||'';
   const k=s.stats; $('stats').innerHTML='';
   for(const [n,l] of [['posted','Published'],['pending','Queued'],['uncertain','Uncertain'],['failed','Failed'],['skipped','Seen (not posted)'],['total','Tracked']]){
@@ -108,7 +144,50 @@ $('plan').onclick=async()=>{
 $('pub').onclick=async()=>{const r=await api('/api/date/publish',{date:planData.date,ids:planData.to_publish});
   $('plan-msg').textContent='Queued '+r.queued+' post(s).'+(r.worker!=='running'?' Press Start to publish them.':''); $('pub').hidden=true; refresh()};
 $('cancel').onclick=()=>{$('plan-out').hidden=true};
-refresh(); setInterval(refresh,4000);
+
+let settingsLoaded=false;
+async function loadSettings(force){
+  const v=await api('/api/settings');
+  $('setup-help').hidden=v.configured; $('setup-title').textContent=v.configured?'Settings':'Step 1 — Connect Telegram';
+  if(settingsLoaded&&!force) return; settingsLoaded=true;
+  $('s_token').value=v.telegram_bot_token; $('s_chat').value=v.telegram_chat_id; $('s_delay').value=v.post_delay_seconds;
+  $('s_poll').value=v.poll_interval_seconds; $('s_init').value=v.initial_post_latest; $('s_hash').value=v.hashtag_style; $('s_link').checked=v.link_title;
+}
+$('save').onclick=async()=>{
+  $('save-out').textContent='Saving…'; $('save-out').className='mut';
+  const r=await api('/api/settings',{telegram_bot_token:$('s_token').value,telegram_chat_id:$('s_chat').value,post_delay_seconds:$('s_delay').value,
+    poll_interval_seconds:$('s_poll').value,initial_post_latest:$('s_init').value,hashtag_style:$('s_hash').value,link_title:$('s_link').checked});
+  if(r.telegram){$('save-out').className='good';$('save-out').textContent='✅ Connected: bot @'+r.telegram.bot+' can post in “'+r.telegram.chat+'”. Now press ▶ Start at the top.'}
+  else if(r.telegram_error){$('save-out').className='error';$('save-out').textContent='❌ '+r.telegram_error}
+  else $('save-out').textContent=r.configured?'Saved.':'Saved. Now fill in the bot token and channel.';
+  loadSettings(true); refresh();
+};
+$('sendtest').onclick=async()=>{const r=await api('/api/send-test',{}); $('save-out').className=r.error?'error':'good'; $('save-out').textContent=r.error?('❌ '+r.error):'✅ Test post sent — check your channel and tap “Show More”.'};
+$('pv_go').onclick=async()=>{
+  $('pv_out').hidden=true; $('pv_go').disabled=true; $('pv_prog').textContent='working…';
+  const {job,error}=await api('/api/preview',{target:$('pv_in').value}); if(error){$('pv_prog').textContent=error;$('pv_go').disabled=false;return}
+  const tick=async()=>{const j=await api('/api/jobs/'+job);
+    if(j.state==='running'){$('pv_prog').textContent=j.progress;return setTimeout(tick,1000)}
+    $('pv_go').disabled=false; if(j.state==='error'){$('pv_prog').textContent='❌ '+j.error;return}
+    $('pv_prog').textContent=''; showPreview(j.result)}; tick();
+};
+function showPreview(a){
+  const b=$('pv_box'); b.innerHTML=''; $('pv_out').hidden=false;
+  const el=(t,txt,cls)=>{const e=document.createElement(t); if(txt!==undefined)e.textContent=txt; if(cls)e.className=cls; b.appendChild(e); return e};
+  el('h3',a.title||'(no title found!)');
+  if(a.cover){const i=el('img'); i.src=a.cover; i.referrerPolicy='no-referrer'} else el('div','(no cover photo found)','mut');
+  el('div','▾ Show More','more');
+  const inner=el('div',undefined,'inner');
+  const add=(t,txt,st)=>{const e=document.createElement(t); e.textContent=txt; if(st)e.style.fontStyle=st; inner.appendChild(e)};
+  if(a.scheduled) add('p',a.scheduled,'italic');
+  if(a.tags.length) add('p',a.tags.join('  ·  '),'italic');
+  for(const p of a.paragraphs){const e=document.createElement('p'); e.textContent=new DOMParser().parseFromString(p.replace(/<br>/g,'\n'),'text/html').body.textContent; inner.appendChild(e)}
+  const g=document.createElement('div'); g.className='imgs'; for(const u of a.images.slice(0,12)){const i=document.createElement('img'); i.src=u; i.referrerPolicy='no-referrer'; g.appendChild(i)} inner.appendChild(g);
+  if(a.credits.length) add('p',a.credit_label+': '+a.credits.map(c=>c[0]).join(', '),'italic');
+  const warn=[]; if(!a.title) warn.push('no title'); if(!a.cover) warn.push('no cover photo'); if(!a.post_date) warn.push('no date'); if(!a.paragraphs.length) warn.push('no text'); if(!a.images.length) warn.push('no photos');
+  $('pv_info').textContent='Date: '+(a.post_date||'?')+' · '+a.images.length+' photos · photo slots used '+a.slots_used+'/'+a.max_media+(a.overflow?(' ('+a.overflow+' photos merged into the last collage)'):'')+(warn.length?(' · ⚠ missing: '+warn.join(', ')):' · looks complete ✅');
+}
+refresh(); loadSettings(); setInterval(refresh,4000); setInterval(loadSettings,8000);
 </script>
 </body>
 </html>

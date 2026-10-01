@@ -11,7 +11,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from urllib.parse import parse_qs, urlparse
 
+from . import render
+from .config import UI_FIELDS, _coerce, save_ui_settings
 from .engine import Engine, Worker
+from .telegram import TelegramError
 
 DATE_RX = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -53,8 +56,50 @@ def make_server(engine: Engine, worker: Worker) -> ThreadingHTTPServer:
             "last_posted": db.last_posted(), "dry_run": s.dry_run,
             "events": db.recent_events(40),
             "uncertain": db.by_status("uncertain", 50), "failed": db.by_status("failed", 50),
-            "chat": s.telegram_chat_id,
+            "chat": s.telegram_chat_id, "configured": s.telegram_ready,
         }
+
+    def settings_view() -> dict:
+        out = {k: getattr(s, k) for k in UI_FIELDS}
+        t = s.telegram_bot_token
+        out["telegram_bot_token"] = ("••••••" + t[-4:]) if t else ""
+        out["configured"] = s.telegram_ready
+        return out
+
+    def save_settings(body: dict) -> dict:
+        changes = {}
+        for k in UI_FIELDS:
+            if k not in body:
+                continue
+            v = body[k]
+            if k == "telegram_bot_token" and (not str(v).strip() or str(v).startswith("•")):
+                continue                                   # unchanged (masked) token
+            changes[k] = _coerce(getattr(s, k), v)
+        if "post_delay_seconds" in changes and changes["post_delay_seconds"] < s.MIN_DELAY:
+            changes["post_delay_seconds"] = s.MIN_DELAY
+        for k, v in changes.items():
+            setattr(s, k, v)
+        save_ui_settings(s, changes)
+        engine.apply_settings()
+        res = {"saved": True, "configured": s.telegram_ready}
+        if engine.tg:
+            try:
+                res["telegram"] = engine.tg.check()
+            except Exception as e:  # noqa: BLE001
+                res["telegram_error"] = str(e)
+        return res
+
+    def preview(target: str, prog) -> dict:
+        m = re.search(r"(\d+)\s*$", target.strip())
+        if not m:
+            raise ValueError("enter a post number or a link like https://www.toy-people.com/en/?p=114949")
+        prog("downloading the article")
+        art = engine.fetch_article(int(m.group(1)))
+        plan = render.plan_media(art, s.max_media)
+        html = render.build_html(art, s, plan, lambda k: k)
+        d = art.to_dict()
+        d.update(slots_used=plan.slots_used, overflow=len(plan.overflow), html=html, max_media=s.max_media)
+        return d
 
     class H(BaseHTTPRequestHandler):
         server_version = "tpclone"
@@ -97,6 +142,8 @@ def make_server(engine: Engine, worker: Worker) -> ThreadingHTTPServer:
                 return self._send(200, page.encode(), "text/html; charset=utf-8", extra)
             if u.path == "/api/status":
                 return self._json(status())
+            if u.path == "/api/settings":
+                return self._json(settings_view())
             if u.path.startswith("/api/jobs/"):
                 j = jobs.jobs.get(u.path.rsplit("/", 1)[1])
                 return self._json(j or {"error": "no such job"}, 200 if j else 404)
@@ -109,7 +156,23 @@ def make_server(engine: Engine, worker: Worker) -> ThreadingHTTPServer:
                 return self._json({"error": "missing X-Requested-With"}, 400)
             path, body = urlparse(self.path).path, self._body()
             try:
+                if path == "/api/settings":
+                    return self._json(save_settings(body))
+                if path == "/api/preview":
+                    jid = jobs.run(lambda prog: preview(str(body.get("target", "")), prog))
+                    return self._json({"job": jid})
+                if path == "/api/send-test":
+                    if not engine.tg:
+                        return self._json({"error": "Set the bot token and channel first (Settings)."}, 400)
+                    try:
+                        engine.tg.send_rich("<h3>Test post</h3><details><summary>Show More</summary>"
+                                            "<p><i>If you can open this, rich messages work in your channel.</i></p></details>")
+                    except TelegramError as e:
+                        return self._json({"error": str(e)}, 400)
+                    return self._json({"ok": True})
                 if path == "/api/start":
+                    if not s.telegram_ready and not s.dry_run:
+                        return self._json({"error": "Set the bot token and channel first (Settings)."}, 400)
                     worker.start()
                     return self._json(status())
                 if path == "/api/stop":

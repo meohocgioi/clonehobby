@@ -6,3 +6,4 @@ Pillow>=10.0
 # optional: scan the channel history via MTProto  -> pip install telethon
 # dev
 pytest>=8.0
+tzdata  # time zones on Windows

@@ -1,5 +1,7 @@
 # toy-people → Telegram (Rich Message cloner)
 
+> **Not a developer? Read [START-HERE.md](START-HERE.md)** (double-click launcher, or 5 pasted lines on a VPS; everything else is set up in the browser).
+
 Watches <https://www.toy-people.com/en/> 24/7 and republishes every new post to your Telegram channel as a
 **Rich Message** (`sendRichMessage`, HTML style), in the same structure as the website.
 

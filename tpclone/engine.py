@@ -27,6 +27,15 @@ class Engine:
         self._sitemap: list[tuple[int, str, str | None]] = []
         self._sitemap_at = 0.0
 
+    def apply_settings(self) -> None:
+        """Re-read the (already updated) Settings object: Telegram client, pacing."""
+        if self.s.telegram_ready and not self.s.dry_run:
+            self.tg = Telegram(self.s.telegram_bot_token, self.s.telegram_chat_id, base=self.s.telegram_api_base)
+        else:
+            self.tg = None
+        self.pacer.delay = self.s.effective_delay
+        self.pacer.max_per_hour = self.s.max_posts_per_hour
+
     # ------------------------------------------------------------------ site access
     def post_url(self, post_id: int) -> str:
         return f"{self.s.site_base.rstrip('/')}/?p={post_id}"
@@ -358,6 +367,9 @@ class Worker:
         return "error" if self.error else "stopped"
 
     def start(self) -> None:
+        if not self.s.telegram_ready and not self.s.dry_run:
+            self.db.log("warn", "cannot start: Telegram bot token / channel not set (Settings)")
+            return
         self.db.kv_set("desired_state", "running")
         if self.running and not self._stop.is_set():
             return
