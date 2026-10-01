@@ -437,6 +437,10 @@ class Engine:
             msg += (" ⚠ This app has no record of having posted anything yet. If your channel ALREADY contains posts of "
                     "this date (for example you moved or re-downloaded the app), first import your old posted-list "
                     "(Backup card → Import) to avoid duplicates.")
+        if (self.tg is not None and not gone and not self.probe_trusted()
+                and any(r and r["status"] == "posted" and r.get("tg_message_id") for r in rows.values())):
+            msg += (" (To also detect posts you deleted from the channel, first send one test post: "
+                    "Settings → “Send a test post”.)")
         if gone:
             msg += f" ({len(gone)} post(s) of this date were deleted from the channel and can be published again.)"
         if uncertain:

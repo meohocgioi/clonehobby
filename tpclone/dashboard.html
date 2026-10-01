@@ -285,7 +285,7 @@ $('verify').onclick=async()=>{
   const tick=async()=>{const j=await api('/api/jobs/'+job);
     if(j.state==='running'){$('verify-out').textContent=j.progress;return setTimeout(tick,1000)}
     $('verify').disabled=false; if(j.state==='error'){$('verify-out').textContent='❌ '+j.error;return}
-    const r=j.result; $('verify-out').textContent='Checked '+r.checked+' post(s): '+r.deleted.length+' deleted from the channel (now publishable again)'+(r.unknown?(', '+r.unknown+' could not be checked'):''); refresh()}; tick();
+    const r=j.result; $('verify-out').textContent='Checked '+r.checked+' post(s): '+r.deleted.length+' deleted from the channel (now publishable again)'+(r.unknown?(', '+r.unknown+' could not be checked'):'')+(r.note?(' — '+r.note+' (Settings → Send a test post activates it)'):''); refresh()}; tick();
 };
 
 // ---- updates ------------------------------------------------------------------------------------

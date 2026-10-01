@@ -209,7 +209,8 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
                                 f"<details>{render.summary_html(s.show_more_label, key)}"
                                 f"<p><i>This is the expanded text. If you read this, the style “{key}” works.</i></p></details>")
                         try:
-                            engine.tg.send_rich(html)
+                            res = engine.tg.send_rich(html)
+                            engine._calibrate_probe(res.get("message_id"))
                             results[key] = "sent"
                         except Exception as e:  # noqa: BLE001
                             results[key] = f"Telegram refused it: {e}"
@@ -219,8 +220,9 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
                     if not engine.tg:
                         return self._json({"error": "Set the bot token and channel first (Settings)."}, 400)
                     try:
-                        engine.tg.send_rich("<h6>Test post</h6><details><summary>Show More</summary>"
-                                            "<p><i>If you can open this, rich messages work in your channel.</i></p></details>")
+                        res = engine.tg.send_rich("<h6>Test post</h6><details><summary>Show More</summary>"
+                                                  "<p><i>If you can open this, rich messages work in your channel.</i></p></details>")
+                        engine._calibrate_probe(res.get("message_id"))   # also switches on deleted-post detection
                     except TelegramError as e:
                         return self._json({"error": str(e)}, 400)
                     return self._json({"ok": True})

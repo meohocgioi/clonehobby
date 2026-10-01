@@ -180,3 +180,11 @@ def test_import_backup_endpoint_and_masked_update_token(stack, tmp_path):
     post(base, "/api/settings", {"update_token": v["update_token"]})                 # masked value keeps the real one
     assert e.s.update_token == "ghp_SECRET1234"
     assert httpx.get(base + "/api/status").json()["data_dir"]
+
+
+def test_test_post_activates_deleted_post_detection(stack):
+    e, w, db, base = stack
+    e.s.telegram_chat_id = "@c"; e.apply_settings()
+    assert db.kv_get("probe_ok") is None
+    assert post(base, "/api/send-test")["ok"] is True
+    assert db.kv_get("probe_ok") == "1" and e.probe_trusted()
