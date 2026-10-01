@@ -70,12 +70,12 @@
     <label>Bot token</label><input type="password" id="s_token" autocomplete="off" placeholder="123456:ABC-DEF...">
     <label>Channel</label><input type="text" id="s_chat" placeholder="@mychannel">
     <label>Wait between posts (seconds)</label><input type="number" id="s_delay" min="3" step="1">
+    <details class="adv"><summary>Advanced</summary>
     <label>"Show More" button style</label>
     <select id="s_style"></select>
     <label>Emoji on both sides of the button text</label><input type="text" id="s_emoji" maxlength="4" style="max-width:120px" placeholder="👇">
     <p class="mut" style="margin:4px 0 0">Not sure which looks best? <button id="samples" type="button">Send style samples to my channel</button> then pick the one that works on your phone. “Plain toggle” is the safest.</p>
     <div id="samples-out" class="mut"></div>
-    <details class="adv"><summary>Advanced</summary>
       <label>Update source: repository</label><input type="text" id="s_urepo" placeholder="owner/name">
       <label>Update source: branch</label><input type="text" id="s_ubranch">
       <label>Update access token (only needed if the repository is private)</label><input type="password" id="s_utoken" autocomplete="off" placeholder="github_pat_...">
