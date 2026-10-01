@@ -208,3 +208,64 @@ def test_import_history_marks_posted(env, tmp_path):
     res = reconcile.import_export(db, str(p), "https://www.toy-people.com/en/")
     assert res["recognised"] == 2 and db.get(1)["status"] == "posted" and db.get(2)["status"] == "posted"
     assert e.plan_date("2026-09-25", margin=1)["state"] == "all_published"
+
+
+def test_deleted_from_channel_is_detected_and_republishable(env):
+    e, f, tg, db = env
+    e.pacer.delay = 0
+    seed_site(f, {1: "2026-09-30", 2: "2026-09-30", 3: "2026-09-30"})
+    plan = e.plan_date("2026-09-30", margin=2)
+    e.enqueue_date("2026-09-30", plan["to_publish"])
+    while (row := db.next_pending()):
+        e.process(row)
+    assert db.count("posted") == 3
+    mids = {p: db.get(p)["tg_message_id"] for p in (1, 2, 3)}
+    assert e.plan_date("2026-09-30", margin=2)["state"] == "all_published"      # nothing deleted yet
+
+    tg.deleted |= {mids[1], mids[2], mids[3]}                                    # user wipes the channel
+    plan = e.plan_date("2026-09-30", margin=2)
+    assert plan["state"] in ("none", "partial", "new_since") and plan["to_publish"] == [1, 2, 3]
+    assert plan["deleted_from_channel"] == [1, 2, 3] and "deleted from the channel" in plan["message"]
+    assert db.count("posted") == 0 and db.get(1)["tg_message_id"] is None
+    e.enqueue_date("2026-09-30", plan["to_publish"])
+    while (row := db.next_pending()):
+        e.process(row)
+    assert db.count("posted") == 3 and len(tg.sent) == 6
+
+
+def test_partial_delete_and_unknown_kept(env):
+    e, f, tg, db = env
+    seed_site(f, {1: "2026-09-30", 2: "2026-09-30"})
+    e.plan_date("2026-09-30", margin=1)
+    for p, m in ((1, 11), (2, 12)):
+        db.mark_posted(p, m)
+    tg.deleted.add(11); tg.unknown.add(12)
+    res = e.verify_posted()
+    assert res == {"checked": 2, "deleted": [1], "unknown": 1}
+    assert db.get(1)["status"] == "known" and db.get(2)["status"] == "posted"   # undecidable -> never assume deleted
+
+
+def test_post_now(env):
+    e, f, tg, db = env
+    seed_site(f, {7: "2026-09-30"})
+    r = e.post_now(7)
+    assert r["status"] == "posted" and len(tg.sent) == 1
+    assert e.post_now(7) == {"status": "posted", "already": True} and len(tg.sent) == 1     # no accidental duplicate
+    r = e.post_now(7, force=True)
+    assert r["status"] == "posted" and len(tg.sent) == 2                                    # explicit re-post
+    tg.deleted.add(db.get(7)["tg_message_id"])
+    assert e.post_now(7)["status"] == "posted" and len(tg.sent) == 3                       # deleted -> posts again
+    assert e.post_now(999)["status"] in ("known", "pending", "failed")                      # unknown id: handled, no crash
+
+
+def test_post_now_unconfigured(env):
+    e, f, tg, db = env
+    e.tg = None
+    assert e.post_now(1)["status"] == "error"
+
+
+def test_plan_date_saves_titles_for_new_rows(env):
+    e, f, tg, db = env
+    seed_site(f, {1: "2026-09-30"})
+    plan = e.plan_date("2026-09-30", margin=1)
+    assert plan["posts"][0]["title"] == "Post 1" and db.get(1)["title"] == "Post 1" and db.get(1)["post_date"] == "2026-09-30"

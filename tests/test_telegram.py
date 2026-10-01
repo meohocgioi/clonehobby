@@ -104,3 +104,18 @@ def test_pacer_enforces_delay_and_persists():
     assert p.wait_time() > 100
     now[0] += 200
     assert p.wait_time() == 0
+
+
+def test_message_exists_classification():
+    def reply(desc, code=400):
+        return tg_with(lambda r: httpx.Response(code, json={"ok": False, "error_code": code, "description": desc}))
+
+    assert reply("Bad Request: message is not modified: specified new message content and reply markup are exactly the same").message_exists(5) is True
+    assert reply("Bad Request: message to edit not found").message_exists(5) is False
+    assert reply("Bad Request: MESSAGE_ID_INVALID").message_exists(5) is False
+    assert reply("Forbidden: bot is not a member of the channel chat", 403).message_exists(5) is None
+    assert tg_with(lambda r: httpx.Response(200, json={"ok": True, "result": True})).message_exists(5) is True
+
+    def boom(req):
+        raise httpx.ReadTimeout("x")
+    assert tg_with(boom).message_exists(5) is None

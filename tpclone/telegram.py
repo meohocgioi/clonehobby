@@ -101,6 +101,27 @@ class Telegram:
             data["disable_notification"] = "true"
         return self.call("sendRichMessage", data, files)
 
+    def message_exists(self, message_id: int) -> bool | None:
+        """Does this channel message still exist?  True / False / None (could not tell).
+
+        The Bot API cannot list or fetch channel messages, but editing the reply markup of our own message answers
+        "message is not modified" when it exists and "message to edit not found" when it was deleted.
+        """
+        try:
+            self.call("editMessageReplyMarkup", {"chat_id": self.chat_id, "message_id": message_id},
+                      max_429_retries=3)
+            return True
+        except UncertainDelivery:
+            return None
+        except TelegramError as e:
+            low = str(e).lower()
+            if "message is not modified" in low:
+                return True
+            if any(h in low for h in ("message to edit not found", "message_id_invalid", "message not found",
+                                      "message to be edited not found")):
+                return False
+            return None
+
     def check(self) -> dict:
         """Validate token + that the bot may post in the channel. Raises TelegramError with a readable reason."""
         me = self.call("getMe")

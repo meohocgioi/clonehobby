@@ -34,6 +34,8 @@ class FakeTG:
     def __init__(self):
         self.sent = []
         self.fail_with = None
+        self.deleted: set[int] = set()
+        self.unknown: set[int] = set()
 
     def send_rich(self, html, media=None, files=None, **kw):
         if self.fail_with:
@@ -41,6 +43,12 @@ class FakeTG:
             raise e
         self.sent.append({"html": html, "media": media, "files": files, "kw": kw})
         return {"message_id": 1000 + len(self.sent)}
+
+
+    def message_exists(self, message_id):
+        if message_id in self.unknown:
+            return None
+        return message_id not in self.deleted
 
 
 class FakeClient:
@@ -84,4 +92,6 @@ def env():
     s = Settings(telegram_bot_token="t", telegram_chat_id="@c", db_path=":memory:", post_delay_seconds=5, media_mode="url")
     fetcher, tg = FakeFetcher(), FakeTG()
     db = DB(":memory:")
-    return Engine(s, db, fetcher, tg), fetcher, tg, db
+    e = Engine(s, db, fetcher, tg)
+    e.verify_delay = 0
+    return e, fetcher, tg, db

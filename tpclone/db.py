@@ -182,6 +182,23 @@ class DB:
         self._x("UPDATE posts SET status=?, last_error=NULL, attempts=0, not_before=0 WHERE post_id=?",
                 (status, post_id))
 
+    def mark_deleted(self, post_id: int) -> None:
+        """The channel message is gone: make the post publishable again (it is no longer 'posted')."""
+        self._x("UPDATE posts SET status='known', tg_message_id=NULL, posted_at=NULL, attempts=0, not_before=0, "
+                "last_error='deleted from the channel' WHERE post_id=?", (post_id,))
+
+    def posted_with_message(self, ids: Iterable[int] | None = None, limit: int = 300) -> list[dict]:
+        if ids is not None:
+            ids = list(ids)
+            if not ids:
+                return []
+            q = ",".join("?" * len(ids))
+            return [dict(r) for r in self._q(
+                f"SELECT * FROM posts WHERE status='posted' AND tg_message_id IS NOT NULL AND post_id IN ({q})", ids)]
+        return [dict(r) for r in self._q(
+            "SELECT * FROM posts WHERE status='posted' AND tg_message_id IS NOT NULL "
+            "ORDER BY posted_at DESC LIMIT ?", (limit,))]
+
     def by_date(self, date: str) -> list[dict]:
         return [dict(r) for r in self._q("SELECT * FROM posts WHERE post_date=? ORDER BY post_id", (date,))]
 

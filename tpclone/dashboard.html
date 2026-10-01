@@ -43,6 +43,7 @@
     <div class="msg error" id="err" hidden></div>
     <p class="stats" id="stats"></p>
     <p class="mut" id="last"></p>
+    <div class="row"><button id="verify">Check channel for deleted posts</button><span class="mut" id="verify-out"></span></div>
   </div>
 
   <div class="card" id="setup">
@@ -70,7 +71,7 @@
 
   <div class="card">
     <h2>Preview a post (nothing is sent)</h2>
-    <div class="row"><input type="text" id="pv_in" placeholder="post number or link, e.g. 114949" style="max-width:340px"> <button id="pv_go">Show preview</button> <span class="mut" id="pv_prog"></span></div>
+    <div class="row"><input type="text" id="pv_in" placeholder="post number or link, e.g. 114949" style="max-width:340px"> <button id="pv_go">Show preview</button> <button class="go" id="pv_post">Post</button> <span class="mut" id="pv_prog"></span></div>
     <div id="pv_out" hidden>
       <div class="tg" id="pv_box"></div>
       <p class="mut" id="pv_info"></p>
@@ -138,7 +139,8 @@ $('plan').onclick=async()=>{
     $('prog').textContent=''; planData=j.result; $('plan-out').hidden=false; $('plan-msg').textContent=planData.message;
     const n=planData.to_publish.length; $('pub').hidden=!n;
     $('pub').textContent=planData.state==='new_since'?('Publish only the '+n+' new post(s)'):('Publish '+n+' post(s)');
-    const t=$('plan-tbl'); t.innerHTML=''; for(const p of planData.posts){const tr=t.insertRow();tr.insertCell().textContent=p.id;tr.insertCell().textContent=p.title||'';tr.insertCell().textContent=p.status}};
+    const t=$('plan-tbl'); t.innerHTML=''; for(const p of planData.posts){const tr=t.insertRow();tr.insertCell().textContent=p.id;tr.insertCell().textContent=p.title||'';
+      const c=tr.insertCell(); c.style.textAlign='right'; c.appendChild(postButton(p.id,p.status))}};
   tick();
 };
 $('pub').onclick=async()=>{const r=await api('/api/date/publish',{date:planData.date,ids:planData.to_publish});
@@ -187,6 +189,52 @@ function showPreview(a){
   const warn=[]; if(!a.title) warn.push('no title'); if(!a.cover) warn.push('no cover photo'); if(!a.post_date) warn.push('no date'); if(!a.paragraphs.length) warn.push('no text'); if(!a.images.length) warn.push('no photos');
   $('pv_info').textContent='Date: '+(a.post_date||'?')+' · '+a.images.length+' photos · photo slots used '+a.slots_used+'/'+a.max_media+(a.overflow?(' ('+a.overflow+' photos merged into the last collage)'):'')+(warn.length?(' · ⚠ missing: '+warn.join(', ')):' · looks complete ✅');
 }
+
+// ---- Post Now / Posted buttons -------------------------------------------------------------
+function setBtn(b,state,msg){
+  b.className=''; b.disabled=false; b.title='';
+  if(state==='posted'){b.textContent='Posted'; b.disabled=true; b.style.background='#8b949e'; b.style.borderColor='#8b949e'; b.style.color='#fff'}
+  else if(state==='busy'){b.textContent='Posting…'; b.disabled=true}
+  else if(state==='uncertain'){b.textContent='Check channel'; b.disabled=true; b.title='Delivery was uncertain - see "Needs your attention" below'; b.style.background='#9a6700'; b.style.color='#fff'}
+  else {b.textContent=state==='error'?'Retry':'Post Now'; b.className='go'; b.removeAttribute('style'); if(msg) b.title=msg}
+}
+function postButton(id,status){
+  const b=document.createElement('button'); setBtn(b,status==='posted'?'posted':status==='uncertain'?'uncertain':'now');
+  b.onclick=()=>postNow(id,b,false); return b;
+}
+async function postNow(id,b,force){
+  setBtn(b,'busy');
+  const {job,error}=await api('/api/post-now',{id:id,force:force}); if(error){setBtn(b,'error',error);return}
+  const tick=async()=>{const j=await api('/api/jobs/'+job);
+    if(j.state==='running') return setTimeout(tick,1000);
+    if(j.state==='error'){setBtn(b,'error',j.error); alert('Could not post: '+j.error); return}
+    const r=j.result;
+    if(r.already){ if(confirm('Post '+id+' is already in the channel. Post it AGAIN (a duplicate)?')) return postNow(id,b,true); return setBtn(b,'posted') }
+    if(r.status==='posted') setBtn(b,'posted');
+    else {setBtn(b,'error',r.error); alert('Not posted ('+r.status+'): '+(r.error||'')); }
+    refresh()}; tick();
+}
+$('pv_post').onclick=async()=>{
+  const m=($('pv_in').value||'').match(/(\d+)\s*$/); if(!m){$('pv_prog').textContent='enter a post number first';return}
+  if(!confirm('Post '+m[1]+' to your Telegram channel now?')) return;
+  const b=$('pv_post'); const old=b.textContent; b.disabled=true; $('pv_prog').textContent='posting…';
+  const {job,error}=await api('/api/post-now',{id:+m[1],force:false}); if(error){$('pv_prog').textContent='❌ '+error;b.disabled=false;return}
+  const tick=async()=>{const j=await api('/api/jobs/'+job);
+    if(j.state==='running') return setTimeout(tick,1000);
+    b.disabled=false; const r=j.result||{};
+    if(j.state==='error') $('pv_prog').textContent='❌ '+j.error;
+    else if(r.already){ if(confirm('Already in the channel. Post it AGAIN (a duplicate)?')){ $('pv_prog').textContent='posting…'; b.disabled=true; const x=await api('/api/post-now',{id:+m[1],force:true}); const t2=async()=>{const k=await api('/api/jobs/'+x.job); if(k.state==='running') return setTimeout(t2,1000); b.disabled=false; $('pv_prog').textContent=k.state==='error'?('❌ '+k.error):(k.result.status==='posted'?'✅ posted':'❌ '+(k.result.error||k.result.status)); refresh()}; return t2()} else $('pv_prog').textContent='Not posted (already in the channel)'}
+    else $('pv_prog').textContent=r.status==='posted'?'✅ Posted to the channel':('❌ '+(r.error||r.status));
+    refresh()}; tick();
+};
+$('verify').onclick=async()=>{
+  $('verify').disabled=true; $('verify-out').textContent='checking…';
+  const {job,error}=await api('/api/verify',{}); if(error){$('verify-out').textContent=error;$('verify').disabled=false;return}
+  const tick=async()=>{const j=await api('/api/jobs/'+job);
+    if(j.state==='running'){$('verify-out').textContent=j.progress;return setTimeout(tick,1000)}
+    $('verify').disabled=false; if(j.state==='error'){$('verify-out').textContent='❌ '+j.error;return}
+    const r=j.result; $('verify-out').textContent='Checked '+r.checked+' post(s): '+r.deleted.length+' deleted from the channel (now publishable again)'+(r.unknown?(', '+r.unknown+' could not be checked'):''); refresh()}; tick();
+};
 refresh(); loadSettings(); setInterval(refresh,4000); setInterval(loadSettings,8000);
 </script>
 </body>

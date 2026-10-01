@@ -170,6 +170,13 @@ def make_server(engine: Engine, worker: Worker) -> ThreadingHTTPServer:
                     except TelegramError as e:
                         return self._json({"error": str(e)}, 400)
                     return self._json({"ok": True})
+                if path == "/api/post-now":
+                    pid, force = int(body["id"]), bool(body.get("force"))
+                    jid = jobs.run(lambda prog: engine.post_now(pid, force))
+                    return self._json({"job": jid})
+                if path == "/api/verify":
+                    jid = jobs.run(lambda prog: engine.verify_posted(progress=prog))
+                    return self._json({"job": jid})
                 if path == "/api/start":
                     if not s.telegram_ready and not s.dry_run:
                         return self._json({"error": "Set the bot token and channel first (Settings)."}, 400)

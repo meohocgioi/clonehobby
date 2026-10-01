@@ -26,6 +26,7 @@ class Engine:
         self.pacer = Pacer(settings.effective_delay, db, settings.max_posts_per_hour)
         self._sitemap: list[tuple[int, str, str | None]] = []
         self._sitemap_at = 0.0
+        self.verify_delay = 0.4
 
     def apply_settings(self) -> None:
         """Re-read the (already updated) Settings object: Telegram client, pacing."""
@@ -241,6 +242,50 @@ class Engine:
         self.db.log("info", f"posted {pid}: {row.get('title') or ''}")
         return "posted"
 
+    # ------------------------------------------------------------------ channel verification / manual post
+    def verify_posted(self, ids=None, progress: Callable[[str], None] | None = None, limit: int = 300) -> dict:
+        """Check that posts we think are published still exist in the channel; deleted ones become publishable again."""
+        say = progress or (lambda m: None)
+        rows = self.db.posted_with_message(ids, limit)
+        res = {"checked": 0, "deleted": [], "unknown": 0}
+        if self.tg is None or not rows:
+            return res
+        for k, r in enumerate(rows):
+            ok = self.tg.message_exists(r["tg_message_id"])
+            res["checked"] += 1
+            if ok is False:
+                self.db.mark_deleted(r["post_id"])
+                res["deleted"].append(r["post_id"])
+            elif ok is None:
+                res["unknown"] += 1
+            if k % 5 == 0:
+                say(f"checking the channel {k + 1}/{len(rows)}")
+            time.sleep(self.verify_delay)    # stay far below Telegram's per-chat limits
+        if res["deleted"]:
+            self.db.log("info", f"channel check: {len(res['deleted'])} post(s) were deleted from the channel -> "
+                                f"publishable again: {res['deleted'][:15]}")
+        return res
+
+    def post_now(self, post_id: int, force: bool = False) -> dict:
+        """Publish one post immediately (manual button). Refuses to duplicate unless force=True."""
+        if self.tg is None:
+            return {"status": "error", "error": "Set the bot token and channel first (Settings)."}
+        row = self.db.get(post_id)
+        if row is None:
+            self.db.upsert_seen(post_id, self.post_url(post_id), None, "known", "manual")
+            row = self.db.get(post_id)
+        if row["status"] == "sending":
+            return {"status": "sending", "error": "this post is being sent right now"}
+        if row["status"] == "posted" and not force:
+            ok = self.tg.message_exists(row["tg_message_id"]) if row.get("tg_message_id") else None
+            if ok is False:
+                self.db.mark_deleted(post_id)
+            else:
+                return {"status": "posted", "already": True}
+        self.db.reset_status(post_id, "pending")
+        status = self.process(self.db.get(post_id))
+        return {"status": status, "error": (self.db.get(post_id) or {}).get("last_error")}
+
     # ------------------------------------------------------------------ date repost
     def _meta_for(self, post_id: int) -> tuple[str | None, str | None]:
         row = self.db.get(post_id)
@@ -302,6 +347,12 @@ class Engine:
 
         # record them (visible on the site, nothing queued yet)
         self.db.bulk_seen([(p, self.post_url(p), lm.get(p)) for p in found], "known", "date-scan", priority=1)
+        for p, t in found.items():     # titles/dates fetched before the row existed were not saved yet
+            self.db.set_meta(p, t, date)
+        gone: list[int] = []
+        if self.tg is not None:   # did the user delete some of them from the channel?
+            say("checking which posts still exist in the channel")
+            gone = self.verify_posted(list(found), say)["deleted"]
         rows = {p: self.db.get(p) for p in found}
         posted = sorted(p for p, r in rows.items() if r and r["status"] == "posted")
         unpublished = sorted(p for p in found if p not in posted)
@@ -326,12 +377,14 @@ class Engine:
                    f"Publish the remaining {len(unpublished)}?")
         else:
             state, msg = "none", f"Found {total} post(s) from {date}, none published yet. Publish them all?"
+        if gone:
+            msg += f" ({len(gone)} post(s) of this date were deleted from the channel and can be published again.)"
         if uncertain:
             msg += f" ({len(uncertain)} need manual review - delivery was uncertain; they are not re-sent automatically.)"
         return {
             "date": date, "state": state, "message": msg, "total": total,
             "published": posted, "to_publish": [p for p in unpublished if p not in uncertain],
-            "already_queued": queued, "uncertain": uncertain,
+            "already_queued": queued, "uncertain": uncertain, "deleted_from_channel": gone,
             "posts": [{"id": p, "title": (rows[p] or {}).get("title"), "status": (rows[p] or {}).get("status")}
                       for p in sorted(found)],
         }
