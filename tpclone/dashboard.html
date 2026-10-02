@@ -35,7 +35,7 @@
   .rowbtn{width:92px;height:32px;padding:0;white-space:nowrap;font-size:13px;font-weight:600;border-radius:8px}
   .rowbtn.go{background:var(--ok);border-color:var(--ok);color:#fff} .rowbtn.done{background:color-mix(in srgb,var(--mut) 25%,transparent);border-color:transparent;color:var(--mut)}
   .rowbtn.warn{background:var(--warn);border-color:var(--warn);color:#fff} .rowbtn.err{background:var(--bad);border-color:var(--bad);color:#fff}
-  .tg .hl{color:#2481cc} .tg h6{margin:4px 0;font-size:15px}
+  .tg .hl{color:#2481cc} .msgs{font-size:12px;color:var(--mut);margin-top:3px} .reg{display:block;font-size:11px;margin-top:4px;color:var(--mut)} .tg h6{margin:4px 0;font-size:15px}
 </style>
 </head>
 <body>
@@ -140,7 +140,7 @@ const api=(p,body)=>fetch(p,body===undefined?{}:{method:'POST',headers:{'X-Reque
 let planData=null;
 function fmt(ts){return ts?new Date(ts*1000).toLocaleString():''}
 async function refresh(){
-  const s=await api('/api/status'); showUpdate(s);
+  const s=await api('/api/status'); showUpdate(s); window.chatLink=s.chat_link;
   $('chat').textContent=s.chat?('· '+s.chat):'';
   const st=$('state'); st.textContent=s.state.toUpperCase()+(s.dry_run?' (dry-run)':''); st.className='pill '+s.state;
   $('start').disabled=(s.state==='running')||!s.configured; $('stop').disabled=(s.state!=='running');
@@ -183,8 +183,16 @@ $('plan').onclick=async()=>{
     $('pub').textContent=planData.state==='new_since'?('Publish only the '+n+' new post(s)'):('Publish '+n+' post(s)');
     const t=$('plan-tbl'); t.innerHTML=''; t.className='grid';
     const h=t.createTHead().insertRow(); for(const [n,c] of [['ID','id'],['Title',''],['Action','act']]){const th=document.createElement('th'); th.textContent=n; if(c)th.className=c; h.appendChild(th)}
-    const tb=t.createTBody(); for(const p of planData.posts){const tr=tb.insertRow(); const c0=tr.insertCell(); c0.className='id'; c0.textContent=p.id; tr.insertCell().textContent=p.title||'(no title)';
-      const c=tr.insertCell(); c.className='act'; c.appendChild(postButton(p.id,p.status))}};
+    const tb=t.createTBody(); for(const p of planData.posts){const tr=tb.insertRow(); const c0=tr.insertCell(); c0.className='id'; c0.textContent=p.id;
+      const ct=tr.insertCell(); const tt=document.createElement('div'); tt.textContent=p.title||'(no title)'; ct.appendChild(tt);
+      if(p.messages&&p.messages.length){const m=document.createElement('div'); m.className='msgs'; m.append('In your channel: ');
+        p.messages.forEach((x,i)=>{ if(i) m.append(', '); const a=document.createElement(window.chatLink?'a':'span'); if(window.chatLink){a.href=window.chatLink+'/'+x.message_id; a.target='_blank'}
+          a.textContent='#'+x.message_id+(x.deleted?' (deleted)':''); if(x.deleted) a.style.textDecoration='line-through'; m.appendChild(a)}); ct.appendChild(m)}
+      const c=tr.insertCell(); c.className='act'; const btn=postButton(p.id,p.status); c.appendChild(btn);
+      const reg=document.createElement('a'); reg.href='#'; reg.className='reg'; reg.textContent='already in channel?'; reg.title='Tell the app this post is already in your channel (paste the message number or its t.me link)';
+      reg.onclick=async(ev)=>{ev.preventDefault(); const v=prompt('Which message in your channel already contains this post?\nPaste its number or its t.me link (e.g. https://t.me/yourchannel/354):'); if(!v) return;
+        const r=await api('/api/post/register',{id:p.id,message:v}); if(r.error){alert(r.error);return} setBtn(btn,'posted'); reg.remove(); refresh()};
+      if(p.status!=='posted') c.appendChild(reg)}};
   tick();
 };
 $('pub').onclick=async()=>{const r=await api('/api/date/publish',{date:planData.date,ids:planData.to_publish});

@@ -48,6 +48,12 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
     update_lock = threading.Lock()
     page = Path(__file__).with_name("dashboard.html").read_text(encoding="utf8")
 
+    def chat_link() -> str:
+        c = s.telegram_chat_id.strip()
+        if c.startswith("@"):
+            return f"https://t.me/{c[1:]}"
+        return f"https://t.me/c/{c[4:]}" if c.startswith("-100") else ""
+
     def status() -> dict:
         db = engine.db
         nxt = engine.pacer.next_allowed_at()
@@ -58,7 +64,7 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
             "last_posted": db.last_posted(), "dry_run": s.dry_run,
             "events": db.recent_events(40),
             "uncertain": db.by_status("uncertain", 50), "failed": db.by_status("failed", 50),
-            "chat": s.telegram_chat_id, "configured": s.telegram_ready,
+            "chat": s.telegram_chat_id, "chat_link": chat_link(), "configured": s.telegram_ready,
             "last_backup": float(db.kv_get("last_backup_ts", "0") or 0) or None,
             "watch": db.kv_json("discover_status"), "listing": db.kv_json("listing_info"), "listing_max": db.kv_get("listing_max_id"), "poll_every": s.poll_interval_seconds, "data_dir": str(s.data_dir.resolve()), "probe": db.kv_get("probe_ok"), "version": tpclone.code_version(), "code_dir": tpclone.__path__[0], "update": db.kv_json("update_info"),
         }
@@ -281,6 +287,12 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
                         return {"new": n, "listing": info.get("count", 0), "listing_error": info.get("error"),
                                 "sitemap": st.get("total", 0), "newest": engine.db.kv_get("listing_max_id")}
                     return self._json({"job": jobs.run(do_check_now)})
+                if path == "/api/post/register":
+                    pid = int(body["id"])
+                    m = re.search(r"(\d+)\s*/?\s*$", str(body.get("message", "")))
+                    if not m:
+                        return self._json({"error": "enter the message number or its t.me link (…/nekohobby/354)"}, 400)
+                    return self._json(engine.register_message(pid, int(m.group(1))))
                 if path == "/api/post-now":
                     pid, force = int(body["id"]), bool(body.get("force"))
                     jid = jobs.run(lambda prog: engine.post_now(pid, force))

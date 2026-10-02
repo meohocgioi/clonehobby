@@ -251,11 +251,15 @@ def test_post_now(env):
     seed_site(f, {7: "2026-09-30"})
     r = e.post_now(7)
     assert r["status"] == "posted" and len(tg.sent) == 1
-    assert e.post_now(7) == {"status": "posted", "already": True} and len(tg.sent) == 1     # no accidental duplicate
+    r = e.post_now(7)
+    assert r["status"] == "posted" and r["already"] is True and len(tg.sent) == 1          # no accidental duplicate
     r = e.post_now(7, force=True)
     assert r["status"] == "posted" and len(tg.sent) == 2                                    # explicit re-post
-    tg.deleted.add(db.get(7)["tg_message_id"])
-    assert e.post_now(7)["status"] == "posted" and len(tg.sent) == 3                       # deleted -> posts again
+    first, second = db.live_messages(7)
+    tg.deleted.add(second)
+    assert e.post_now(7)["already"] is True and len(tg.sent) == 2      # the OLDER copy is still in the channel
+    tg.deleted.add(first)
+    assert e.post_now(7)["status"] == "posted" and len(tg.sent) == 3                       # both gone -> posts again
     assert e.post_now(999)["status"] in ("known", "pending", "failed")                      # unknown id: handled, no crash
 
 
@@ -301,7 +305,8 @@ def test_untrusted_probe_never_causes_duplicates(env):
     tg.message_exists = lambda mid: False                 # a broken probe: claims everything is deleted
     assert e.post_now(7)["status"] == "posted" and len(tg.sent) == 1
     assert db.kv_get("probe_ok") == "0"                   # calibration right after the send caught it
-    assert e.post_now(7) == {"status": "posted", "already": True} and len(tg.sent) == 1   # no silent duplicate
+    again = e.post_now(7)
+    assert again["status"] == "posted" and again["already"] is True and len(tg.sent) == 1   # no silent duplicate
     assert e.verify_posted() ["deleted"] == [] and db.get(7)["status"] == "posted"
     seed_site(f, {8: "2026-09-30"})
     assert e.plan_date("2026-09-30", margin=2)["deleted_from_channel"] == []
@@ -448,3 +453,68 @@ def test_date_check_finds_posts_missing_from_the_stale_sitemap(env):
     before = len(f.requests)
     e.plan_date("2026-10-02", margin=2)                                    # second time: gap misses are not re-probed
     assert len(db.kv_json("gap_missing")) > 0
+
+
+def test_user_scenario_older_copy_must_not_be_forgotten(env):
+    """354 posted, re-posted as 368 (id overwritten in the old code), 368 deleted, date check -> duplicate 372."""
+    e, f, tg, db = env
+    e.pacer.delay = 0
+    seed_site(f, {115045: "2026-10-02"})
+    e.plan_date("2026-10-02", margin=2)
+    e.post_now(115045)                                        # message A
+    e.post_now(115045, force=True)                            # message B: a second copy
+    a_msg, b_msg = db.live_messages(115045)
+    assert a_msg != b_msg and db.get(115045)["tg_message_id"] == b_msg      # the old code only remembered B
+    tg.deleted.add(b_msg)                                     # the user deletes the newest copy only
+    plan = e.plan_date("2026-10-02", margin=2)
+    assert plan["to_publish"] == [] and plan["posts"][0]["status"] == "posted"   # A is still there -> still posted
+    assert plan["posts"][0]["messages"] == [{"message_id": a_msg, "deleted": False}, {"message_id": b_msg, "deleted": True}]
+    assert e.enqueue_date("2026-10-02", plan["to_publish"]) == 0
+    assert len(tg.sent) == 2                                  # nothing new was sent
+    tg.deleted.add(a_msg)                                     # now every copy is gone
+    plan = e.plan_date("2026-10-02", margin=2)
+    assert plan["to_publish"] == [115045] and plan["deleted_from_channel"] == [115045]
+
+
+def test_queue_guard_never_sends_a_second_copy(env):
+    """Even if a post is queued by mistake, a copy that still exists in the channel stops the send."""
+    e, f, tg, db = env
+    seed_site(f, {5: "2026-10-02"})
+    e.post_now(5)
+    assert len(tg.sent) == 1
+    db.reset_status(5, "pending")                             # wrongly queued again (e.g. stale UI / ledger glitch)
+    assert e.process(db.get(5)) == "posted" and len(tg.sent) == 1
+    assert db.get(5)["status"] == "posted"
+
+
+def test_queue_guard_unverifiable_old_copy_is_held_not_sent(env):
+    e, f, tg, db = env
+    seed_site(f, {5: "2026-10-02"})
+    e.post_now(5)
+    mid = db.live_messages(5)[0]
+    tg.unknown.add(mid)                                       # Telegram can't tell us whether it exists
+    db.reset_status(5, "pending")
+    assert e.process(db.get(5)) == "uncertain" and len(tg.sent) == 1
+
+
+def test_register_message_teaches_the_app_about_a_lost_copy(env):
+    e, f, tg, db = env
+    seed_site(f, {115045: "2026-10-02"})
+    e.plan_date("2026-10-02", margin=2)
+    assert db.get(115045)["status"] == "known"
+    e.register_message(115045, 354)                           # "it is already in my channel as message 354"
+    assert db.get(115045)["status"] == "posted" and db.live_messages(115045) == [354]
+    plan = e.plan_date("2026-10-02", margin=2)
+    assert plan["to_publish"] == []
+
+
+def test_old_ledgers_are_migrated_to_message_history(tmp_path):
+    from tpclone.db import DB
+    import sqlite3
+    path = str(tmp_path / "old.db")
+    db = DB(path)
+    db.upsert_seen(9, "u", None, "known", "x")
+    db.conn.execute("UPDATE posts SET status='posted', tg_message_id=77, posted_at=5 WHERE post_id=9")
+    db.conn.execute("DELETE FROM sent_messages"); db.conn.commit(); db.conn.close()      # as if from before the table existed
+    again = DB(path)
+    assert again.live_messages(9) == [77]

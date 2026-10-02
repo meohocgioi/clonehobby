@@ -38,6 +38,10 @@ CREATE TABLE IF NOT EXISTS posts (
 CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status, priority, post_date, post_id);
 CREATE INDEX IF NOT EXISTS idx_posts_date ON posts(post_date);
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS sent_messages (      -- every channel message ever sent for a post (a post can have several)
+    post_id INTEGER NOT NULL, message_id INTEGER NOT NULL, sent_at REAL, deleted_at REAL,
+    PRIMARY KEY (post_id, message_id)
+);
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, level TEXT, message TEXT
 );
@@ -56,6 +60,10 @@ class DB:
                 self.conn.execute("PRAGMA journal_mode=WAL")
             self.conn.execute("PRAGMA synchronous=FULL")  # a crash must not forget a published post
             self.conn.executescript(SCHEMA)
+            # ledgers from before this table existed: carry over the one message they knew about
+            self.conn.execute("INSERT OR IGNORE INTO sent_messages(post_id,message_id,sent_at) "
+                              "SELECT post_id, tg_message_id, COALESCE(posted_at, 0) FROM posts "
+                              "WHERE tg_message_id IS NOT NULL AND status='posted'")
             self.conn.commit()
 
     def backup_to(self, dest: str) -> None:
@@ -92,12 +100,18 @@ class DB:
                         (r["post_id"], r["url"], r["title"], r["post_date"], r["lastmod"], r["priority"], "restored",
                          r["tg_message_id"], r["discovered_at"], r["posted_at"]))
                     added += 1
+                    if r["tg_message_id"]:
+                        self.conn.execute("INSERT OR IGNORE INTO sent_messages(post_id,message_id,sent_at) VALUES(?,?,?)",
+                                          (r["post_id"], r["tg_message_id"], r["posted_at"] or 0))
                 elif cur["status"] != "posted":
                     self.conn.execute("UPDATE posts SET status='posted', tg_message_id=?, posted_at=?, "
                                       "title=COALESCE(title,?), post_date=COALESCE(post_date,?), last_error=NULL "
                                       "WHERE post_id=?", (r["tg_message_id"], r["posted_at"], r["title"],
                                                           r["post_date"], r["post_id"]))
                     updated += 1
+                    if r["tg_message_id"]:
+                        self.conn.execute("INSERT OR IGNORE INTO sent_messages(post_id,message_id,sent_at) VALUES(?,?,?)",
+                                          (r["post_id"], r["tg_message_id"], r["posted_at"] or 0))
             self.conn.commit()
         src.close()
         return {"in_file": len(rows), "added": added, "updated": updated}
@@ -198,6 +212,36 @@ class DB:
     def mark_posted(self, post_id: int, message_id: int | None) -> None:
         self._x("UPDATE posts SET status='posted', tg_message_id=?, posted_at=?, last_error=NULL WHERE post_id=?",
                 (message_id, time.time(), post_id))
+        if message_id:
+            self.add_message(post_id, message_id)
+
+    # ---- every message ever sent for a post ----------------------------
+    def add_message(self, post_id: int, message_id: int) -> None:
+        self._x("INSERT INTO sent_messages(post_id,message_id,sent_at) VALUES(?,?,?) "
+                "ON CONFLICT(post_id,message_id) DO UPDATE SET deleted_at=NULL", (post_id, message_id, time.time()))
+
+    def live_messages(self, post_id: int) -> list[int]:
+        """Messages we believe are still in the channel (not yet proven deleted)."""
+        return [r["message_id"] for r in self._q(
+            "SELECT message_id FROM sent_messages WHERE post_id=? AND deleted_at IS NULL ORDER BY message_id", (post_id,))]
+
+    def all_messages(self, post_id: int) -> list[dict]:
+        return [dict(r) for r in self._q(
+            "SELECT message_id, sent_at, deleted_at FROM sent_messages WHERE post_id=? ORDER BY message_id", (post_id,))]
+
+    def mark_message_deleted(self, post_id: int, message_id: int) -> None:
+        self._x("UPDATE sent_messages SET deleted_at=? WHERE post_id=? AND message_id=?",
+                (time.time(), post_id, message_id))
+
+    def messages_by_post(self, ids: Iterable[int]) -> dict[int, list[dict]]:
+        ids = list(ids)
+        out: dict[int, list[dict]] = {i: [] for i in ids}
+        if ids:
+            q = ",".join("?" * len(ids))
+            for r in self._q(f"SELECT post_id, message_id, deleted_at FROM sent_messages WHERE post_id IN ({q}) "
+                             f"ORDER BY message_id", ids):
+                out[r["post_id"]].append({"message_id": r["message_id"], "deleted": r["deleted_at"] is not None})
+        return out
 
     def mark_posted_import(self, post_id: int) -> None:
         self._x("UPDATE posts SET status='posted', posted_at=COALESCE(posted_at,?), source='import' "

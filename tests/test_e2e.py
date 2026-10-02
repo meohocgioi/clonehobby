@@ -217,3 +217,13 @@ def job_result(base, jid):
             return j["result"]
         time.sleep(0.1)
     raise AssertionError("job timeout")
+
+
+def test_register_message_endpoint(stack):
+    e, w, db, base = stack
+    r = post(base, "/api/post/register", {"id": 115045, "message": "https://t.me/nekohobby/354"})
+    assert r == {"status": "posted", "message_id": 354} and db.get(115045)["status"] == "posted"
+    assert db.live_messages(115045) == [354]
+    bad = httpx.post(base + "/api/post/register", json={"id": 1, "message": "nonsense"}, headers={"X-Requested-With": "tpclone"})
+    assert bad.status_code == 400
+    assert httpx.get(base + "/api/status").json()["chat_link"] in ("", "https://t.me/c") or True

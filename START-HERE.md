@@ -87,3 +87,10 @@ e.g. **👇 SHOW MORE 👇**. Press **Send style samples to my channel** to see 
 Settings → Advanced → **Space between paragraphs**. The default puts a blank line between paragraphs. If your phone shows it
 differently than you like, press **Send style samples to my channel**: it also posts three spacing samples (blank line,
 empty paragraph, none) so you can pick the one that looks best, then **Save**.
+
+## Duplicates: how the app protects you
+The app remembers **every** channel message it ever sent for a post (a re-post creates a second one) and only treats a post
+as "gone" when **all** of its messages are deleted. In the date list you see them under each title (`In your channel: #354, #368`);
+click one to open it. Before sending anything, the app also checks whether an earlier copy still exists and holds the post back
+if it can't tell. If a copy exists that the app doesn't know about (made before this protection existed), click **already in channel?**
+under the post and paste the message number or its t.me link.

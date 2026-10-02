@@ -282,11 +282,35 @@ class Engine:
             res = self.tg.send_rich(html, media, files, skip_entity_detection=not tag_hash)
         return res.get("message_id")
 
-    def process(self, row: dict) -> str:
-        """Publish one queued row and record the outcome. Returns the resulting status."""
+    def _already_in_channel(self, pid: int) -> str | None:
+        """Last line of defence against duplicates: if the ledger says a message of this post may still be in the
+        channel, check it before sending another copy."""
+        live = self.db.live_messages(pid)
+        if not live or self.tg is None or self.s.dry_run:
+            return None
+        for mid in live:
+            if self.tg.message_exists(mid) is True:
+                self.db.mark_posted(pid, mid)
+                self.db.log("warn", f"post {pid}: not sent again - message {mid} is still in the channel")
+                return "posted"
+        if self.probe_trusted() and all(self.tg.message_exists(m) is False for m in live):
+            for m in live:
+                self.db.mark_message_deleted(pid, m)
+            return None                                   # every old copy is proven gone: fine to send
+        self.db.mark_uncertain(pid, f"an earlier copy (message {live[-1]}) may still be in the channel; check, then "
+                                    f"choose 'It is in the channel' or 'Send again'")
+        self.db.log("warn", f"post {pid}: held back - cannot confirm that message {live[-1]} was deleted")
+        return "uncertain"
+
+    def process(self, row: dict, force: bool = False) -> str:
+        """Publish one queued row and record the outcome. Returns the resulting status.
+        force=True (the user explicitly chose 'post it AGAIN') skips the already-in-channel guard."""
         pid = row["post_id"]
         if not self.db.mark_sending(pid):
             return "skipped"
+        guard = None if force else self._already_in_channel(pid)
+        if guard:
+            return guard
         try:
             mid = self.publish(pid)
         except ChallengeError as e:
@@ -387,7 +411,10 @@ class Engine:
         return self.db.kv_get("probe_ok") == "1"
 
     def verify_posted(self, ids=None, progress: Callable[[str], None] | None = None, limit: int = 300) -> dict:
-        """Check that posts we think are published still exist in the channel; deleted ones become publishable again."""
+        """Check that posts we think are published still exist in the channel.
+
+        A post can have SEVERAL messages in the channel (re-posts, duplicates). It only becomes publishable again when
+        EVERY message ever sent for it is proven gone; if any is still there it stays 'posted'."""
         say = progress or (lambda m: None)
         rows = self.db.posted_with_message(ids, limit)
         res = {"checked": 0, "deleted": [], "unknown": 0}
@@ -398,20 +425,40 @@ class Engine:
             res["note"] = "deleted-post detection becomes active after the next successful post"
             return res
         for k, r in enumerate(rows):
-            ok = self.tg.message_exists(r["tg_message_id"])
-            res["checked"] += 1
-            if ok is False:
-                self.db.mark_deleted(r["post_id"])
-                res["deleted"].append(r["post_id"])
-            elif ok is None:
-                res["unknown"] += 1
+            pid = r["post_id"]
+            live = self.db.live_messages(pid) or ([r["tg_message_id"]] if r["tg_message_id"] else [])
+            alive, unsure = [], False
+            for mid in live:
+                ok = self.tg.message_exists(mid)
+                res["checked"] += 1
+                if ok is False:
+                    self.db.mark_message_deleted(pid, mid)
+                else:
+                    alive.append(mid)
+                    unsure = unsure or ok is None
+                time.sleep(self.verify_delay)    # stay far below Telegram's per-chat limits
+            if not alive:
+                self.db.mark_deleted(pid)
+                res["deleted"].append(pid)
+            else:
+                if r["tg_message_id"] not in alive:
+                    self.db._x("UPDATE posts SET tg_message_id=? WHERE post_id=?", (alive[-1], pid))
+                if unsure:
+                    res["unknown"] += 1
             if k % 5 == 0:
                 say(f"checking the channel {k + 1}/{len(rows)}")
-            time.sleep(self.verify_delay)    # stay far below Telegram's per-chat limits
         if res["deleted"]:
             self.db.log("info", f"channel check: {len(res['deleted'])} post(s) were deleted from the channel -> "
                                 f"publishable again: {res['deleted'][:15]}")
         return res
+
+    def register_message(self, post_id: int, message_id: int) -> dict:
+        """The user tells us 'this post is already in my channel as message N' (e.g. a copy the app lost track of)."""
+        if self.db.get(post_id) is None:
+            self.db.upsert_seen(post_id, self.post_url(post_id), None, "known", "manual")
+        self.db.mark_posted(post_id, message_id)
+        self.db.log("info", f"post {post_id} registered as already in the channel (message {message_id})")
+        return {"status": "posted", "message_id": message_id}
 
     def post_now(self, post_id: int, force: bool = False) -> dict:
         """Publish one post immediately (manual button). Refuses to duplicate unless force=True."""
@@ -424,13 +471,16 @@ class Engine:
         if row["status"] == "sending":
             return {"status": "sending", "error": "this post is being sent right now"}
         if row["status"] == "posted" and not force:
-            ok = self.tg.message_exists(row["tg_message_id"]) if row.get("tg_message_id") else None
-            if ok is False and self.probe_trusted():
+            live = self.db.live_messages(post_id) or ([row["tg_message_id"]] if row.get("tg_message_id") else [])
+            gone = bool(live) and self.probe_trusted() and all(self.tg.message_exists(m) is False for m in live)
+            if gone:
+                for m in live:
+                    self.db.mark_message_deleted(post_id, m)
                 self.db.mark_deleted(post_id)
             else:
-                return {"status": "posted", "already": True}
+                return {"status": "posted", "already": True, "messages": live}
         self.db.reset_status(post_id, "pending")
-        status = self.process(self.db.get(post_id))
+        status = self.process(self.db.get(post_id), force=force)
         return {"status": status, "error": (self.db.get(post_id) or {}).get("last_error")}
 
     # ------------------------------------------------------------------ date repost
@@ -537,6 +587,7 @@ class Engine:
         prev = self.db.kv_json(f"date_batch:{date}", [])
         new_since = [p for p in unpublished if p not in prev]
 
+        msgs = self.db.messages_by_post(found)
         total = len(found)
         if total == 0:
             state, msg = "empty", f"No posts found on the website for {date}."
@@ -569,8 +620,8 @@ class Engine:
             "date": date, "state": state, "message": msg, "total": total,
             "published": posted, "to_publish": [p for p in unpublished if p not in uncertain],
             "already_queued": queued, "uncertain": uncertain, "deleted_from_channel": gone,
-            "posts": [{"id": p, "title": (rows[p] or {}).get("title"), "status": (rows[p] or {}).get("status")}
-                      for p in sorted(found)],
+            "posts": [{"id": p, "title": (rows[p] or {}).get("title"), "status": (rows[p] or {}).get("status"),
+                       "messages": msgs.get(p, [])} for p in sorted(found)],
         }
 
     def enqueue_date(self, date: str, post_ids: list[int]) -> int:
