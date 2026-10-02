@@ -332,3 +332,52 @@ def test_plan_warns_when_nothing_ever_posted(env):
     e, f, tg, db = env
     seed_site(f, {1: "2026-09-30"})
     assert "no record of having posted anything" in e.plan_date("2026-09-30", margin=1)["message"]
+
+
+def test_date_check_must_not_hide_new_posts_from_the_watcher(env):
+    """Regression: plan_date used to save the sitemap ETag, so the next discover() got '304 not modified' and the
+    new post that appeared before the date check was never queued."""
+    e, f, tg, db = env
+    add_posts(f, {1: ("2026-09-20", "Old")})
+    e.discover()                                              # baseline
+    add_posts(f, {2: ("2026-10-02", "Brand new post")})       # appears on the website ...
+    seed_site(f, {3: "2026-09-30"})
+    e.plan_date("2026-09-30", margin=2)                       # ... then the user checks a date (downloads the sitemap)
+    assert e.discover() == 1                                  # watcher still sees the new post 2 ...
+    assert db.get(2)["status"] == "pending"
+    assert db.get(3)["status"] == "known"                     # ... while post 3 (found by the date check) is not auto-posted
+
+
+def test_first_discover_after_a_date_check_still_does_the_baseline(env):
+    e, f, tg, db = env
+    add_posts(f, {i: ("2026-09-20", f"T{i}") for i in range(1, 6)})
+    seed_site(f, {})
+    e.plan_date("2026-09-20", margin=2)                       # user used 'Repost by date' before ever pressing Start
+    e.discover()
+    assert db.kv_get("baseline_done") is not None and db.count() == 5
+
+
+def test_baseline_on_existing_ledger_queues_posts_newer_than_the_last_posted(env):
+    e, f, tg, db = env
+    add_posts(f, {i: ("2026-09-20", f"T{i}") for i in range(1, 11)})
+    db.upsert_seen(7, "u", None, "known", "x"); db.mark_posted(7, 70)      # user already published up to #7 by hand
+    e.discover()                                                           # first ever watcher run
+    assert [db.get(i)["status"] for i in (8, 9, 10)] == ["pending"] * 3    # newer than the last posted -> queued
+    assert [db.get(i)["status"] for i in (1, 6)] == ["skipped", "skipped"] # older history is not posted
+
+
+def test_baseline_flood_guard_for_big_backlog(env):
+    e, f, tg, db = env
+    e.s.max_auto_queue = 3
+    add_posts(f, {i: ("2026-09-20", f"T{i}") for i in range(1, 21)})
+    db.upsert_seen(2, "u", None, "known", "x"); db.mark_posted(2, 70)
+    e.discover()
+    assert db.pending_count() == 0 and db.count("skipped") == 19
+
+
+def test_discovery_status_is_recorded(env):
+    e, f, tg, db = env
+    add_posts(f, {1: ("2026-09-20", "x")})
+    e.discover()
+    st = db.kv_json("discover_status")
+    assert st["ok"] is True and st["total"] == 1 and st["new"] == 0 and st["ts"] > 0

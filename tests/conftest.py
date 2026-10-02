@@ -56,9 +56,18 @@ class FakeClient:
         self.f = fetcher
 
     def get(self, url, headers=None):
+        etag = '"%d-%s"' % (len(self.f.posts), max(self.f.posts, default=0))
+        self.f.requests.append(dict(headers or {}))
+        if (headers or {}).get("If-None-Match") == etag:
+            class R304:
+                status_code = 304
+                headers = {"etag": etag}
+                text = ""
+            return R304()
+
         class R:
             status_code = 200
-            headers = {}
+            headers = {"etag": etag}
             text = self.f.sitemap_xml()
         return R()
 
@@ -66,6 +75,7 @@ class FakeClient:
 class FakeFetcher:
     def __init__(self):
         self.posts: dict[int, tuple[str, str]] = {}   # id -> (date, title)
+        self.requests: list[dict] = []
         self.client = FakeClient(self)
 
     def sitemap_xml(self):

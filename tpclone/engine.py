@@ -42,7 +42,11 @@ class Engine:
         return f"{self.s.site_base.rstrip('/')}/?p={post_id}"
 
     def load_sitemap(self, force: bool = False) -> list[tuple[int, str, str | None]] | None:
-        """Download + parse the sitemap. Returns None when the server says it did not change (ETag/Last-Modified)."""
+        """Download + parse the sitemap. Returns None when the server says it did not change.
+
+        NOTE: this never saves the ETag / Last-Modified itself. Only discover() does, AFTER it has processed the list
+        (see _commit_validators). Otherwise a manual date check would 'use up' the marker and the background watcher
+        would be told 'not modified' about posts it has never seen."""
         headers = {}
         if not force:
             if self.db.kv_get("sitemap_etag"):
@@ -54,15 +58,21 @@ class Engine:
             return None
         if r.status_code != 200:
             raise FetchError(f"sitemap HTTP {r.status_code}")
-        if "etag" in r.headers:
-            self.db.kv_set("sitemap_etag", r.headers["etag"])
-        if "last-modified" in r.headers:
-            self.db.kv_set("sitemap_lm", r.headers["last-modified"])
+        self._validators = {"etag": r.headers.get("etag"), "lm": r.headers.get("last-modified")}
         entries = site.parse_sitemap(r.text)
         if not entries:
             raise FetchError("sitemap parsed to zero posts (format changed?)")
         self._sitemap, self._sitemap_at = entries, time.time()
         return entries
+
+    def _commit_validators(self) -> None:
+        v = getattr(self, "_validators", None) or {}
+        for key, val in (("sitemap_etag", v.get("etag")), ("sitemap_lm", v.get("lm"))):
+            if val:
+                self.db.kv_set(key, val)
+            else:
+                self.db.kv_set(key, "")
+        self.db.kv_set("last_full_sitemap", time.time())
 
     def sitemap_entries(self) -> list[tuple[int, str, str | None]]:
         if not self._sitemap or time.time() - self._sitemap_at > 900:
@@ -78,36 +88,68 @@ class Engine:
 
     # ------------------------------------------------------------------ discovery
     def discover(self) -> int:
-        """Compare the sitemap with the ledger. Returns number of newly queued posts."""
-        entries = self.load_sitemap()
-        if entries is None:
-            return 0
+        """Compare the sitemap with the ledger and queue what is new. Returns the number of newly queued posts."""
+        try:
+            n, total = self._discover()
+        except Exception as e:  # noqa: BLE001
+            self.db.kv_set("discover_status", json.dumps({"ts": time.time(), "ok": False, "error": str(e)[:300]}))
+            raise
+        self.db.kv_set("discover_status", json.dumps({"ts": time.time(), "ok": True, "total": total, "new": n}))
+        return n
+
+    def _discover(self) -> tuple[int, int]:
+        first_run = self.db.kv_get("baseline_done") is None
+        # a full download is forced on the first run and at least every 30 min (guards against a stale validator)
+        stale = time.time() - float(self.db.kv_get("last_full_sitemap", "0") or 0) > 1800
+        entries = self.load_sitemap(force=first_run or stale)
+        if entries is None:        # server says: unchanged since the list we already processed
+            return 0, int(self.db.kv_get("sitemap_total", "0") or 0)
+        total = len(entries)
+        self.db.kv_set("sitemap_total", total)
+        if first_run:
+            n = self._baseline(entries)
+            self._commit_validators()
+            return n, total
         known = self.db.known_ids()
-        if self.db.kv_get("baseline_done") is None:
-            return self._baseline(entries)
         new = [e for e in entries if e[0] not in known]
-        if not new:
-            return 0
-        if len(new) > self.s.max_auto_queue:
-            self.db.bulk_seen(new, "skipped", "flood-guard")
-            msg = (f"{len(new)} unseen posts appeared at once (> MAX_AUTO_QUEUE={self.s.max_auto_queue}); "
-                   f"NOT auto-queued. Use 'Repost by date' to publish them.")
-            self.db.log("warn", msg)
-            log.warning(msg)
-            return 0
-        self.db.bulk_seen(new, "pending", "new", priority=0)
-        self.db.log("info", f"discovered {len(new)} new post(s): " + ", ".join(str(e[0]) for e in new[:10]))
-        return len(new)
+        queued = 0
+        if new:
+            if len(new) > self.s.max_auto_queue:
+                self.db.bulk_seen(new, "skipped", "flood-guard")
+                msg = (f"{len(new)} unseen posts appeared at once (more than {self.s.max_auto_queue}); NOT auto-posted. "
+                       f"Use 'Repost older posts by date' to publish them.")
+                self.db.log("warn", msg)
+                log.warning(msg)
+            else:
+                self.db.bulk_seen(new, "pending", "new", priority=0)
+                queued = len(new)
+                self.db.log("info", f"discovered {len(new)} new post(s): " + ", ".join(str(e[0]) for e in new[:10]))
+        self._commit_validators()
+        return queued, total
 
     def _baseline(self, entries) -> int:
-        n = self.db.bulk_seen(entries, "skipped", "baseline")
+        """First run of the watcher. Everything already on the site is marked 'seen' (not posted) so the channel is
+        not flooded - EXCEPT, when the ledger already holds published posts (e.g. you posted by date first), posts newer
+        than the newest published one: those are exactly the new posts you expect the watcher to deliver."""
+        known = self.db.known_ids()
+        ref = self.db._q("SELECT MAX(post_id) m FROM posts WHERE status='posted'")[0]["m"]
+        newer = [e for e in entries if ref is not None and e[0] > ref and e[0] not in known]
+        if len(newer) > self.s.max_auto_queue:
+            self.db.log("warn", f"{len(newer)} posts are newer than your last published one (more than "
+                                f"{self.s.max_auto_queue}); NOT auto-posted. Use 'Repost older posts by date' for them.")
+            newer = []
+        newer_ids = {e[0] for e in newer}
+        rest = [e for e in entries if e[0] not in newer_ids]
+        n = self.db.bulk_seen(rest, "skipped", "baseline")
+        if newer:
+            self.db.bulk_seen(newer, "pending", "new", priority=0)
         latest = sorted(entries, key=lambda e: e[0], reverse=True)[: self.s.initial_post_latest]
         for e in sorted(latest):
             self.db.enqueue(e[0], 0, "new")
         self.db.kv_set("baseline_done", int(time.time()))
-        self.db.log("info", f"first start: {n} existing site posts marked as seen (not posted); "
-                            f"queued latest {len(latest)}")
-        return len(latest)
+        self.db.log("info", f"website watcher started: {n} existing posts marked as seen (not posted); "
+                            f"queued {len(newer) + len(latest)} newer post(s)")
+        return len(newer) + len(latest)
 
     # ------------------------------------------------------------------ publishing
     def _download(self, url: str) -> bytes | None:

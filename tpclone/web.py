@@ -60,7 +60,7 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
             "uncertain": db.by_status("uncertain", 50), "failed": db.by_status("failed", 50),
             "chat": s.telegram_chat_id, "configured": s.telegram_ready,
             "last_backup": float(db.kv_get("last_backup_ts", "0") or 0) or None,
-            "data_dir": str(s.data_dir.resolve()), "probe": db.kv_get("probe_ok"), "version": tpclone.code_version(), "code_dir": tpclone.__path__[0], "update": db.kv_json("update_info"),
+            "watch": db.kv_json("discover_status"), "poll_every": s.poll_interval_seconds, "data_dir": str(s.data_dir.resolve()), "probe": db.kv_get("probe_ok"), "version": tpclone.code_version(), "code_dir": tpclone.__path__[0], "update": db.kv_json("update_info"),
         }
 
     def settings_view() -> dict:

@@ -52,6 +52,7 @@
     </div>
     <div class="msg error" id="err" hidden></div>
     <p class="stats" id="stats"></p>
+    <p id="watch" class="mut"></p>
     <p class="mut" id="last"></p>
     <div class="row"><button id="verify">Check channel for deleted posts</button><span class="mut" id="verify-out"></span></div>
     <p class="mut" id="bk"></p>
@@ -149,6 +150,11 @@ async function refresh(){
   $('bk').innerHTML=''; {const t=document.createTextNode(s.last_backup?('Automatic backup of your posted-list: '+fmt(s.last_backup)+' (kept 14 days) · '):'Automatic backup runs daily · '); const a=document.createElement('a'); a.href='/api/backup'; a.textContent='Download a backup'; $('bk').append(t,a);
     const d=document.createElement('div'); d.className='mut'; d.textContent='Your data folder: '+s.data_dir; $('bk').append(d);
     if(s.probe==='0'){const w=document.createElement('div'); w.className='error'; w.textContent='⚠ Deleted-post detection is OFF (Telegram did not answer reliably). Nothing is re-posted automatically.'; $('bk').append(w)}}
+  {const w=s.watch, el=$('watch'); el.className='mut';
+   if(s.state!=='running'){el.textContent='Website watcher: off (press Start)'}
+   else if(!w){el.textContent='Website watcher: first check in progress…'}
+   else if(!w.ok){el.className='error'; el.textContent='⚠ Website check failed '+fmt(w.ts)+': '+w.error}
+   else {const ago=Math.max(0,Math.round(Date.now()/1000-w.ts)); el.textContent='🔎 Website watcher: checked '+(ago<90?ago+' s':Math.round(ago/60)+' min')+' ago · '+(w.total||0).toLocaleString()+' posts on the site · every '+Math.round(s.poll_every/60)+' min · new posts are posted automatically'}}
   $('last').textContent=s.last_posted?('Last published: '+(s.last_posted.title||s.last_posted.post_id)+' — '+fmt(s.last_posted.posted_at)):'';
   const lg=$('log'); lg.innerHTML='';
   for(const e of s.events){const d=document.createElement('div'); d.className=e.level; d.textContent=fmt(e.ts)+'  '+e.message; lg.appendChild(d);}

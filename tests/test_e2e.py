@@ -188,3 +188,11 @@ def test_test_post_activates_deleted_post_detection(stack):
     assert db.kv_get("probe_ok") is None
     assert post(base, "/api/send-test")["ok"] is True
     assert db.kv_get("probe_ok") == "1" and e.probe_trusted()
+
+
+def test_status_reports_the_website_watcher(stack):
+    e, w, db, base = stack
+    assert httpx.get(base + "/api/status").json()["watch"] is None
+    e.discover()
+    st = httpx.get(base + "/api/status").json()
+    assert st["watch"]["ok"] is True and st["watch"]["total"] >= 5 and st["poll_every"] == 1
