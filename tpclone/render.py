@@ -84,6 +84,31 @@ def summary_html(label: str, style: str, emoji: str = "👇") -> str:
     return f"<summary><b>{loud}</b></summary>"      # "classic" and any retired style name
 
 
+PARAGRAPH_SPACING = {
+    "blank": "Blank line between paragraphs (recommended)",
+    "spacer": "Blank line using an empty paragraph (alternative)",
+    "tight": "No extra space (Telegram's default)",
+}
+
+
+def body_blocks(paragraphs: list[str], mode: str) -> list[str]:
+    """HTML blocks for the body text. Telegram puts almost no gap between separate <p> blocks, so paragraphs would
+    touch. 'blank' puts them in ONE block separated by <br><br> (one block, however many paragraphs: no block-limit
+    cost); 'spacer' inserts an empty paragraph between them; 'tight' is the plain one-block-per-paragraph layout."""
+    if not paragraphs:
+        return []
+    if mode == "tight":
+        return [f"<p>{p}</p>" for p in paragraphs]
+    if mode == "spacer":
+        out: list[str] = []
+        for i, p in enumerate(paragraphs):
+            if i:
+                out.append("<p>&nbsp;</p>")
+            out.append(f"<p>{p}</p>")
+        return out
+    return ["<p>" + "<br><br>".join(paragraphs) + "</p>"]
+
+
 def tags_line(tags: list[str], hashtag_style: str) -> str:
     if hashtag_style in ("hashtag", "true", "1"):
         return "  ".join("#" + re.sub(r"\W+", "_", t, flags=re.U).strip("_") for t in tags)
@@ -109,12 +134,13 @@ def build_html(art: Article, settings: Settings, plan: MediaPlan, src: Callable[
     used = 0
     kept: list[str] = []
     for p in paras:
-        if used + len(p) > budget or len(kept) >= MAX_PARAGRAPHS:
+        cap = MAX_PARAGRAPHS // 2 if settings.paragraph_spacing == "spacer" else MAX_PARAGRAPHS   # spacer doubles the blocks
+        if used + len(p) > budget or len(kept) >= cap:
             truncated = True
             break
         kept.append(p)
         used += len(p)
-    inner.extend(f"<p>{p}</p>" for p in kept)
+    inner.extend(body_blocks(kept, settings.paragraph_spacing))
     if truncated:
         inner.append(f'<p><a href="{escape(art.url, quote=True)}">…</a></p>')
     for v in art.videos[:5]:

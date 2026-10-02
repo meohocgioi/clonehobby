@@ -163,7 +163,7 @@ def test_style_setting_and_samples(stack):
     n0 = len(SENT)
     e.s.telegram_chat_id = "@c"
     r = post(base, "/api/send-style-samples")
-    assert set(r["results"].values()) == {"sent"} and len(SENT) - n0 == 5
+    assert set(r["results"].values()) == {"sent"} and len(SENT) - n0 == 8
     bodies = b"".join(x["body"] for x in SENT[n0:])
     assert bodies.count(b"Style+sample") + bodies.count(b"Style%20sample") + bodies.count(b"Style sample") >= 4
 

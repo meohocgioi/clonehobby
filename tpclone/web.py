@@ -71,6 +71,7 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
         out["update_token"] = ("••••••" + u[-4:]) if u else ""
         out["configured"] = s.telegram_ready
         out["show_more_styles"] = render.SHOW_MORE_STYLES
+        out["paragraph_spacings"] = render.PARAGRAPH_SPACING
         return out
 
     def save_settings(body: dict) -> dict:
@@ -108,7 +109,7 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
         html = render.build_html(art, s, plan, lambda k: k)
         d = art.to_dict()
         d.update(tags_line=render.tags_line(art.tags, s.hashtag_style), hashtag=s.hashtag_style in ('hashtag', 'true', '1'), show_more_style=s.show_more_style, show_more_effective=render.effective_style(s.show_more_style, art, plan),
-                 show_more_emoji=s.show_more_emoji, show_more_label=s.show_more_label,
+                 show_more_emoji=s.show_more_emoji, show_more_label=s.show_more_label, paragraph_spacing=s.paragraph_spacing,
                  slots_used=plan.slots_used, overflow=len(plan.overflow), html=html, max_media=s.max_media)
         return d
 
@@ -221,6 +222,19 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
                             results[key] = "sent"
                         except Exception as e:  # noqa: BLE001
                             results[key] = f"Telegram refused it: {e}"
+                        time.sleep(min(3, s.effective_delay))
+                    sample = ["This is the first paragraph of the sample. It is long enough to wrap onto a second line on a "
+                              "phone, so you can judge the gap properly.",
+                              "This is the second paragraph. Is there a clear blank line above it?",
+                              "And a third one, to see how a longer article would look."]
+                    for mode in render.PARAGRAPH_SPACING:
+                        html = f"<h6>Spacing sample: {mode}</h6>" + "".join(render.body_blocks(sample, mode))
+                        try:
+                            res = engine.tg.send_rich(html)
+                            engine._calibrate_probe(res.get("message_id"))
+                            results[f"spacing: {mode}"] = "sent"
+                        except Exception as e:  # noqa: BLE001
+                            results[f"spacing: {mode}"] = f"Telegram refused it: {e}"
                         time.sleep(min(3, s.effective_delay))
                     return self._json({"results": results})
                 if path == "/api/send-test":

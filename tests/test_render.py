@@ -119,3 +119,32 @@ def test_legacy_auto_style_now_means_our_toggle():
     assert "<details><summary><b>👇 SHOW MORE 👇</b></summary>" in h
     assert render.effective_style("auto") == "classic" and render.effective_style("pill") == "pill"
     assert Settings().show_more_style == "classic" and "auto" not in render.SHOW_MORE_STYLES
+
+
+def test_paragraph_spacing_modes():
+    a = make_article()
+    a.paragraphs = ["First paragraph.", "Second <b>paragraph</b>.", "Third."]
+
+    def body(mode):
+        h = render.build_html(a, Settings(show_more_style="classic", paragraph_spacing=mode), render.plan_media(a), ident)
+        return h
+
+    blank = body("blank")      # default: one block, blank line (two line breaks) between paragraphs
+    assert "<p>First paragraph.<br><br>Second <b>paragraph</b>.<br><br>Third.</p>" in blank
+    assert Settings().paragraph_spacing == "blank"
+    spacer = body("spacer")
+    assert "<p>First paragraph.</p><p>&nbsp;</p><p>Second <b>paragraph</b>.</p><p>&nbsp;</p><p>Third.</p>" in spacer
+    tight = body("tight")
+    assert "<p>First paragraph.</p><p>Second <b>paragraph</b>.</p><p>Third.</p>" in tight
+    assert render.body_blocks([], "blank") == [] and render.body_blocks(["only"], "blank") == ["<p>only</p>"]
+
+
+def test_block_limit_respected_in_every_spacing_mode():
+    import re
+    a = make_article(n_images=0, cover=False)
+    a.paragraphs = [f"Paragraph number {i}." for i in range(900)]
+    for mode in ("blank", "spacer", "tight"):
+        h = render.build_html(a, Settings(show_more_style="classic", paragraph_spacing=mode), render.plan_media(a), ident)
+        blocks = len(re.findall(r"<p>|<h6>|<details>|<summary>|<tg-collage>|<img", h))
+        assert blocks <= 500, (mode, blocks)
+        assert len(re.sub(r"<[^>]+>", "", h)) < 32768

@@ -82,3 +82,8 @@ back automatically. The app also checks twice a day by itself and shows a **"�
 Settings → **"Show More" button style** (and the emoji next to it). The default is bold CAPITALS with an emoji on both sides,
 e.g. **👇 SHOW MORE 👇**. Press **Send style samples to my channel** to see every style in your own Telegram first, then choose and **Save**.
 (Telegram rich text has no font sizes, so "bigger" is done with capitals and emoji, which display large.)
+
+## Space between paragraphs
+Settings → Advanced → **Space between paragraphs**. The default puts a blank line between paragraphs. If your phone shows it
+differently than you like, press **Send style samples to my channel**: it also posts three spacing samples (blank line,
+empty paragraph, none) so you can pick the one that looks best, then **Save**.

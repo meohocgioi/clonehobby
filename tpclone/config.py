@@ -45,6 +45,7 @@ class Settings:
     hashtag_style: str = "plain"
     show_more_label: str = "Show More"
     show_more_style: str = "classic"   # classic | highlight | pill | plain | telegram  (see render.SHOW_MORE_STYLES)
+    paragraph_spacing: str = "blank"   # blank | spacer | tight  (see render.PARAGRAPH_SPACING)
     show_more_emoji: str = "👇"        # shown on both sides of the Show More text (empty = none)
     fetch_backend: str = "auto"
     flaresolverr_url: str = ""
@@ -92,7 +93,7 @@ class Settings:
 
 # Fields editable from the dashboard (saved to <data>/settings.json, which wins over .env)
 UI_FIELDS = ("telegram_bot_token", "telegram_chat_id", "post_delay_seconds", "poll_interval_seconds",
-             "initial_post_latest", "hashtag_style", "media_mode", "show_more_label", "show_more_style", "show_more_emoji",
+             "initial_post_latest", "hashtag_style", "media_mode", "show_more_label", "show_more_style", "show_more_emoji", "paragraph_spacing",
              "max_posts_per_hour", "site_tz", "update_repo", "update_branch", "update_token")
 
 

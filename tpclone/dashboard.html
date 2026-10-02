@@ -74,6 +74,8 @@
     <details class="adv"><summary>Advanced</summary>
     <label>"Show More" button style</label>
     <select id="s_style"></select>
+    <label>Space between paragraphs</label>
+    <select id="s_spacing"></select>
     <label>Emoji on both sides of the button text</label><input type="text" id="s_emoji" maxlength="4" style="max-width:120px" placeholder="👇">
     <p class="mut" style="margin:4px 0 0">Not sure which looks best? <button id="samples" type="button">Send style samples to my channel</button> then pick the one that works on your phone. “Plain toggle” is the safest.</p>
     <div id="samples-out" class="mut"></div>
@@ -195,14 +197,18 @@ async function loadSettings(force){
   $('setup-help').hidden=v.configured; $('setup-title').textContent=v.configured?'Settings':'Step 1 — Connect Telegram';
   if(settingsLoaded&&!force) return; settingsLoaded=true;
   $('s_token').value=v.telegram_bot_token; $('s_chat').value=v.telegram_chat_id; $('s_delay').value=v.post_delay_seconds;
-  $('s_poll').value=v.poll_interval_seconds; $('s_init').value=v.initial_post_latest; $('s_hash').value=v.hashtag_style; fillStyles(v); $('s_emoji').value=v.show_more_emoji; $('s_urepo').value=v.update_repo; $('s_ubranch').value=v.update_branch; $('s_utoken').value=v.update_token;
+  $('s_poll').value=v.poll_interval_seconds; $('s_init').value=v.initial_post_latest; $('s_hash').value=v.hashtag_style; fillStyles(v); fillSpacing(v); $('s_emoji').value=v.show_more_emoji; $('s_urepo').value=v.update_repo; $('s_ubranch').value=v.update_branch; $('s_utoken').value=v.update_token;
+}
+function fillSpacing(v){
+  const sel=$('s_spacing'); if(sel.options.length===0){ for(const [k,d] of Object.entries(v.paragraph_spacings||{})){const o=document.createElement('option'); o.value=k; o.textContent=d; sel.appendChild(o)} }
+  sel.value=v.paragraph_spacing;
 }
 function fillStyles(v){
   const sel=$('s_style'); if(sel.options.length===0){ for(const [k,d] of Object.entries(v.show_more_styles||{})){const o=document.createElement('option'); o.value=k; o.textContent=d; sel.appendChild(o)} }
   sel.value=v.show_more_style;
 }
 $('samples').onclick=async()=>{
-  $('samples').disabled=true; $('samples-out').textContent='Sending sample posts (takes ~15 seconds)…';
+  $('samples').disabled=true; $('samples-out').textContent='Sending sample posts (takes ~30 seconds)…';
   const r=await api('/api/send-style-samples',{}); $('samples').disabled=false;
   if(r.error){$('samples-out').textContent='❌ '+r.error;return}
   $('samples-out').innerHTML=''; for(const [k,v] of Object.entries(r.results)){const d=document.createElement('div'); d.textContent=(v==='sent'?'✅ ':'❌ ')+k+(v==='sent'?' – open your channel and tap it':(' – '+v)); $('samples-out').appendChild(d)}
@@ -210,7 +216,7 @@ $('samples').onclick=async()=>{
 $('save').onclick=async()=>{
   $('save-out').textContent='Saving…'; $('save-out').className='mut';
   const r=await api('/api/settings',{telegram_bot_token:$('s_token').value,telegram_chat_id:$('s_chat').value,post_delay_seconds:$('s_delay').value,
-    poll_interval_seconds:$('s_poll').value,initial_post_latest:$('s_init').value,hashtag_style:$('s_hash').value,show_more_style:$('s_style').value,show_more_emoji:$('s_emoji').value,update_repo:$('s_urepo').value,update_branch:$('s_ubranch').value,update_token:$('s_utoken').value});
+    poll_interval_seconds:$('s_poll').value,initial_post_latest:$('s_init').value,hashtag_style:$('s_hash').value,show_more_style:$('s_style').value,paragraph_spacing:$('s_spacing').value,show_more_emoji:$('s_emoji').value,update_repo:$('s_urepo').value,update_branch:$('s_ubranch').value,update_token:$('s_utoken').value});
   if(r.telegram){$('save-out').className='good';$('save-out').textContent='✅ Connected: bot @'+r.telegram.bot+' can post in “'+r.telegram.chat+'”. Now press ▶ Start at the top.'}
   else if(r.telegram_error){$('save-out').className='error';$('save-out').textContent='❌ '+r.telegram_error}
   else $('save-out').textContent=r.configured?'Saved.':'Saved. Now fill in the bot token and channel.';
@@ -245,7 +251,7 @@ function showPreview(a){
   if(a.tags.length){const e=document.createElement('p'); e.style.fontStyle='italic';
     if(a.hashtag){a.tags_line.split('  ').forEach((h,i)=>{if(i)e.appendChild(document.createTextNode('  ')); const sp=document.createElement('span'); sp.className='hl'; sp.textContent=h; e.appendChild(sp)})}
     else e.textContent=a.tags_line; inner.appendChild(e)}
-  for(const p of a.paragraphs){const e=document.createElement('p'); e.textContent=new DOMParser().parseFromString(p.replace(/<br>/g,'\n'),'text/html').body.textContent; inner.appendChild(e)}
+  for(const p of a.paragraphs){const e=document.createElement('p'); e.style.margin=(a.paragraph_spacing==='tight'?'2px 0':'0 0 14px'); e.textContent=new DOMParser().parseFromString(p.replace(/<br>/g,'\n'),'text/html').body.textContent; inner.appendChild(e)}
   const g=document.createElement('div'); g.className='imgs'; for(const u of a.images.slice(0,12)){const i=document.createElement('img'); i.src=u; i.referrerPolicy='no-referrer'; g.appendChild(i)} inner.appendChild(g);
   if(a.credits.length) add('p',a.credit_label+': '+a.credits.map(c=>c[0]).join(', '),'italic');
   const warn=[]; if(!a.title) warn.push('no title'); if(!a.cover) warn.push('no cover photo'); if(!a.post_date) warn.push('no date'); if(!a.paragraphs.length) warn.push('no text'); if(!a.images.length) warn.push('no photos');
