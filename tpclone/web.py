@@ -107,7 +107,7 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
         plan = render.plan_media(art, s.max_media)
         html = render.build_html(art, s, plan, lambda k: k)
         d = art.to_dict()
-        d.update(tags_line=render.tags_line(art.tags, s.hashtag_style), hashtag=s.hashtag_style in ('hashtag', 'true', '1'), show_more_style=s.show_more_style,
+        d.update(tags_line=render.tags_line(art.tags, s.hashtag_style), hashtag=s.hashtag_style in ('hashtag', 'true', '1'), show_more_style=s.show_more_style, show_more_effective=render.effective_style(s.show_more_style, art, plan),
                  show_more_emoji=s.show_more_emoji, show_more_label=s.show_more_label,
                  slots_used=plan.slots_used, overflow=len(plan.overflow), html=html, max_media=s.max_media)
         return d
@@ -206,6 +206,8 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
                         return self._json({"error": "Set the bot token and channel first (Settings)."}, 400)
                     results = {}
                     for key, desc in render.SHOW_MORE_STYLES.items():
+                        if key == "auto":       # picks one of the others per post; no sample of its own
+                            continue
                         if key == "telegram":      # no toggle of ours: needs a LONG post to see Telegram's own button
                             body = "".join(f"<p>Sample paragraph {i}: this is filler text to make the post long, so you can "
                                            f"see whether Telegram folds it behind its own green “Show more” button.</p>"

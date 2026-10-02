@@ -67,7 +67,7 @@ def serve(handler):
 def stack(tmp_path):
     SENT.clear()
     site, tgs = serve(Site), serve(TG)
-    s = Settings(telegram_bot_token="T", telegram_chat_id="@c", db_path=str(tmp_path / "t.db"), site_delay_seconds=0,
+    s = Settings(telegram_bot_token="T", telegram_chat_id="@c", db_path=str(tmp_path / "t.db"), show_more_style="classic", site_delay_seconds=0,
                  post_delay_seconds=0, poll_interval_seconds=1, media_mode="upload", web_port=0,
                  site_base=f"http://127.0.0.1:{site.server_port}/en/",
                  sitemap_url=f"http://127.0.0.1:{site.server_port}/sitemap.xml",
@@ -157,7 +157,7 @@ def test_settings_from_browser_and_start_gate(stack, tmp_path):
 def test_style_setting_and_samples(stack):
     e, w, db, base = stack
     v = httpx.get(base + "/api/settings").json()
-    assert set(v["show_more_styles"]) == {"classic", "highlight", "pill", "plain", "telegram"} and v["show_more_style"] == "classic"
+    assert set(v["show_more_styles"]) == {"auto", "classic", "highlight", "pill", "plain", "telegram"} and v["show_more_style"] == "classic"
     post(base, "/api/settings", {"show_more_style": "pill"})
     assert e.s.show_more_style == "pill"
     n0 = len(SENT)

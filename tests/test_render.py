@@ -4,7 +4,7 @@ from conftest import make_article
 from tpclone import render
 from tpclone.config import Settings
 
-S = Settings()
+S = Settings(show_more_style="classic")
 ident = lambda k: k
 
 
@@ -91,10 +91,11 @@ def test_show_more_styles():
     a = make_article()
 
     def html(**kw):
+        kw.setdefault("show_more_style", "classic")
         return render.build_html(a, Settings(**kw), render.plan_media(a), ident)
 
-    assert set(render.SHOW_MORE_STYLES) == {"classic", "highlight", "pill", "plain", "telegram"}
-    for style in set(render.SHOW_MORE_STYLES) - {"telegram"}:
+    assert set(render.SHOW_MORE_STYLES) == {"auto", "classic", "highlight", "pill", "plain", "telegram"}
+    for style in set(render.SHOW_MORE_STYLES) - {"telegram", "auto"}:
         h = html(show_more_style=style)
         assert "<details><summary>" in h and h.count("<summary>") == 1 and "</summary>" in h
     t = html(show_more_style="telegram")          # no toggle of ours: content sits inline after the cover
@@ -109,3 +110,30 @@ def test_show_more_styles():
     assert "<summary>Show More</summary>" in html(show_more_style="plain")
     assert "<summary><b>👇 SHOW MORE 👇</b></summary>" in html(show_more_style="pill_centered")      # retired name -> default
     assert "<summary><b>👇 A &amp; B 👇</b></summary>" in html(show_more_label="a & b")
+
+
+def test_auto_style_follows_what_telegram_will_fold():
+    from tpclone.site import Article
+
+    def html(art):
+        return render.build_html(art, Settings(show_more_style="auto"), render.plan_media(art), ident)
+
+    # cover photo (what post 325 had) -> Telegram folds it -> no toggle of ours
+    big = make_article(n_images=3)
+    assert "<details" not in html(big) and "SHOW MORE" not in html(big) and "<tg-collage>" in html(big)
+    # no cover, no photos, short text -> nothing for Telegram to fold -> our emoji toggle
+    small = make_article(n_images=0, cover=False)
+    small.paragraphs = ["Short note."]
+    assert "<details><summary><b>👇 SHOW MORE 👇</b></summary>" in html(small)
+    # no cover but a lot of text -> folded by Telegram
+    wordy = make_article(n_images=0, cover=False)
+    wordy.paragraphs = ["x" * 400, "y" * 400]
+    assert "<details" not in html(wordy)
+    # a single gallery photo is enough
+    one = make_article(n_images=1, cover=False)
+    one.paragraphs = ["Short note."]
+    assert "<details" not in html(one)
+    # explicit choices are never overridden
+    assert "<details>" in render.build_html(big, Settings(show_more_style="classic"), render.plan_media(big), ident)
+    assert render.effective_style("auto", big, render.plan_media(big)) == "telegram"
+    assert render.effective_style("pill", big, render.plan_media(big)) == "pill"

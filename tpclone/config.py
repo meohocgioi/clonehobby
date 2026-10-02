@@ -44,7 +44,7 @@ class Settings:
     media_mode: str = "auto"
     hashtag_style: str = "plain"
     show_more_label: str = "Show More"
-    show_more_style: str = "classic"   # classic | highlight | pill | plain  (see SHOW_MORE_STYLES in render.py)
+    show_more_style: str = "auto"      # auto | classic | highlight | pill | plain | telegram  (see render.SHOW_MORE_STYLES)
     show_more_emoji: str = "👇"        # shown on both sides of the Show More text (empty = none)
     fetch_backend: str = "auto"
     flaresolverr_url: str = ""

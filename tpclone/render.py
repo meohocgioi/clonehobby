@@ -55,12 +55,31 @@ def plan_media(art: Article, max_media: int = 50) -> MediaPlan:
 
 
 SHOW_MORE_STYLES = {
+    "auto": "Automatic (recommended): Telegram's own green button where it will appear, ours only where it won't",
     "classic": "Bold CAPITALS with emoji on both sides (recommended)",
     "highlight": "Same, with a highlighted background",
     "pill": "Blue pill button (Telegram shows its text faded)",
     "plain": "Plain toggle text",
     "telegram": "No toggle of ours: Telegram's own green “Show more” (long posts only)",
 }
+
+
+FOLD_TEXT_CHARS = 600     # a post with more text than this is expected to be folded by Telegram
+
+
+def likely_folded_by_telegram(art: Article, plan: MediaPlan) -> bool:
+    """Telegram's apps fold a rich message in the chat after about the first large block and show their own green
+    'Show more' button. Observed: a post with a cover photo is folded right after the cover (even our small toggle was
+    hidden). So: a cover, any gallery photo, or a lot of text => expect Telegram's own button. The API cannot tell us;
+    this is a rule of thumb."""
+    text_len = sum(len(re.sub(r"<[^>]+>", "", p)) for p in art.paragraphs)
+    return bool(plan.cover or plan.originals or plan.overflow or text_len > FOLD_TEXT_CHARS)
+
+
+def effective_style(style: str, art: Article, plan: MediaPlan) -> str:
+    if style == "auto":
+        return "telegram" if likely_folded_by_telegram(art, plan) else "classic"
+    return style
 
 
 def summary_html(label: str, style: str, emoji: str = "👇") -> str:
@@ -132,9 +151,10 @@ def build_html(art: Article, settings: Settings, plan: MediaPlan, src: Callable[
 
     if not inner:   # nothing to expand
         return "".join(head)
-    if settings.show_more_style == "telegram":    # full content inline; Telegram itself folds LONG posts behind its button
+    style = effective_style(settings.show_more_style, art, plan)
+    if style == "telegram":    # full content inline; Telegram itself folds the post behind its own green button
         return "".join(head) + "".join(inner)
-    summary = summary_html(settings.show_more_label, settings.show_more_style, settings.show_more_emoji)
+    summary = summary_html(settings.show_more_label, style, settings.show_more_emoji)
     return "".join(head) + f"<details>{summary}{''.join(inner)}</details>"
 
 
