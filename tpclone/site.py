@@ -151,6 +151,7 @@ class Article:
     credit_label: str = "via"
     credits: list[tuple[str, str | None]] = field(default_factory=list)  # [(text, url)]
     videos: list[str] = field(default_factory=list)       # embedded video page URLs (kept as links)
+    lang: str | None = None                                # <html lang=...> of the page (to avoid posting other languages)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -484,6 +485,8 @@ def parse_article(html: str, url: str, post_id: int, settings: Settings, selecto
     selectors = selectors or {}
     soup = BeautifulSoup(html, "lxml")
     art = Article(post_id=post_id, url=url)
+    if soup.html is not None and soup.html.get("lang"):
+        art.lang = str(soup.html.get("lang"))
 
     # title
     h1 = soup.select_one(selectors["title"]) if selectors.get("title") else soup.find("h1")

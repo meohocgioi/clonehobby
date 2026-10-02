@@ -33,6 +33,8 @@ class Site(BaseHTTPRequestHandler):
             cards = "".join(f'<div><a href="/en/?p={i}">Title {i}</a> {POSTS[i]}</div>' for i in sorted(POSTS))
             return self._r(200, f"<html><body><h2>Latest News</h2>{cards}</body></html>".encode(), "text/html")
         pid = int(self.path.split("p=")[1])
+        if pid not in POSTS:                # like the real site: unknown post number -> 404
+            return self._r(404, b"not found", "text/plain")
         port = self.server.server_port
         html = f"""<html><head><meta property="og:image" content="http://127.0.0.1:{port}/c{pid}.jpg">
         <meta property="article:published_time" content="{POSTS[pid]}T09:00:00+08:00"></head><body><h1>Title {pid}</h1>

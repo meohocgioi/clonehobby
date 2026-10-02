@@ -95,29 +95,32 @@ class Engine:
         return art
 
     # ------------------------------------------------------------------ discovery
-    def discover(self) -> int:
+    def discover(self, manual: bool = False) -> int:
         """Compare the sitemap with the ledger and queue what is new. Returns the number of newly queued posts."""
         try:
-            n, total = self._discover()
+            n, total = self._discover(manual)
         except Exception as e:  # noqa: BLE001
             self.db.kv_set("discover_status", json.dumps({"ts": time.time(), "ok": False, "error": str(e)[:300]}))
             raise
         self.db.kv_set("discover_status", json.dumps({"ts": time.time(), "ok": True, "total": total, "new": n}))
         return n
 
-    def _discover(self) -> tuple[int, int]:
+    def _discover(self, manual: bool = False) -> tuple[int, int]:
         t0 = time.time()
         prev_poll = float(self.db.kv_get("last_discover_ts", "0") or 0)
         first_run = self.db.kv_get("baseline_done") is None
         # a full download is forced on the first run and at least every 30 min (guards against a stale validator)
         stale = time.time() - float(self.db.kv_get("last_full_sitemap", "0") or 0) > 1800
-        entries = self.load_sitemap(force=first_run or stale)
+        no_max = not self.db.kv_get("sitemap_max_id")      # e.g. right after an update: probing needs this number
+        entries = self.load_sitemap(force=first_run or stale or manual or no_max)
         fresh_sitemap = entries is not None
         if entries is None:        # unchanged since the list we already processed
             entries = []
         total = len(entries) or int(self.db.kv_get("sitemap_total", "0") or 0)
         if fresh_sitemap:
             self.db.kv_set("sitemap_total", total)
+            self.db.kv_set("sitemap_max_id", entries[-1][0])
+        sitemap_max = int(self.db.kv_get("sitemap_max_id", "0") or 0)
 
         # second source, always live: the Latest News cards on the website
         listing: list[dict] = []
@@ -168,6 +171,14 @@ class Engine:
         elif revive:
             self.db.log("warn", f"{len(revive)} new post(s) found by a date check were not auto-posted (too many at once); "
                                 f"use 'Repost older posts by date'.")
+        # Posts newer than the daily sitemap that no list on the homepage shows (other sections than toy news): probe the
+        # newest post numbers, exactly like the date check does.
+        probed: list[tuple] = []
+        meta: dict[int, tuple] = {}
+        if sitemap_max:
+            probed, meta = self._probe_recent(known, {e[0] for e in all_entries}, sitemap_max, 60 if manual else 12)
+            new = new + probed
+        self.db.kv_set("probe_info", json.dumps({"found": len(probed), "ts": time.time()}))
         if new:
             if len(new) > self.s.max_auto_queue:
                 self.db.bulk_seen(new, "skipped", "flood-guard")
@@ -179,11 +190,69 @@ class Engine:
                 self.db.bulk_seen(new, "pending", "new", priority=0)
                 queued += len(new)
                 self.db.log("info", f"discovered {len(new)} new post(s): " + ", ".join(str(e[0]) for e in new[:10]))
+        for pid, (title, date) in meta.items():
+            self.db.set_meta(pid, title, date)
         self._apply_listing_meta(listing)
         if fresh_sitemap:
             self._commit_validators()
         self.db.kv_set("last_discover_ts", t0)
         return queued, total
+
+    LOOKAHEAD = 20                      # post numbers probed beyond the newest one known
+    MISS_BACKOFF = (300, 900, 3600, 7200)   # seconds before a post number that did not exist is asked about again
+
+    def _probe_recent(self, known: set[int], seen_now: set[int], sitemap_max: int, cap: int):
+        """-> ([(post_id, url, None)], {post_id: (title, date)}).
+
+        The sitemap is rebuilt once a day and the homepage list shows toy news only, so a post of another section
+        (ACG, J-Movies, ...) can be live for hours without being listed anywhere. Post numbers grow with time, so ask
+        for the numbers above the sitemap that nobody has accounted for. Numbers that do not exist are remembered and
+        asked again after 5 min, 15 min, 1 h, 2 h, then left to the next sitemap rebuild."""
+        top = max(seen_now | {sitemap_max, max(known) if known else 0})
+        hi = top + self.LOOKAHEAD
+        lo = max(sitemap_max + 1, hi - 400)
+        misses = self.db.kv_json("probe_misses", {})
+        now = time.time()
+        cutoff = self._cutoff_date()
+        due = []
+        # closest to the newest known number first, in both directions: the post just below it (another section,
+        # published a bit earlier) and the ones just above it (published since) matter most
+        for pid in sorted(range(lo, hi + 1), key=lambda n: (abs(n - top), -n)):
+            if pid in known or pid in seen_now:
+                continue
+            m = misses.get(str(pid))
+            if m and (m[0] > len(self.MISS_BACKOFF) or now - m[1] < self.MISS_BACKOFF[m[0] - 1]):
+                continue
+            due.append(pid)
+        found, meta, errors = [], {}, 0
+        for pid in due[:cap]:
+            try:
+                art = self.fetch_article(pid)
+            except NotFound:
+                art = None
+            except FetchError as e:
+                errors += 1
+                log.info("probing post %s failed: %s", pid, e)
+                if errors >= 3:
+                    break
+                continue
+            is_post = bool(art and art.title and (art.paragraphs or art.images or art.cover)
+                           and not (art.lang and not art.lang.lower().startswith("en")))
+            if not is_post:
+                cnt = (misses.get(str(pid)) or [0, 0])[0] + 1
+                misses[str(pid)] = [cnt, now]
+                continue
+            misses.pop(str(pid), None)
+            if art.post_date and cutoff and art.post_date < cutoff:
+                self.db.bulk_seen([(pid, self.post_url(pid), None)], "skipped", "probe-old")
+                continue
+            found.append((pid, self.post_url(pid), None))
+            meta[pid] = (art.title, art.post_date)
+        self.db.kv_set("probe_misses", json.dumps(dict(sorted(misses.items())[-3000:])))
+        if found:
+            self.db.log("info", f"found {len(found)} post(s) newer than the sitemap by probing: "
+                                + ", ".join(str(f[0]) for f in found[:10]))
+        return found, meta
 
     def _cutoff_date(self) -> str | None:
         if self.s.listing_max_age_days <= 0:

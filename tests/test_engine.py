@@ -728,3 +728,104 @@ def test_skipped_posts_and_posts_outside_the_listing_are_not_forced_out(env):
     f.listing = [3]                                           # post 2 is no longer on the homepage list
     assert e.discover() == 0
     assert db.get(2)["status"] == "known" and db.get(3)["status"] == "skipped"
+
+
+def _sitemap_stale_setup(e, f, today):
+    """Sitemap frozen at 115034 (like the real one: rebuilt once a day); toy posts on the homepage list; other sections
+    (ACG, J-Movies...) are live on the site but listed nowhere."""
+    add_posts(f, {115034: (today, "In sitemap")})
+    e.discover()                                                            # baseline: sitemap max = 115034
+    return
+
+
+def test_watcher_probes_post_numbers_for_posts_no_list_shows(env):
+    """User's case: 115081 (ACG / J-Movies) is live, but the homepage 'Latest News' only lists toy posts."""
+    e, f, tg, db = env
+    today = _today(e)
+    _sitemap_stale_setup(e, f, today)
+    add_posts(f, {115080: (today, "Toy A"), 115081: (today, "Gintama wedding"), 115082: (today, "Toy B")})
+    f.hidden |= {115080, 115081, 115082}
+    f.listing = [115082, 115080]                              # toy news only: 115081 is in no list
+    assert e.discover() == 3                                  # the two listed + 115081 found by probing
+    assert db.get(115081)["status"] == "pending" and db.get(115081)["title"] == "Gintama wedding"
+    posted = []
+    while (row := db.next_pending()):
+        e.process(row); posted.append(row["post_id"])
+    assert posted == [115080, 115081, 115082]                 # in order
+
+
+def test_numbers_that_do_not_exist_are_remembered_and_asked_again_later(env):
+    e, f, tg, db = env
+    today = _today(e)
+    _sitemap_stale_setup(e, f, today)
+    add_posts(f, {115040: (today, "Newest toy")}); f.hidden.add(115040); f.listing = [115040]
+    e.discover(manual=True)
+    first = len(f.article_requests)
+    assert first > 0 and db.kv_json("probe_misses")           # the empty numbers are written down
+    f.article_requests.clear()
+    e.discover(manual=True); asked_again = set(f.article_requests)
+    assert not (asked_again & set(range(115035, 115040)))     # remembered: not asked again within the 5-minute pause
+    # 6 minutes later they are asked again (a draft may have been published meanwhile)
+    miss = db.kv_json("probe_misses")
+    db.kv_set("probe_misses", json.dumps({k: [v[0], time.time() - 400] for k, v in miss.items()}))
+    f.article_requests.clear(); e.discover(manual=True)
+    assert set(f.article_requests) & set(int(k) for k in miss)
+    # a post that appears later in a hole is found
+    add_posts(f, {115037: (today, "Late arrival")}); f.hidden.add(115037)
+    db.kv_set("probe_misses", json.dumps({k: [v[0], time.time() - 4000] for k, v in miss.items()}))
+    e.discover(manual=True)
+    assert db.get(115037)["status"] == "pending"
+
+
+def test_posts_newer_than_everything_known_are_found_by_lookahead(env):
+    e, f, tg, db = env
+    today = _today(e)
+    _sitemap_stale_setup(e, f, today)
+    add_posts(f, {115040: (today, "Toy"), 115043: (today, "Newer non-toy")})
+    f.hidden |= {115040, 115043}; f.listing = [115040]
+    e.discover(manual=True)
+    assert db.get(115043)["status"] == "pending"
+
+
+def test_probe_ignores_other_languages_old_posts_and_non_posts(env):
+    e, f, tg, db = env
+    today = _today(e)
+    _sitemap_stale_setup(e, f, today)
+    add_posts(f, {115040: (today, "Toy"), 115041: (today, "中文文章"), 115042: ("2020-01-01", "Ancient")})
+    f.hidden |= {115040, 115041, 115042}; f.listing = [115040]; f.lang[115041] = "zh-TW"
+    e.discover(manual=True)
+    assert db.get(115040)["status"] == "pending"
+    assert db.get(115041) is None                              # another language: never posted
+    assert db.get(115042)["status"] == "skipped"               # too old to be 'new'
+    assert db.get(115042)["source"] == "probe-old"
+
+
+def test_probe_errors_do_not_break_discovery_and_stop_early(env):
+    from tpclone.fetch import FetchError
+    e, f, tg, db = env
+    today = _today(e)
+    _sitemap_stale_setup(e, f, today)
+    add_posts(f, {115040: (today, "Toy")}); f.hidden.add(115040); f.listing = [115040]
+    orig = f.get_text
+    calls = []
+
+    def flaky(url, **kw):
+        if "?p=" in url and int(url.rsplit("=", 1)[1]) != 115040:
+            calls.append(url); raise FetchError("boom")
+        return orig(url, **kw)
+    f.get_text = flaky
+    assert e.discover(manual=True) == 1                       # the listed post still goes through
+    assert len(calls) == 3                                    # three errors in a row: stop probing for this round
+    assert not db.kv_json("probe_misses")                     # errors are not remembered as 'does not exist'
+
+
+def test_manual_check_and_first_poll_after_update_still_probe(env):
+    """Right after an update the new bookkeeping (newest sitemap number) is empty and the website may answer 'not
+    modified': probing must still happen."""
+    e, f, tg, db = env
+    today = _today(e)
+    _sitemap_stale_setup(e, f, today)
+    add_posts(f, {115040: (today, "Toy"), 115041: (today, "ACG post")}); f.hidden |= {115040, 115041}; f.listing = [115040]
+    db.kv_set("sitemap_max_id", "")                           # as if this version had just been installed
+    assert e.discover() >= 1
+    assert db.get(115041)["status"] == "pending"

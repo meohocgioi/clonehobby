@@ -79,6 +79,8 @@ class FakeFetcher:
         self.posts: dict[int, tuple[str, str]] = {}   # id -> (date, title)
         self.requests: list[dict] = []
         self.listing: list[int] = []      # ids shown in the homepage 'Latest News'
+        self.lang: dict[int, str] = {}     # id -> <html lang> of its article page (default: en)
+        self.article_requests: list[int] = []
         self.hidden: set[int] = set()     # exist on the site (article page works) but NOT in the sitemap
         self.client = FakeClient(self)
 
@@ -95,10 +97,11 @@ class FakeFetcher:
                 for i in self.listing if i in self.posts)
             return Page(url, 200, f"<html><body><h2>Latest News</h2>{cards}</body></html>", {})
         pid = int(url.rsplit("=", 1)[1])
+        self.article_requests.append(pid)
         if pid not in self.posts:
             raise NotFound(url)
         date, title = self.posts[pid]
-        return Page(url, 200, f"""<html><head><meta property="og:image" content="https://x/c{pid}.jpg">
+        return Page(url, 200, f"""<html lang="{self.lang.get(pid, 'en-US')}"><head><meta property="og:image" content="https://x/c{pid}.jpg">
         <meta property="article:published_time" content="{date}T10:00:00+08:00"></head><body><h1>{title}</h1>
         <article><div class="entry-content"><p>Body of {pid}</p><p><img src="https://x/{pid}.jpg"></p>
         <p>via: <a href="https://src.example/">src</a></p></div></article></body></html>""", {})

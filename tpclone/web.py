@@ -281,11 +281,12 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
                 if path == "/api/check-now":
                     def do_check_now(prog):
                         prog("checking the website")
-                        n = engine.discover()
+                        n = engine.discover(manual=True)
                         info = engine.db.kv_json("listing_info") or {}
                         st = engine.db.kv_json("discover_status") or {}
                         return {"new": n, "listing": info.get("count", 0), "listing_error": info.get("error"),
-                                "sitemap": st.get("total", 0), "newest": engine.db.kv_get("listing_max_id")}
+                                "sitemap": st.get("total", 0), "newest": engine.db.kv_get("listing_max_id"),
+                                "probed": (engine.db.kv_json("probe_info") or {}).get("found", 0)}
                     return self._json({"job": jobs.run(do_check_now)})
                 if path == "/api/post/register":
                     pid = int(body["id"])
