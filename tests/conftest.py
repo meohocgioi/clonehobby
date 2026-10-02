@@ -76,14 +76,22 @@ class FakeFetcher:
     def __init__(self):
         self.posts: dict[int, tuple[str, str]] = {}   # id -> (date, title)
         self.requests: list[dict] = []
+        self.listing: list[int] = []      # ids shown in the homepage 'Latest News'
+        self.hidden: set[int] = set()     # exist on the site (article page works) but NOT in the sitemap
         self.client = FakeClient(self)
 
     def sitemap_xml(self):
         u = "".join(f"<url><loc>https://www.toy-people.com/en/?p={i}</loc><lastmod>2026-10-01</lastmod></url>"
-                    for i in sorted(self.posts))
+                    for i in sorted(self.posts) if i not in self.hidden)
         return f'<?xml version="1.0"?><urlset>{u}</urlset>'
 
     def get_text(self, url, **kw):
+        if "?p=" not in url:        # the homepage: "Latest News" cards for the ids in self.listing
+            cards = "".join(
+                f'<div class="card"><a href="/en/?p={i}"><img src="/i/{i}.jpg"></a><div><a href="/en/?p={i}">'
+                f'{self.posts[i][1]}</a><span>{self.posts[i][0]}</span></div></div>'
+                for i in self.listing if i in self.posts)
+            return Page(url, 200, f"<html><body><h2>Latest News</h2>{cards}</body></html>", {})
         pid = int(url.rsplit("=", 1)[1])
         if pid not in self.posts:
             raise NotFound(url)
@@ -98,8 +106,9 @@ class FakeFetcher:
 
 
 @pytest.fixture
-def env():
-    s = Settings(telegram_bot_token="t", telegram_chat_id="@c", db_path=":memory:", post_delay_seconds=5, media_mode="url")
+def env(tmp_path):
+    s = Settings(telegram_bot_token="t", telegram_chat_id="@c", db_path=str(tmp_path / "data" / "tpclone.db"),
+                 post_delay_seconds=5, media_mode="url")
     fetcher, tg = FakeFetcher(), FakeTG()
     db = DB(":memory:")
     e = Engine(s, db, fetcher, tg)

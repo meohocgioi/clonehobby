@@ -29,6 +29,9 @@ class Site(BaseHTTPRequestHandler):
             return self._r(200, f'<urlset>{u}</urlset>'.encode(), "application/xml")
         if self.path.endswith(".jpg"):
             return self._r(200, png(), "image/png")
+        if "p=" not in self.path:          # homepage: "Latest News" cards
+            cards = "".join(f'<div><a href="/en/?p={i}">Title {i}</a> {POSTS[i]}</div>' for i in sorted(POSTS))
+            return self._r(200, f"<html><body><h2>Latest News</h2>{cards}</body></html>".encode(), "text/html")
         pid = int(self.path.split("p=")[1])
         port = self.server.server_port
         html = f"""<html><head><meta property="og:image" content="http://127.0.0.1:{port}/c{pid}.jpg">
@@ -196,3 +199,21 @@ def test_status_reports_the_website_watcher(stack):
     e.discover()
     st = httpx.get(base + "/api/status").json()
     assert st["watch"]["ok"] is True and st["watch"]["total"] >= 5 and st["poll_every"] == 1
+
+
+def test_check_now_reports_listing(stack):
+    e, w, db, base = stack
+    r = job_result(base, post(base, "/api/check-now")["job"])
+    assert r["listing"] >= 5 and r["listing_error"] is None and r["sitemap"] >= 5
+    st = httpx.get(base + "/api/status").json()
+    assert st["listing"]["count"] >= 5 and st["listing_max"]
+
+
+def job_result(base, jid):
+    for _ in range(100):
+        j = httpx.get(f"{base}/api/jobs/{jid}").json()
+        if j["state"] != "running":
+            assert j["state"] == "done", j
+            return j["result"]
+        time.sleep(0.1)
+    raise AssertionError("job timeout")

@@ -381,3 +381,70 @@ def test_discovery_status_is_recorded(env):
     e.discover()
     st = db.kv_json("discover_status")
     assert st["ok"] is True and st["total"] == 1 and st["new"] == 0 and st["ts"] > 0
+
+
+def test_watcher_sees_posts_the_daily_sitemap_does_not_have(env):
+    """The sitemap is rebuilt once a day; the homepage 'Latest News' is live. New posts must come from the latter."""
+    e, f, tg, db = env
+    import datetime
+    today = datetime.datetime.now(__import__("zoneinfo").ZoneInfo(e.s.site_tz)).date().isoformat()
+    add_posts(f, {1: ("2026-01-01", "Old")})
+    e.discover()                                                           # baseline
+    add_posts(f, {115078: (today, "Brand new A"), 115080: (today, "Brand new B")})
+    f.hidden |= {115078, 115080}                                           # not in the sitemap yet
+    f.listing = [115080, 115078]
+    assert e.discover() == 2
+    assert db.get(115078)["status"] == "pending" and db.get(115078)["title"] == "Brand new A"
+    row = db.next_pending()
+    assert row["post_id"] == 115078                                        # oldest first
+    e.process(row)
+    assert db.get(115078)["status"] == "posted"
+    assert e.discover() == 0                                               # not queued twice
+
+
+def test_old_listed_posts_are_never_auto_posted(env):
+    e, f, tg, db = env
+    add_posts(f, {1: ("2026-01-01", "Old")})
+    e.discover()
+    add_posts(f, {500: ("2020-01-01", "Ancient trending post")})
+    f.hidden.add(500); f.listing = [500]
+    assert e.discover() == 0 and db.get(500) is None
+
+
+def test_listing_failure_does_not_break_the_sitemap_path(env):
+    e, f, tg, db = env
+    add_posts(f, {1: ("2026-09-20", "Old")})
+    e.discover()
+    add_posts(f, {2: ("2026-09-25", "New via sitemap")})
+    orig = f.get_text
+    f.get_text = lambda url, **kw: (_ for _ in ()).throw(RuntimeError("homepage down")) if "?p=" not in url else orig(url, **kw)
+    assert e.discover() == 1
+    assert db.kv_json("listing_info")["error"] and "homepage down" in db.kv_json("listing_info")["error"]
+
+
+def test_first_run_queues_listed_posts_newer_than_last_posted(env):
+    """Exactly the user's situation: posted up to 115034 by date, sitemap stale, newer posts only on the homepage."""
+    e, f, tg, db = env
+    import datetime
+    today = datetime.datetime.now(__import__("zoneinfo").ZoneInfo(e.s.site_tz)).date().isoformat()
+    add_posts(f, {115034: (today, "Last published")})
+    db.upsert_seen(115034, "u", None, "known", "x"); db.mark_posted(115034, 9)
+    add_posts(f, {115070: (today, "N1"), 115078: (today, "N2"), 115080: (today, "N3")})
+    f.hidden |= {115070, 115078, 115080}; f.listing = [115080, 115078, 115070]
+    assert e.discover() == 3
+    assert [db.get(i)["status"] for i in (115070, 115078, 115080)] == ["pending"] * 3
+
+
+def test_date_check_finds_posts_missing_from_the_stale_sitemap(env):
+    """User's report: date check for today showed 7 posts although many more exist (115070, 115078, 115080...)."""
+    e, f, tg, db = env
+    seed_site(f, {115018: "2026-10-02", 115027: "2026-10-02", 115034: "2026-10-02"})
+    seed_site(f, {i: "2026-10-02" for i in (115040, 115055, 115070, 115078, 115080)})
+    f.hidden |= {115040, 115055, 115070, 115078, 115080}                  # newer than the daily sitemap
+    f.listing = [115080, 115078, 115070]                                   # homepage shows only the newest few
+    plan = e.plan_date("2026-10-02", margin=2)
+    assert [p["id"] for p in plan["posts"]] == [115018, 115027, 115034, 115040, 115055, 115070, 115078, 115080]
+    assert db.kv_json("gap_missing")                                       # non-existent ids in the gap are remembered
+    before = len(f.requests)
+    e.plan_date("2026-10-02", margin=2)                                    # second time: gap misses are not re-probed
+    assert len(db.kv_json("gap_missing")) > 0

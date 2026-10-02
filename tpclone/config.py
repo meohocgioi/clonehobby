@@ -30,6 +30,8 @@ class Settings:
     telegram_chat_id: str = ""
     telegram_api_base: str = "https://api.telegram.org"
     site_base: str = "https://www.toy-people.com/en/"
+    listing_url: str = ""               # page whose "Latest News" list is read every check (default: SITE_BASE)
+    listing_max_age_days: int = 3       # never auto-post a listed post older than this
     sitemap_url: str = "https://www.toy-people.com/sitemap/sitemap-en.xml"
     site_tz: str = "Asia/Taipei"
     poll_interval_seconds: int = 300

@@ -42,6 +42,55 @@ def parse_sitemap(xml: str) -> list[tuple[int, str, str | None]]:
     return [out[k] for k in sorted(out)]
 
 
+# ----------------------------------------------------------------------------- "Latest News" listing
+_LINK_PID = re.compile(r"[?&]p=(\d+)(?:&|$|#)")
+_ISO_DATE = re.compile(r"\b(20\d{2}-\d{2}-\d{2})\b")
+
+
+def parse_listing(html: str, tz: str = "Asia/Taipei") -> list[dict]:
+    """Posts shown on a listing page (homepage 'Latest News', archives...), in page order.
+
+    Looks for every link to a post (?p=ID), so it does not depend on class names. For each post it collects the card's
+    title (longest link text / heading) and the date printed in the card (e.g. 2026-10-02).
+    -> [{"id": 115078, "title": "...", "date": "2026-10-02" | None}]"""
+    soup = BeautifulSoup(html, "lxml")
+    anchors: list[tuple[int, Tag]] = []
+    for a in soup.find_all("a", href=True):
+        m = _LINK_PID.search(a["href"] if "?" in a["href"] else a["href"] + "?")
+        if m:
+            anchors.append((int(m.group(1)), a))
+    order: list[int] = []
+    by_id: dict[int, list[Tag]] = {}
+    for pid, a in anchors:
+        if pid not in by_id:
+            order.append(pid)
+        by_id.setdefault(pid, []).append(a)
+
+    def ids_inside(node: Tag) -> set[int]:
+        out = set()
+        for a in node.find_all("a", href=True):
+            m = _LINK_PID.search(a["href"] if "?" in a["href"] else a["href"] + "?")
+            if m:
+                out.add(int(m.group(1)))
+        return out
+
+    items = []
+    for pid in order:
+        first = by_id[pid][0]
+        card: Tag = first
+        for _ in range(6):                      # widen to the card, stopping before it would contain another post
+            parent = card.parent
+            if parent is None or parent.name in ("body", "html", "[document]") or ids_inside(parent) - {pid}:
+                break
+            card = parent
+        texts = [_txt(a) for a in by_id[pid]] + [_txt(h) for h in card.find_all(["h1", "h2", "h3", "h4", "h5"])]
+        title = max((t for t in texts if t), key=len, default="")
+        m = _ISO_DATE.search(card.get_text(" ", strip=True))
+        date = parse_date(m.group(1), tz) if m else None
+        items.append({"id": pid, "title": title or None, "date": date})
+    return items
+
+
 # ----------------------------------------------------------------------------- dates
 _MONTHS = {m: i for i, m in enumerate(
     ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)}

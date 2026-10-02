@@ -60,7 +60,7 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
             "uncertain": db.by_status("uncertain", 50), "failed": db.by_status("failed", 50),
             "chat": s.telegram_chat_id, "configured": s.telegram_ready,
             "last_backup": float(db.kv_get("last_backup_ts", "0") or 0) or None,
-            "watch": db.kv_json("discover_status"), "poll_every": s.poll_interval_seconds, "data_dir": str(s.data_dir.resolve()), "probe": db.kv_get("probe_ok"), "version": tpclone.code_version(), "code_dir": tpclone.__path__[0], "update": db.kv_json("update_info"),
+            "watch": db.kv_json("discover_status"), "listing": db.kv_json("listing_info"), "listing_max": db.kv_get("listing_max_id"), "poll_every": s.poll_interval_seconds, "data_dir": str(s.data_dir.resolve()), "probe": db.kv_get("probe_ok"), "version": tpclone.code_version(), "code_dir": tpclone.__path__[0], "update": db.kv_json("update_info"),
         }
 
     def settings_view() -> dict:
@@ -252,6 +252,15 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
                         finally:
                             update_lock.release()
                     return self._json({"job": jobs.run(do_apply)})
+                if path == "/api/check-now":
+                    def do_check_now(prog):
+                        prog("checking the website")
+                        n = engine.discover()
+                        info = engine.db.kv_json("listing_info") or {}
+                        st = engine.db.kv_json("discover_status") or {}
+                        return {"new": n, "listing": info.get("count", 0), "listing_error": info.get("error"),
+                                "sitemap": st.get("total", 0), "newest": engine.db.kv_get("listing_max_id")}
+                    return self._json({"job": jobs.run(do_check_now)})
                 if path == "/api/post-now":
                     pid, force = int(body["id"]), bool(body.get("force"))
                     jid = jobs.run(lambda prog: engine.post_now(pid, force))

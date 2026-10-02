@@ -54,7 +54,7 @@
     <p class="stats" id="stats"></p>
     <p id="watch" class="mut"></p>
     <p class="mut" id="last"></p>
-    <div class="row"><button id="verify">Check channel for deleted posts</button><span class="mut" id="verify-out"></span></div>
+    <div class="row"><button id="checknow">Check website now</button><button id="verify">Check channel for deleted posts</button><span class="mut" id="verify-out"></span></div>
     <p class="mut" id="bk"></p>
   </div>
 
@@ -154,7 +154,7 @@ async function refresh(){
    if(s.state!=='running'){el.textContent='Website watcher: off (press Start)'}
    else if(!w){el.textContent='Website watcher: first check in progress…'}
    else if(!w.ok){el.className='error'; el.textContent='⚠ Website check failed '+fmt(w.ts)+': '+w.error}
-   else {const ago=Math.max(0,Math.round(Date.now()/1000-w.ts)); el.textContent='🔎 Website watcher: checked '+(ago<90?ago+' s':Math.round(ago/60)+' min')+' ago · '+(w.total||0).toLocaleString()+' posts on the site · every '+Math.round(s.poll_every/60)+' min · new posts are posted automatically'}}
+   else {const ago=Math.max(0,Math.round(Date.now()/1000-w.ts)); el.textContent='🔎 Website watcher: checked '+(ago<90?ago+' s':Math.round(ago/60)+' min')+' ago · '+(w.total||0).toLocaleString()+' posts in the sitemap · every '+Math.round(s.poll_every/60)+' min'+(s.listing&&!s.listing.error?(' · Latest News list: '+s.listing.count+' posts'+(s.listing.count?'':' ⚠ none read')):'')+(s.listing&&s.listing.error?' · ⚠ Latest News list failed':'')+' · new posts are posted automatically'}}
   $('last').textContent=s.last_posted?('Last published: '+(s.last_posted.title||s.last_posted.post_id)+' — '+fmt(s.last_posted.posted_at)):'';
   const lg=$('log'); lg.innerHTML='';
   for(const e of s.events){const d=document.createElement('div'); d.className=e.level; d.textContent=fmt(e.ts)+'  '+e.message; lg.appendChild(d);}
@@ -333,6 +333,16 @@ $('imp_go').onclick=async()=>{
   const r=await fetch('/api/import-backup',{method:'POST',headers:{'X-Requested-With':'tpclone','Content-Type':'application/octet-stream'},body:f}).then(x=>x.json());
   $('imp_out').className=r.error?'error':'good';
   $('imp_out').textContent=r.error?('❌ '+r.error):('✅ '+r.in_file+' posted items in the file: '+r.added+' added, '+r.updated+' corrected'); refresh();
+};
+
+$('checknow').onclick=async()=>{
+  $('checknow').disabled=true; $('verify-out').className='mut'; $('verify-out').textContent='checking the website…';
+  const {job,error}=await api('/api/check-now',{}); if(error){$('verify-out').textContent='❌ '+error;$('checknow').disabled=false;return}
+  const j=await pollJob(job,m=>$('verify-out').textContent=m); $('checknow').disabled=false;
+  if(j.state==='error'){$('verify-out').className='error'; $('verify-out').textContent='❌ '+j.error; return}
+  const r=j.result; const warn=r.listing_error?(' ⚠ Latest News list failed: '+r.listing_error):(r.listing===0?' ⚠ the Latest News list returned no posts':'');
+  $('verify-out').className=warn?'error':'good';
+  $('verify-out').textContent='✅ Latest News list: '+r.listing+' posts (newest '+(r.newest||'?')+') · sitemap: '+(r.sitemap||0).toLocaleString()+' posts · '+r.new+' new post(s) queued'+warn; refresh();
 };
 refresh(); loadSettings(); setInterval(refresh,4000); setInterval(loadSettings,8000);
 </script>

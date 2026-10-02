@@ -81,3 +81,33 @@ def test_release_schedule_in_title_banner_but_not_menu():
             '<div class="rel">Release Schedule: 2026/11</div><h1>Title</h1></header>'
             '<article><div class="entry-content"><p>Hello</p></div></article></body></html>')
     assert sched(html) == "Release Schedule: 2026/11"
+
+
+LISTING = """<html><body><header><div class="menu"><a href="/en/schedule">Release Schedule</a></div></header>
+<h2>Latest News</h2>
+<div class="list">
+ <div class="card"><a href="https://www.toy-people.com/en/?p=115078"><img src="/x.jpg"></a>
+   <div class="body"><a href="/en/?p=115078"><h3>BANDAI HOBBY MGEX 1/100 Mighty Strike Freedom Gundam Makes Its In-Person Debut</h3></a>
+   <span class="date">2026-10-02</span><span class="sched">Scheduled Release : Mar 2027</span><span class="by">BIN 180</span></div></div>
+ <div class="card"><a href="/en/?p=115080"><img src="/y.jpg"></a>
+   <div class="body"><a href="/en/?p=115080&lang=en">30MP Model Kit Prototypes Debut Rei Ayanami</a><span>2026-10-02</span></div></div>
+ <div class="card"><a href="/en/?p=115070"><img src="/z.jpg"></a><a href="/en/?p=115070">SMP COM-BATTLER V6 50th Legacy</a><span>2026-10-01</span></div>
+</div>
+<div class="trending"><a href="/en/?p=114949">Old trending post</a></div>
+<a href="/en/tag/gundam">not a post</a><a href="/en/?page_id=7">not a post either</a>
+</body></html>"""
+
+
+def test_parse_listing_cards():
+    from tpclone.site import parse_listing
+    items = parse_listing(LISTING)
+    assert [i["id"] for i in items] == [115078, 115080, 115070, 114949]      # page order, deduped, non-post links ignored
+    assert items[0]["title"].startswith("BANDAI HOBBY MGEX 1/100") and items[0]["date"] == "2026-10-02"
+    assert items[1]["title"] == "30MP Model Kit Prototypes Debut Rei Ayanami" and items[1]["date"] == "2026-10-02"
+    assert items[2]["date"] == "2026-10-01"
+    assert items[3]["date"] is None                                           # no date printed in that card
+
+
+def test_parse_listing_empty_page():
+    from tpclone.site import parse_listing
+    assert parse_listing("<html><body>Just a moment...</body></html>") == []

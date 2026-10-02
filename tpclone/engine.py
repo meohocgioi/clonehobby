@@ -79,6 +79,11 @@ class Engine:
             self.load_sitemap(force=True)
         return self._sitemap
 
+    def fetch_listing(self) -> list[dict]:
+        """The 'Latest News' cards the website shows right now (the sitemap is rebuilt only once a day)."""
+        page = self.fetcher.get_text(self.s.listing_url or self.s.site_base)
+        return site.parse_listing(page.text, self.s.site_tz)
+
     def fetch_article(self, post_id: int) -> site.Article:
         url = self.post_url(post_id)
         page = self.fetcher.get_text(url)
@@ -102,16 +107,44 @@ class Engine:
         # a full download is forced on the first run and at least every 30 min (guards against a stale validator)
         stale = time.time() - float(self.db.kv_get("last_full_sitemap", "0") or 0) > 1800
         entries = self.load_sitemap(force=first_run or stale)
-        if entries is None:        # server says: unchanged since the list we already processed
-            return 0, int(self.db.kv_get("sitemap_total", "0") or 0)
-        total = len(entries)
-        self.db.kv_set("sitemap_total", total)
+        fresh_sitemap = entries is not None
+        if entries is None:        # unchanged since the list we already processed
+            entries = []
+        total = len(entries) or int(self.db.kv_get("sitemap_total", "0") or 0)
+        if fresh_sitemap:
+            self.db.kv_set("sitemap_total", total)
+
+        # second source, always live: the Latest News cards on the website
+        listing: list[dict] = []
+        listing_error = None
+        try:
+            listing = self.fetch_listing()
+        except Exception as e:  # noqa: BLE001  (the sitemap alone must still work)
+            listing_error = f"{type(e).__name__}: {e}"
+            log.warning("latest-news listing failed: %s", listing_error)
+        self.db.kv_set("listing_info", json.dumps({"count": len(listing), "error": listing_error, "ts": time.time()}))
+        if listing:
+            self.db.kv_set("listing_max_id", max(i["id"] for i in listing))
+        cutoff = self._cutoff_date()
+        from_listing = [(i["id"], self.post_url(i["id"]), None) for i in listing
+                        if not (i["date"] and cutoff and i["date"] < cutoff)]     # never resurrect old posts
+        merged: dict[int, tuple] = {e[0]: e for e in entries}
+        for e in from_listing:
+            merged.setdefault(e[0], e)
+        all_entries = sorted(merged.values())
+        if not all_entries:
+            if not fresh_sitemap and listing_error:
+                raise FetchError(f"latest-news page failed: {listing_error}")
+            return 0, total
+
         if first_run:
-            n = self._baseline(entries)
-            self._commit_validators()
+            n = self._baseline(all_entries)
+            self._apply_listing_meta(listing)
+            if fresh_sitemap:
+                self._commit_validators()
             return n, total
         known = self.db.known_ids()
-        new = [e for e in entries if e[0] not in known]
+        new = [e for e in all_entries if e[0] not in known]
         queued = 0
         if new:
             if len(new) > self.s.max_auto_queue:
@@ -124,8 +157,23 @@ class Engine:
                 self.db.bulk_seen(new, "pending", "new", priority=0)
                 queued = len(new)
                 self.db.log("info", f"discovered {len(new)} new post(s): " + ", ".join(str(e[0]) for e in new[:10]))
-        self._commit_validators()
+        self._apply_listing_meta(listing)
+        if fresh_sitemap:
+            self._commit_validators()
         return queued, total
+
+    def _cutoff_date(self) -> str | None:
+        if self.s.listing_max_age_days <= 0:
+            return None
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        today = datetime.now(ZoneInfo(self.s.site_tz)).date()
+        return (today - timedelta(days=self.s.listing_max_age_days)).isoformat()
+
+    def _apply_listing_meta(self, listing: list[dict]) -> None:
+        for it in listing:
+            if self.db.get(it["id"]) and (it["title"] or it["date"]):
+                self.db.set_meta(it["id"], it["title"], it["date"])
 
     def _baseline(self, entries) -> int:
         """First run of the watcher. Everything already on the site is marked 'seen' (not posted) so the channel is
@@ -298,6 +346,7 @@ class Engine:
 
     # ------------------------------------------------------------------ automatic backups
     BACKUP_KEEP = 14
+    GAP_LIMIT = 400          # most IDs probed between the daily sitemap and the newest listed post
 
     def backup_dir(self):
         return self.s.data_dir / "backups"
@@ -408,6 +457,16 @@ class Engine:
         entries = self.load_sitemap(force=True)   # always the site's current state (new posts since last time)
         ids = [e[0] for e in entries]
         lm = {e[0]: e[2] for e in entries}
+        sitemap_max = ids[-1] if ids else 0
+        # The sitemap is rebuilt only once a day, so the newest posts are missing from it. Add what the website shows
+        # right now (Latest News) and, below, probe the IDs in between.
+        say("reading the Latest News list")
+        try:
+            listing = self.fetch_listing()
+        except Exception as e:  # noqa: BLE001
+            listing = []
+            say(f"(Latest News list unavailable: {e})")
+        ids = sorted(set(ids) | {i["id"] for i in listing})
         n = len(ids)
 
         def probe(i: int) -> str | None:
@@ -440,6 +499,25 @@ class Engine:
                 found[pid] = t
             if k % 10 == 0:
                 say(f"scanning {k}/{len(scan)} ({len(found)} posts on {date})")
+        # IDs between the (stale) sitemap and the newest listed post: posts published since the sitemap was rebuilt
+        if listing and max(i["id"] for i in listing) > sitemap_max:
+            listed = {i["id"] for i in listing}
+            gap = [p for p in range(sitemap_max + 1, max(listed) + 1) if p not in listed][-self.GAP_LIMIT:]
+            missing = set(self.db.kv_json("gap_missing", []))
+            for k, pid in enumerate(gap):
+                if pid in missing:
+                    continue
+                try:
+                    d, t = self._meta_for(pid)
+                except FetchError:
+                    continue
+                if d is None and t is None:
+                    missing.add(pid)
+                elif d == date:
+                    found[pid] = t
+                if k % 10 == 0:
+                    say(f"checking posts newer than the sitemap {k}/{len(gap)} ({len(found)} posts on {date})")
+            self.db.kv_set("gap_missing", json.dumps(sorted(missing)[-5000:]))
         for r in self.db.by_date(date):
             found.setdefault(r["post_id"], r.get("title"))
 
