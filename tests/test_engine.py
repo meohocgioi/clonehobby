@@ -348,8 +348,8 @@ def test_date_check_must_not_hide_new_posts_from_the_watcher(env):
     add_posts(f, {1: ("2026-09-20", "Old")})
     e.discover()                                              # baseline
     add_posts(f, {2: ("2026-10-02", "Brand new post")})       # appears on the website ...
-    seed_site(f, {3: "2026-09-30"})
-    e.plan_date("2026-09-30", margin=2)                       # ... then the user checks a date (downloads the sitemap)
+    seed_site(f, {3: "2026-06-01"})
+    e.plan_date("2026-06-01", margin=2)                       # ... then the user checks a (old) date (downloads the sitemap)
     assert e.discover() == 1                                  # watcher still sees the new post 2 ...
     assert db.get(2)["status"] == "pending"
     assert db.get(3)["status"] == "known"                     # ... while post 3 (found by the date check) is not auto-posted
@@ -595,8 +595,101 @@ def test_background_verifier_backs_off_on_errors_and_before_calibration(env):
     mid = _posted_with_message(e, f, tg, db)
     db._x("UPDATE sent_messages SET verified_at=? WHERE message_id=?", (time.time() - 7200, mid))
     tg.message_exists = lambda m: (_ for _ in ()).throw(TelegramError("flood", 429, 40))
-    assert e.background_verify_step() is False and e.bg_pause_until > time.time() + 500   # paused ~10 min
+    assert e.background_verify_step() is False and e.bg_pause_until > time.time() + 30   # Telegram said 40 s: paused
     e.bg_pause_until = 0
     db.kv_set("probe_ok", "0")                                   # an untrusted probe is never used in the background
     tg.message_exists = lambda m: True
     assert e.background_verify_step() is False
+
+
+def _today(e):
+    import datetime
+    return datetime.datetime.now(__import__("zoneinfo").ZoneInfo(e.s.site_tz)).date().isoformat()
+
+
+def test_post_found_first_by_a_date_check_is_still_posted_by_the_watcher(env):
+    """User's report: 115081 was found by 'Check date' before the watcher noticed it, was filed as 'known', and the
+    watcher then ignored it forever (while posting 115082)."""
+    e, f, tg, db = env
+    today = _today(e)
+    add_posts(f, {115080: (today, "Before")})
+    e.discover()                                              # watcher baseline
+    add_posts(f, {115081: (today, "Gintama wedding")})
+    f.hidden.add(115081); f.listing = [115081, 115080]        # visible on the homepage, not yet in the sitemap
+    e.plan_date(today, margin=2)                              # the user presses Check date first
+    assert db.get(115081)["status"] == "known"
+    add_posts(f, {115082: (today, "Batman")}); f.hidden.add(115082); f.listing = [115082, 115081, 115080]
+    assert e.discover() == 2                                  # watcher: 115082 (new) AND 115081 (found by the date check)
+    assert db.get(115081)["status"] == "pending" and db.get(115082)["status"] == "pending"
+    posted = []
+    while (row := db.next_pending()):
+        e.process(row); posted.append(row["post_id"])
+    assert posted == [115081, 115082]                         # oldest first
+    assert e.discover() == 0                                  # and never twice
+
+
+def test_date_scanned_posts_from_before_the_last_poll_are_left_alone(env):
+    """A user browsing history by date must not suddenly get those posts auto-posted."""
+    e, f, tg, db = env
+    today = _today(e)
+    add_posts(f, {1: (today, "Old")})
+    e.discover()
+    seed_site(f, {2: today})
+    e.plan_date(today, margin=2)                              # post 2 recorded as 'known' ...
+    e.discover()                                              # ... the next poll revives it (found since the last poll)
+    assert db.get(2)["status"] == "pending"
+    db.reset_status(2, "known")                               # the user ignores it
+    e.discover(); e.discover()                                # later polls: it was found BEFORE them, so it stays ignored
+    assert db.get(2)["status"] == "known"
+
+
+def test_old_dates_and_previously_posted_rows_are_never_revived(env):
+    e, f, tg, db = env
+    add_posts(f, {1: ("2026-01-01", "Old")})
+    e.discover()
+    seed_site(f, {5: "2026-01-02"})
+    e.plan_date("2026-01-02", margin=2)                       # an old date: outside LISTING_MAX_AGE_DAYS
+    e.post_now(5); mid = db.live_messages(5)[0]
+    tg.deleted.add(mid); e.FRESH_SECONDS = 0
+    e.verify_posted([5], force=True)                          # the user deleted it from the channel on purpose
+    assert db.get(5)["status"] == "known"
+    today = _today(e)
+    seed_site(f, {6: today}); e.plan_date(today, margin=2)
+    e.post_now(6); tg.deleted.add(db.live_messages(6)[0]); e.verify_posted([6], force=True)
+    assert db.get(6)["status"] == "known" and db.live_messages(6) == []
+    e.discover()
+    assert db.get(5)["status"] == "known" and db.get(6)["status"] == "known"      # never re-posted behind your back
+
+
+def test_channel_checks_share_one_gentle_pace_and_respect_flood_control(env):
+    from tpclone.telegram import TelegramError
+    e, f, tg, db = env
+    seed_site(f, {1: "2026-09-30", 2: "2026-09-30", 3: "2026-09-30"})
+    for p in (1, 2, 3):
+        e.post_now(p)
+    e.probe_gap = 0.05
+    t = time.time()
+    for p in (1, 2, 3):
+        e._probe(db.live_messages(p)[0])
+    assert time.time() - t >= 0.12                            # 3 probes are at least probe_gap apart
+    e.probe_gap = 0
+    calls = []
+
+    def flood(mid):
+        calls.append(mid)
+        raise TelegramError("Too Many Requests", 429, 40)
+    tg.message_exists = flood
+    assert e._probe(1) is None and e.bg_pause_until > time.time() + 30
+    assert e._probe(2) is None and calls == [1]               # while paused Telegram is not asked at all
+
+
+def test_date_check_asks_telegram_only_a_few_times(env):
+    e, f, tg, db = env
+    e.FRESH_SECONDS = 0
+    seed_site(f, {i: "2026-09-30" for i in range(1, 25)})
+    e.plan_date("2026-09-30", margin=2)
+    for p in range(1, 25):
+        e.post_now(p)
+    tg.probes.clear()
+    plan = e.plan_date("2026-09-30", margin=2)
+    assert len(tg.probes) <= e.PLAN_PROBES and plan["total"] == 24

@@ -109,11 +109,13 @@ class Telegram:
         """
         try:
             self.call("editMessageReplyMarkup", {"chat_id": self.chat_id, "message_id": message_id},
-                      max_429_retries=3)
+                      max_429_retries=0)       # never sleep here: the caller decides how to back off
             return True
         except UncertainDelivery:
             return None
         except TelegramError as e:
+            if e.code == 429:                  # "slow down": tell the caller (None would hide it)
+                raise
             low = str(e).lower()
             if "message is not modified" in low:
                 return True

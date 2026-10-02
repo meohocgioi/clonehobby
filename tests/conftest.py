@@ -114,5 +114,5 @@ def env(tmp_path):
     fetcher, tg = FakeFetcher(), FakeTG()
     db = DB(":memory:")
     e = Engine(s, db, fetcher, tg)
-    e.verify_delay = 0
+    e.probe_gap = 0
     return e, fetcher, tg, db

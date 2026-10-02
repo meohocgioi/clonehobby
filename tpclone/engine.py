@@ -26,8 +26,10 @@ class Engine:
         self.pacer = Pacer(settings.effective_delay, db, settings.max_posts_per_hour)
         self._sitemap: list[tuple[int, str, str | None]] = []
         self._sitemap_at = 0.0
-        self.verify_delay = 1.2         # Telegram answered 'flood control' at 0.4 s; stay clearly below its limit
-        self.bg_pause_until = 0.0
+        self.probe_gap = 5.0            # min seconds between two 'does it exist?' questions (Telegram flood-limits edits)
+        self.bg_pause_until = 0.0       # set when Telegram says 'slow down'
+        self._probe_lock = threading.Lock()
+        self._probe_last = 0.0
 
     def apply_settings(self) -> None:
         """Re-read the (already updated) Settings object: Telegram client, pacing."""
@@ -104,6 +106,8 @@ class Engine:
         return n
 
     def _discover(self) -> tuple[int, int]:
+        t0 = time.time()
+        prev_poll = float(self.db.kv_get("last_discover_ts", "0") or 0)
         first_run = self.db.kv_get("baseline_done") is None
         # a full download is forced on the first run and at least every 30 min (guards against a stale validator)
         stale = time.time() - float(self.db.kv_get("last_full_sitemap", "0") or 0) > 1800
@@ -143,10 +147,23 @@ class Engine:
             self._apply_listing_meta(listing)
             if fresh_sitemap:
                 self._commit_validators()
+            self.db.kv_set("last_discover_ts", t0)
             return n, total
         known = self.db.known_ids()
         new = [e for e in all_entries if e[0] not in known]
+        # posts a manual date check found since the previous poll are 'known' but nobody queued them: the watcher
+        # would never post them. They are new posts as far as the channel is concerned.
+        revive = [] if not prev_poll else self.db.unqueued_scanned_since(prev_poll, self._cutoff_date())
         queued = 0
+        if revive and len(new) + len(revive) <= self.s.max_auto_queue:
+            for pid in revive:
+                if self.db.enqueue(pid, 0, "new"):
+                    queued += 1
+            self.db.log("info", f"queued {len(revive)} new post(s) that a date check had found first: "
+                                + ", ".join(str(p) for p in revive[:10]))
+        elif revive:
+            self.db.log("warn", f"{len(revive)} new post(s) found by a date check were not auto-posted (too many at once); "
+                                f"use 'Repost older posts by date'.")
         if new:
             if len(new) > self.s.max_auto_queue:
                 self.db.bulk_seen(new, "skipped", "flood-guard")
@@ -156,11 +173,12 @@ class Engine:
                 log.warning(msg)
             else:
                 self.db.bulk_seen(new, "pending", "new", priority=0)
-                queued = len(new)
+                queued += len(new)
                 self.db.log("info", f"discovered {len(new)} new post(s): " + ", ".join(str(e[0]) for e in new[:10]))
         self._apply_listing_meta(listing)
         if fresh_sitemap:
             self._commit_validators()
+        self.db.kv_set("last_discover_ts", t0)
         return queued, total
 
     def _cutoff_date(self) -> str | None:
@@ -290,11 +308,11 @@ class Engine:
         if not live or self.tg is None or self.s.dry_run:
             return None
         for mid in live:
-            if self.tg.message_exists(mid) is True:
+            if self._probe(mid) is True:
                 self.db.mark_posted(pid, mid)
                 self.db.log("warn", f"post {pid}: not sent again - message {mid} is still in the channel")
                 return "posted"
-        if self.probe_trusted() and all(self.tg.message_exists(m) is False for m in live):
+        if self.probe_trusted() and all(self._probe(m) is False for m in live):
             for m in live:
                 self.db.mark_message_deleted(pid, m)
             return None                                   # every old copy is proven gone: fine to send
@@ -371,6 +389,7 @@ class Engine:
 
     # ------------------------------------------------------------------ automatic backups
     BACKUP_KEEP = 14
+    PLAN_PROBES = 10         # a date check asks Telegram at most this many times; the rest is left to the background checker
     FRESH_SECONDS = 1800     # a message confirmed in the channel within this time is not asked about again
     GAP_LIMIT = 400          # most IDs probed between the daily sitemap and the newest listed post
 
@@ -392,13 +411,33 @@ class Engine:
         return str(dest)
 
     # ------------------------------------------------------------------ channel verification / manual post
+    def _probe(self, mid) -> bool | None:
+        """Ask Telegram whether a channel message exists, at a shared gentle pace (foreground, background and guards all
+        go through here). While Telegram has asked us to slow down the answer is simply None ('cannot tell')."""
+        with self._probe_lock:
+            if time.time() < self.bg_pause_until:
+                return None
+            wait = self._probe_last + self.probe_gap - time.time()
+            if wait > 0:
+                time.sleep(wait)
+            try:
+                return self.tg.message_exists(mid)
+            except TelegramError as e:
+                if e.code == 429:
+                    self.bg_pause_until = time.time() + float(e.retry_after or 60) + 2
+                    log.info("Telegram says slow down: no channel checks for %.0fs", float(e.retry_after or 60))
+                    return None
+                raise
+            finally:
+                self._probe_last = time.time()
+
     def _calibrate_probe(self, mid) -> None:
         """Right after a send we KNOW the message exists: use it to prove that the 'was it deleted?' probe is honest.
         If the probe claims a just-posted message is gone, deletion detection is switched off (no silent reposts)."""
         if not mid or self.tg is None:
             return
         try:
-            res = self.tg.message_exists(mid)
+            res = self._probe(mid)
         except Exception:   # noqa: BLE001  (never let calibration disturb posting)
             return
         if res is True:
@@ -413,7 +452,7 @@ class Engine:
         return self.db.kv_get("probe_ok") == "1"
 
     def verify_posted(self, ids=None, progress: Callable[[str], None] | None = None, limit: int = 300,
-                      force: bool = False) -> dict:
+                      force: bool = False, max_probes: int | None = None) -> dict:
         """Check that posts we think are published still exist in the channel.
 
         A post can have SEVERAL messages in the channel (re-posts, duplicates). It only becomes publishable again when
@@ -432,12 +471,16 @@ class Engine:
             live = self.db.live_messages(pid) or ([r["tg_message_id"]] if r["tg_message_id"] else [])
             alive, unsure = [], False
             for mid in live:
+                if max_probes is not None and res["checked"] >= max_probes:
+                    alive.append(mid)            # enough questions for now; the background checker finishes the rest
+                    res["deferred"] = res.get("deferred", 0) + 1
+                    continue
                 age = None if force else self.db.verified_age(pid, mid)
                 if age is not None and age < self.FRESH_SECONDS:
                     alive.append(mid)            # confirmed a few minutes ago: no need to ask Telegram again
                     res["skipped"] = res.get("skipped", 0) + 1
                     continue
-                ok = self.tg.message_exists(mid)
+                ok = self._probe(mid)
                 res["checked"] += 1
                 if ok is False:
                     self.db.mark_message_deleted(pid, mid)
@@ -446,7 +489,6 @@ class Engine:
                     if ok is True:
                         self.db.touch_verified(pid, mid)
                     unsure = unsure or ok is None
-                time.sleep(self.verify_delay)    # stay far below Telegram's per-chat limits
             if not alive:
                 self.db.mark_deleted(pid)
                 res["deleted"].append(pid)
@@ -472,11 +514,13 @@ class Engine:
             return False
         pid, mid = item
         try:
-            ok = self.tg.message_exists(mid)
-        except Exception as e:  # noqa: BLE001   (flood control etc.: back off, never disturb posting)
+            ok = self._probe(mid)
+        except Exception as e:  # noqa: BLE001   (anything else: back off, never disturb posting)
             self.bg_pause_until = time.time() + 600
             log.info("background channel check paused: %s", e)
             return False
+        if ok is None and time.time() < self.bg_pause_until:
+            return False                      # Telegram asked us to slow down
         if ok is True:
             self.db.touch_verified(pid, mid)
         elif ok is False:
@@ -508,7 +552,7 @@ class Engine:
             return {"status": "sending", "error": "this post is being sent right now"}
         if row["status"] == "posted" and not force:
             live = self.db.live_messages(post_id) or ([row["tg_message_id"]] if row.get("tg_message_id") else [])
-            gone = bool(live) and self.probe_trusted() and all(self.tg.message_exists(m) is False for m in live)
+            gone = bool(live) and self.probe_trusted() and all(self._probe(m) is False for m in live)
             if gone:
                 for m in live:
                     self.db.mark_message_deleted(post_id, m)
@@ -614,7 +658,7 @@ class Engine:
         gone: list[int] = []
         if self.tg is not None:   # did the user delete some of them from the channel?
             say("checking which posts still exist in the channel")
-            gone = self.verify_posted(list(found), say)["deleted"]
+            gone = self.verify_posted(list(found), say, max_probes=self.PLAN_PROBES)["deleted"]
         rows = {p: self.db.get(p) for p in found}
         posted = sorted(p for p, r in rows.items() if r and r["status"] == "posted")
         unpublished = sorted(p for p in found if p not in posted)

@@ -310,6 +310,18 @@ class DB:
             "SELECT * FROM posts WHERE status='posted' AND tg_message_id IS NOT NULL "
             "ORDER BY posted_at DESC LIMIT ?", (limit,))]
 
+    def unqueued_scanned_since(self, since_ts: float, cutoff_date: str | None) -> list[int]:
+        """Posts that a manual date check found AFTER the watcher's previous poll, which nobody has queued or posted yet.
+        The watcher treats every row it already holds as 'seen', so without this they would be skipped forever."""
+        q = ("SELECT post_id FROM posts p WHERE status='known' AND source='date-scan' AND posted_at IS NULL "
+             "AND COALESCE(discovered_at, 0) >= ? "
+             "AND NOT EXISTS (SELECT 1 FROM sent_messages m WHERE m.post_id=p.post_id)")
+        args: list = [since_ts]
+        if cutoff_date:
+            q += " AND (post_date IS NULL OR post_date >= ?)"
+            args.append(cutoff_date)
+        return [r["post_id"] for r in self._q(q + " ORDER BY post_id", args)]
+
     def by_date(self, date: str) -> list[dict]:
         return [dict(r) for r in self._q("SELECT * FROM posts WHERE post_date=? ORDER BY post_id", (date,))]
 

@@ -102,3 +102,8 @@ under the post and paste the message number or its t.me link.
 * **Check channel for deleted posts** (top card) always asks about everything, ignoring that memory.
 * Website pages: after the website's Cloudflare check has been passed once, the app fetches the following pages straight through
   the browser it already opened instead of trying (and failing) the quick way first.
+
+## Automatic posting vs. "Check date"
+A "Check date" looks at the website and lists posts; it never posts by itself. If it finds a post that is brand new (found since the
+automatic watcher's last look), the watcher still posts it at its next check, so a date check can no longer "steal" a post from
+the watcher. Posts you browse in older dates are never posted behind your back.

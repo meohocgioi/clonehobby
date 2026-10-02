@@ -76,6 +76,7 @@ def stack(tmp_path):
     db = DB(s.db_path)
     e = Engine(s, db, Fetcher(s), Telegram("T", "@c", base=s.telegram_api_base))
     e.pacer.delay = 0
+    e.probe_gap = 0
     w = Worker(e)
     api = make_server(e, w)
     threading.Thread(target=api.serve_forever, daemon=True).start()
