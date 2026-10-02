@@ -94,3 +94,11 @@ as "gone" when **all** of its messages are deleted. In the date list you see the
 click one to open it. Before sending anything, the app also checks whether an earlier copy still exists and holds the post back
 if it can't tell. If a copy exists that the app doesn't know about (made before this protection existed), click **already in channel?**
 under the post and paste the message number or its t.me link.
+
+## Why date checks are faster now
+* The app remembers each channel message it confirmed in the last 30 minutes and doesn't ask Telegram about it again.
+* While running with nothing to post, it quietly re-confirms your old posts in the background (about 10 questions a minute at
+  most, oldest first). A post you delete in Telegram becomes **Post** again within minutes, even without a date check.
+* **Check channel for deleted posts** (top card) always asks about everything, ignoring that memory.
+* Website pages: after the website's Cloudflare check has been passed once, the app fetches the following pages straight through
+  the browser it already opened instead of trying (and failing) the quick way first.

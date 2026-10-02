@@ -26,7 +26,8 @@ class Engine:
         self.pacer = Pacer(settings.effective_delay, db, settings.max_posts_per_hour)
         self._sitemap: list[tuple[int, str, str | None]] = []
         self._sitemap_at = 0.0
-        self.verify_delay = 0.4
+        self.verify_delay = 1.2         # Telegram answered 'flood control' at 0.4 s; stay clearly below its limit
+        self.bg_pause_until = 0.0
 
     def apply_settings(self) -> None:
         """Re-read the (already updated) Settings object: Telegram client, pacing."""
@@ -370,6 +371,7 @@ class Engine:
 
     # ------------------------------------------------------------------ automatic backups
     BACKUP_KEEP = 14
+    FRESH_SECONDS = 1800     # a message confirmed in the channel within this time is not asked about again
     GAP_LIMIT = 400          # most IDs probed between the daily sitemap and the newest listed post
 
     def backup_dir(self):
@@ -410,7 +412,8 @@ class Engine:
     def probe_trusted(self) -> bool:
         return self.db.kv_get("probe_ok") == "1"
 
-    def verify_posted(self, ids=None, progress: Callable[[str], None] | None = None, limit: int = 300) -> dict:
+    def verify_posted(self, ids=None, progress: Callable[[str], None] | None = None, limit: int = 300,
+                      force: bool = False) -> dict:
         """Check that posts we think are published still exist in the channel.
 
         A post can have SEVERAL messages in the channel (re-posts, duplicates). It only becomes publishable again when
@@ -429,12 +432,19 @@ class Engine:
             live = self.db.live_messages(pid) or ([r["tg_message_id"]] if r["tg_message_id"] else [])
             alive, unsure = [], False
             for mid in live:
+                age = None if force else self.db.verified_age(pid, mid)
+                if age is not None and age < self.FRESH_SECONDS:
+                    alive.append(mid)            # confirmed a few minutes ago: no need to ask Telegram again
+                    res["skipped"] = res.get("skipped", 0) + 1
+                    continue
                 ok = self.tg.message_exists(mid)
                 res["checked"] += 1
                 if ok is False:
                     self.db.mark_message_deleted(pid, mid)
                 else:
                     alive.append(mid)
+                    if ok is True:
+                        self.db.touch_verified(pid, mid)
                     unsure = unsure or ok is None
                 time.sleep(self.verify_delay)    # stay far below Telegram's per-chat limits
             if not alive:
@@ -451,6 +461,32 @@ class Engine:
             self.db.log("info", f"channel check: {len(res['deleted'])} post(s) were deleted from the channel -> "
                                 f"publishable again: {res['deleted'][:15]}")
         return res
+
+    def background_verify_step(self) -> bool:
+        """Idle-time housekeeping: re-confirm ONE old message per call (the stalest first), so deleted posts are noticed
+        within minutes and a date check finds everything already verified. Returns True if Telegram was asked."""
+        if self.tg is None or self.s.dry_run or not self.probe_trusted() or time.time() < self.bg_pause_until:
+            return False
+        item = self.db.stalest_message(self.FRESH_SECONDS)
+        if item is None:
+            return False
+        pid, mid = item
+        try:
+            ok = self.tg.message_exists(mid)
+        except Exception as e:  # noqa: BLE001   (flood control etc.: back off, never disturb posting)
+            self.bg_pause_until = time.time() + 600
+            log.info("background channel check paused: %s", e)
+            return False
+        if ok is True:
+            self.db.touch_verified(pid, mid)
+        elif ok is False:
+            self.db.mark_message_deleted(pid, mid)
+            if not self.db.live_messages(pid):
+                self.db.mark_deleted(pid)
+                self.db.log("info", f"post {pid} was deleted from the channel -> publishable again")
+        else:
+            self.db.touch_verified(pid, mid)     # can't tell: don't retry the same one every few seconds
+        return True
 
     def register_message(self, post_id: int, message_id: int) -> dict:
         """The user tells us 'this post is already in my channel as message N' (e.g. a copy the app lost track of)."""
@@ -716,7 +752,12 @@ class Worker:
                     self.next_poll = time.time() + self.s.poll_interval_seconds
                 row = self.db.next_pending()
                 if row is None:
-                    self._stop.wait(5)
+                    did = False
+                    try:
+                        did = e.background_verify_step()
+                    except Exception as ex:   # noqa: BLE001
+                        log.info("background check failed: %s", ex)
+                    self._stop.wait(6 if did else 5)      # ~10 questions a minute at most
                     continue
                 wait = e.pacer.wait_time()
                 if wait > 0:

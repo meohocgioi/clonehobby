@@ -1,4 +1,5 @@
 import json
+import time
 
 import pytest
 
@@ -212,6 +213,7 @@ def test_import_history_marks_posted(env, tmp_path):
 
 def test_deleted_from_channel_is_detected_and_republishable(env):
     e, f, tg, db = env
+    e.FRESH_SECONDS = 0                                       # these tests delete right after posting
     e.pacer.delay = 0
     seed_site(f, {1: "2026-09-30", 2: "2026-09-30", 3: "2026-09-30"})
     plan = e.plan_date("2026-09-30", margin=2)
@@ -241,7 +243,7 @@ def test_partial_delete_and_unknown_kept(env):
         db.mark_posted(p, m)
     db.kv_set("probe_ok", "1")
     tg.deleted.add(11); tg.unknown.add(12)
-    res = e.verify_posted()
+    res = e.verify_posted(force=True)
     assert res == {"checked": 2, "deleted": [1], "unknown": 1}
     assert db.get(1)["status"] == "known" and db.get(2)["status"] == "posted"   # undecidable -> never assume deleted
 
@@ -458,6 +460,7 @@ def test_date_check_finds_posts_missing_from_the_stale_sitemap(env):
 def test_user_scenario_older_copy_must_not_be_forgotten(env):
     """354 posted, re-posted as 368 (id overwritten in the old code), 368 deleted, date check -> duplicate 372."""
     e, f, tg, db = env
+    e.FRESH_SECONDS = 0                                       # this test deletes right after posting
     e.pacer.delay = 0
     seed_site(f, {115045: "2026-10-02"})
     e.plan_date("2026-10-02", margin=2)
@@ -518,3 +521,82 @@ def test_old_ledgers_are_migrated_to_message_history(tmp_path):
     db.conn.execute("DELETE FROM sent_messages"); db.conn.commit(); db.conn.close()      # as if from before the table existed
     again = DB(path)
     assert again.live_messages(9) == [77]
+
+
+def _posted_with_message(e, f, tg, db, pid=7):
+    seed_site(f, {pid: "2026-09-30"})
+    e.post_now(pid)
+    return db.live_messages(pid)[0]
+
+
+def test_recent_channel_checks_are_remembered(env):
+    e, f, tg, db = env
+    mid = _posted_with_message(e, f, tg, db)
+    assert db.kv_get("probe_ok") == "1"
+    tg.probes.clear()
+    res = e.verify_posted([7])                                   # just posted = just confirmed
+    assert tg.probes == [] and res["skipped"] == 1 and res["checked"] == 0
+    # 31 minutes later it is asked again, and a deletion is noticed
+    db._x("UPDATE sent_messages SET verified_at=? WHERE message_id=?", (time.time() - 31 * 60, mid))
+    tg.deleted.add(mid)
+    res = e.verify_posted([7])
+    assert tg.probes == [mid] and res["deleted"] == [7] and db.get(7)["status"] == "known"
+
+
+def test_manual_check_ignores_the_memory(env):
+    e, f, tg, db = env
+    mid = _posted_with_message(e, f, tg, db)
+    tg.deleted.add(mid)                                          # deleted seconds ago: the cache would hide it ...
+    assert e.verify_posted([7])["deleted"] == []
+    assert e.verify_posted([7], force=True)["deleted"] == [7]    # ... the 'Check channel' button never does
+
+
+def test_a_confirmed_message_is_remembered_after_a_positive_check(env):
+    e, f, tg, db = env
+    mid = _posted_with_message(e, f, tg, db)
+    db._x("UPDATE sent_messages SET verified_at=? WHERE message_id=?", (time.time() - 3600, mid))
+    assert e.verify_posted([7])["checked"] == 1
+    assert db.verified_age(7, mid) < 5
+    tg.probes.clear(); e.verify_posted([7])
+    assert tg.probes == []
+
+
+def test_unknown_answers_are_never_remembered_as_confirmed(env):
+    e, f, tg, db = env
+    mid = _posted_with_message(e, f, tg, db)
+    db._x("UPDATE sent_messages SET verified_at=? WHERE message_id=?", (time.time() - 3600, mid))
+    tg.unknown.add(mid)
+    e.verify_posted([7])
+    assert db.verified_age(7, mid) > 3000                        # still stale -> will be asked again next time
+
+
+def test_background_verifier_notices_deleted_posts_one_message_at_a_time(env):
+    e, f, tg, db = env
+    seed_site(f, {1: "2026-09-30", 2: "2026-09-30", 3: "2026-09-30"})
+    for p in (1, 2, 3):
+        e.post_now(p)
+    m = {p: db.live_messages(p)[0] for p in (1, 2, 3)}
+    assert e.background_verify_step() is False                   # everything was just confirmed: nothing to do
+    for i, p in enumerate((1, 2, 3)):                            # staleness order: 2 oldest, then 1, then 3
+        db._x("UPDATE sent_messages SET verified_at=? WHERE message_id=?", (time.time() - 7200 + [200, 100, 300][i], m[p]))
+    tg.deleted.add(m[2])
+    tg.probes.clear()
+    assert e.background_verify_step() is True
+    assert tg.probes == [m[2]] and db.get(2)["status"] == "known"      # the stalest was asked first and found deleted
+    assert db.get(1)["status"] == db.get(3)["status"] == "posted"
+    assert e.background_verify_step() is True and tg.probes == [m[2], m[1]]
+    assert e.background_verify_step() is True and tg.probes == [m[2], m[1], m[3]]
+    assert e.background_verify_step() is False                   # all confirmed again
+
+
+def test_background_verifier_backs_off_on_errors_and_before_calibration(env):
+    from tpclone.telegram import TelegramError
+    e, f, tg, db = env
+    mid = _posted_with_message(e, f, tg, db)
+    db._x("UPDATE sent_messages SET verified_at=? WHERE message_id=?", (time.time() - 7200, mid))
+    tg.message_exists = lambda m: (_ for _ in ()).throw(TelegramError("flood", 429, 40))
+    assert e.background_verify_step() is False and e.bg_pause_until > time.time() + 500   # paused ~10 min
+    e.bg_pause_until = 0
+    db.kv_set("probe_ok", "0")                                   # an untrusted probe is never used in the background
+    tg.message_exists = lambda m: True
+    assert e.background_verify_step() is False

@@ -35,6 +35,7 @@ class FakeTG:
         self.sent = []
         self.fail_with = None
         self.deleted: set[int] = set()
+        self.probes: list[int] = []        # every existence question asked
         self.unknown: set[int] = set()
 
     def send_rich(self, html, media=None, files=None, **kw):
@@ -46,6 +47,7 @@ class FakeTG:
 
 
     def message_exists(self, message_id):
+        self.probes.append(message_id)
         if message_id in self.unknown:
             return None
         return message_id not in self.deleted

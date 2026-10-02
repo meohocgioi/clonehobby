@@ -39,7 +39,7 @@ CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status, priority, post_date
 CREATE INDEX IF NOT EXISTS idx_posts_date ON posts(post_date);
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS sent_messages (      -- every channel message ever sent for a post (a post can have several)
-    post_id INTEGER NOT NULL, message_id INTEGER NOT NULL, sent_at REAL, deleted_at REAL,
+    post_id INTEGER NOT NULL, message_id INTEGER NOT NULL, sent_at REAL, deleted_at REAL, verified_at REAL,
     PRIMARY KEY (post_id, message_id)
 );
 CREATE TABLE IF NOT EXISTS events (
@@ -60,6 +60,10 @@ class DB:
                 self.conn.execute("PRAGMA journal_mode=WAL")
             self.conn.execute("PRAGMA synchronous=FULL")  # a crash must not forget a published post
             self.conn.executescript(SCHEMA)
+            try:   # ledgers created before 'verified_at' existed
+                self.conn.execute("ALTER TABLE sent_messages ADD COLUMN verified_at REAL")
+            except sqlite3.OperationalError:
+                pass
             # ledgers from before this table existed: carry over the one message they knew about
             self.conn.execute("INSERT OR IGNORE INTO sent_messages(post_id,message_id,sent_at) "
                               "SELECT post_id, tg_message_id, COALESCE(posted_at, 0) FROM posts "
@@ -217,8 +221,27 @@ class DB:
 
     # ---- every message ever sent for a post ----------------------------
     def add_message(self, post_id: int, message_id: int) -> None:
-        self._x("INSERT INTO sent_messages(post_id,message_id,sent_at) VALUES(?,?,?) "
-                "ON CONFLICT(post_id,message_id) DO UPDATE SET deleted_at=NULL", (post_id, message_id, time.time()))
+        now = time.time()      # a message we have just sent certainly exists: count that as a verification
+        self._x("INSERT INTO sent_messages(post_id,message_id,sent_at,verified_at) VALUES(?,?,?,?) "
+                "ON CONFLICT(post_id,message_id) DO UPDATE SET deleted_at=NULL, verified_at=excluded.verified_at",
+                (post_id, message_id, now, now))
+
+    def touch_verified(self, post_id: int, message_id: int) -> None:
+        self._x("UPDATE sent_messages SET verified_at=? WHERE post_id=? AND message_id=?", (time.time(), post_id, message_id))
+
+    def verified_age(self, post_id: int, message_id: int) -> float | None:
+        r = self._q("SELECT verified_at FROM sent_messages WHERE post_id=? AND message_id=?", (post_id, message_id))
+        return (time.time() - r[0]["verified_at"]) if r and r[0]["verified_at"] else None
+
+    def stalest_message(self, older_than: float, newer_than_days: float = 7) -> tuple[int, int] | None:
+        """The live message of a posted post that was verified longest ago (or never), if older than `older_than` s."""
+        now = time.time()
+        r = self._q(
+            "SELECT m.post_id, m.message_id FROM sent_messages m JOIN posts p ON p.post_id=m.post_id "
+            "WHERE m.deleted_at IS NULL AND p.status='posted' AND COALESCE(p.posted_at, 0) > ? "
+            "AND COALESCE(m.verified_at, 0) < ? ORDER BY COALESCE(m.verified_at, 0) LIMIT 1",
+            (now - newer_than_days * 86400, now - older_than))
+        return (r[0]["post_id"], r[0]["message_id"]) if r else None
 
     def live_messages(self, post_id: int) -> list[int]:
         """Messages we believe are still in the channel (not yet proven deleted)."""

@@ -55,6 +55,7 @@ class BrowserBackend:
         self.s = settings
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="browser")
         self._pw = self._browser = self._ctx = None
+        self._warm = False      # True once a real page load has passed the challenge: later pages can use the fast path
 
     def _ensure(self):
         if self._ctx:
@@ -69,9 +70,11 @@ class BrowserBackend:
         if self.s.proxy_url:
             kw["proxy"] = {"server": self.s.proxy_url}
         last: Exception | None = None
+        if self.s.browser_path:
+            kw["executable_path"] = self.s.browser_path
         for channel in ([self.s.browser_channel] if self.s.browser_channel else []) + [None, "chrome", "msedge"]:
             try:   # bundled Chromium first, then the Chrome / Edge already installed on the computer
-                self._browser = self._pw.chromium.launch(**kw, **({"channel": channel} if channel else {}))
+                self._browser = self._pw.chromium.launch(**kw, **({"channel": channel} if channel and not self.s.browser_path else {}))
                 break
             except Exception as e:  # noqa: BLE001
                 last = e
@@ -92,12 +95,27 @@ class BrowserBackend:
                 page.wait_for_timeout(2000)
             else:
                 raise ChallengeError("browser could not pass the Cloudflare challenge in time")
+            self._warm = True
             return (resp.status if resp else 0), page.content(), self._ctx.cookies()
         finally:
             page.close()
 
+    def _fetch(self, url: str, timeout: float) -> tuple[int, str, list[dict]]:
+        """Once the challenge has been solved by a real page load, fetch further pages through the browser's own network
+        connection (same cookies, no rendering of images/scripts): several times faster than loading each page."""
+        if self._warm:
+            try:
+                r = self._ctx.request.get(url, timeout=int(timeout * 1000))
+                text = r.text()
+                if not is_challenge(r.status, {k.lower(): v for k, v in r.headers.items()}, text):
+                    return r.status, text, []
+            except Exception:  # noqa: BLE001
+                pass
+            self._warm = False            # session expired / blocked: solve the challenge again with a real page
+        return self._get(url, timeout)
+
     def get(self, url: str, timeout: float = 60) -> tuple[int, str, list[dict]]:
-        return self.pool.submit(self._get, url, timeout).result(timeout + 30)
+        return self.pool.submit(self._fetch, url, timeout).result(timeout + 30)
 
 
 class Fetcher:
@@ -110,6 +128,7 @@ class Fetcher:
             proxy=settings.proxy_url or None,
         )
         self._browser: BrowserBackend | None = None
+        self._blocked_until = 0.0     # plain HTTP was challenged: go straight to the browser until then
         self._last = 0.0
         self._lock = threading.Lock()
 
@@ -153,13 +172,16 @@ class Fetcher:
         for attempt in range(retries):
             self._pace()
             try:
-                if backend in ("auto", "http"):
+                if backend == "auto" and time.time() < self._blocked_until:
+                    page = self._fallback(url)               # we already know plain HTTP is blocked: skip the wasted try
+                elif backend in ("auto", "http"):
                     r = self.client.get(url, headers=headers)
                     h = {k.lower(): v for k, v in r.headers.items()}
                     if is_challenge(r.status_code, h, r.text):
                         if backend == "http":
                             raise ChallengeError(f"Cloudflare challenge on {url}")
-                        log.warning("Cloudflare challenge on %s - using fallback", url)
+                        log.warning("Cloudflare challenge on %s - using the browser for the next 30 minutes", url)
+                        self._blocked_until = time.time() + 1800
                         page = self._fallback(url)
                     else:
                         page = Page(url, r.status_code, r.text, h)

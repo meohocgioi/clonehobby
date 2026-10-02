@@ -298,7 +298,7 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
                     jid = jobs.run(lambda prog: engine.post_now(pid, force))
                     return self._json({"job": jid})
                 if path == "/api/verify":
-                    jid = jobs.run(lambda prog: engine.verify_posted(progress=prog))
+                    jid = jobs.run(lambda prog: engine.verify_posted(progress=prog, force=True))
                     return self._json({"job": jid})
                 if path == "/api/start":
                     if not s.telegram_ready and not s.dry_run:

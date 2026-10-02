@@ -51,6 +51,7 @@ class Settings:
     flaresolverr_url: str = ""
     proxy_url: str = ""
     db_path: str = ""          # default: <app folder>/data/tpclone.db
+    browser_path: str = ""     # explicit path of a Chrome/Chromium executable for the Cloudflare fallback
     browser_channel: str = ""  # "chrome" / "msedge" to use the browser already installed on the computer
     web_host: str = "127.0.0.1"
     web_port: int = 8080
