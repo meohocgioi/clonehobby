@@ -104,6 +104,7 @@ under the post and paste the message number or its t.me link.
   the browser it already opened instead of trying (and failing) the quick way first.
 
 ## Automatic posting vs. "Check date"
-A "Check date" looks at the website and lists posts; it never posts by itself. If it finds a post that is brand new (found since the
-automatic watcher's last look), the watcher still posts it at its next check, so a date check can no longer "steal" a post from
-the watcher. Posts you browse in older dates are never posted behind your back.
+A "Check date" looks at the website and lists posts; it never posts by itself. But the automatic watcher posts **every recent post
+(last 3 days) that was never posted**, even if a date check saw it first. To keep one recent post out of the channel click
+**don't auto-post** under its button in the date list (you can still press **Post** yourself). Posts older than 3 days that you only
+browsed are never posted behind your back.

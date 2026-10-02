@@ -628,19 +628,17 @@ def test_post_found_first_by_a_date_check_is_still_posted_by_the_watcher(env):
     assert e.discover() == 0                                  # and never twice
 
 
-def test_date_scanned_posts_from_before_the_last_poll_are_left_alone(env):
-    """A user browsing history by date must not suddenly get those posts auto-posted."""
+def test_ignored_recent_posts_are_left_alone(env):
+    """'don't auto-post' (status skipped) keeps a recent post out of the watcher for good."""
     e, f, tg, db = env
     today = _today(e)
     add_posts(f, {1: (today, "Old")})
     e.discover()
     seed_site(f, {2: today})
-    e.plan_date(today, margin=2)                              # post 2 recorded as 'known' ...
-    e.discover()                                              # ... the next poll revives it (found since the last poll)
-    assert db.get(2)["status"] == "pending"
-    db.reset_status(2, "known")                               # the user ignores it
-    e.discover(); e.discover()                                # later polls: it was found BEFORE them, so it stays ignored
-    assert db.get(2)["status"] == "known"
+    e.plan_date(today, margin=2)
+    db.reset_status(2, "skipped")                             # the user clicked "don't auto-post"
+    e.discover(); e.discover()
+    assert db.get(2)["status"] == "skipped"
 
 
 def test_old_dates_and_previously_posted_rows_are_never_revived(env):
@@ -715,19 +713,25 @@ def test_stuck_post_filed_long_ago_but_listed_on_the_homepage_is_delivered(env):
     assert e.discover() == 0
 
 
-def test_skipped_posts_and_posts_outside_the_listing_are_not_forced_out(env):
+def test_stuck_recent_post_in_no_list_is_delivered_but_skipped_ones_are_not(env):
+    """The reported 115081: filed 'known' by a date check hours ago, in NO homepage list (another section)."""
     e, f, tg, db = env
     today = _today(e)
     add_posts(f, {1: (today, "A")})
     e.discover()
-    seed_site(f, {2: today, 3: today}); f.hidden |= {2, 3}; f.listing = [2, 3]
-    e.plan_date(today, margin=2)
-    db._x("UPDATE posts SET discovered_at = discovered_at - 7200 WHERE post_id IN (2,3)")
+    seed_site(f, {2: today, 3: today, 4: "2026-01-01"}); f.hidden |= {2, 3, 4}; f.listing = []
+    # exactly what a manual date check leaves behind hours earlier: rows filed as 'known', never queued
+    db.bulk_seen([(i, e.post_url(i), None) for i in (2, 3, 4)], "known", "date-scan", priority=1)
+    for i, d in ((2, today), (3, today), (4, "2026-01-01")):
+        db.set_meta(i, f"T{i}", d)
+    db._x("UPDATE posts SET discovered_at = discovered_at - 7200 WHERE post_id IN (2,3,4)")
     db.kv_set("last_discover_ts", time.time() - 60)
-    db.reset_status(3, "skipped")                             # the user said: do not auto-post this one
-    f.listing = [3]                                           # post 2 is no longer on the homepage list
-    assert e.discover() == 0
-    assert db.get(2)["status"] == "known" and db.get(3)["status"] == "skipped"
+    db.reset_status(3, "skipped")
+    assert e.discover() == 1
+    assert db.get(2)["status"] == "pending"                   # recent + never posted -> delivered
+    assert db.get(3)["status"] == "skipped"                   # "don't auto-post" is respected
+    assert db.get(4)["status"] == "known"                     # old: browsing history is never auto-posted
+
 
 
 def _sitemap_stale_setup(e, f, today):

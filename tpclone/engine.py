@@ -154,13 +154,10 @@ class Engine:
             return n, total
         known = self.db.known_ids()
         new = [e for e in all_entries if e[0] not in known]
-        # Posts a manual date check filed as 'known' but that nobody queued or posted: the watcher would never post them.
-        # (a) anything in the website's Latest News list right now is, by definition, a new post -> deliver it;
-        # (b) anything a date check found since the previous poll (it may already have dropped out of that list).
-        cutoff = self._cutoff_date()
-        listed = {i["id"] for i in listing if not (i["date"] and cutoff and i["date"] < cutoff)}
-        revive = sorted(set(self.db.unqueued_scanned_since(0, cutoff)) & listed
-                        | (set(self.db.unqueued_scanned_since(prev_poll, cutoff)) if prev_poll else set()))
+        # One simple rule: a RECENT post (within LISTING_MAX_AGE_DAYS) that is merely 'known' - e.g. a manual date check
+        # filed it before the watcher got there - was never queued, never posted and has no channel message, is a post
+        # the channel is still missing. Deliver it. To keep a recent post out, use "don't auto-post" (status 'skipped').
+        revive = self.db.unqueued_scanned_since(0, self._cutoff_date(), require_date=True)
         queued = 0
         if revive and len(new) + len(revive) <= self.s.max_auto_queue:
             for pid in revive:
