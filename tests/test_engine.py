@@ -693,3 +693,38 @@ def test_date_check_asks_telegram_only_a_few_times(env):
     tg.probes.clear()
     plan = e.plan_date("2026-09-30", margin=2)
     assert len(tg.probes) <= e.PLAN_PROBES and plan["total"] == 24
+
+
+def test_stuck_post_filed_long_ago_but_listed_on_the_homepage_is_delivered(env):
+    """Reported after the first fix: 115081 had been filed as 'known' BEFORE the update, so no 'since the last poll' rule
+    could ever catch it; the watcher and 'Check website now' kept ignoring it."""
+    e, f, tg, db = env
+    today = _today(e)
+    add_posts(f, {115080: (today, "Before")})
+    e.discover()
+    add_posts(f, {115081: (today, "Gintama wedding")})
+    f.hidden.add(115081); f.listing = [115081, 115080]
+    e.plan_date(today, margin=2)                              # filed as 'known' ...
+    db._x("UPDATE posts SET discovered_at = discovered_at - 7200 WHERE post_id=115081")   # ... long before any later poll
+    db.kv_set("last_discover_ts", time.time() - 60)           # the watcher has polled since
+    assert db.get(115081)["status"] == "known"
+    assert e.discover() == 1                                  # it is in the Latest News list: delivered
+    assert db.get(115081)["status"] == "pending"
+    e.process(db.next_pending())
+    assert db.get(115081)["status"] == "posted"
+    assert e.discover() == 0
+
+
+def test_skipped_posts_and_posts_outside_the_listing_are_not_forced_out(env):
+    e, f, tg, db = env
+    today = _today(e)
+    add_posts(f, {1: (today, "A")})
+    e.discover()
+    seed_site(f, {2: today, 3: today}); f.hidden |= {2, 3}; f.listing = [2, 3]
+    e.plan_date(today, margin=2)
+    db._x("UPDATE posts SET discovered_at = discovered_at - 7200 WHERE post_id IN (2,3)")
+    db.kv_set("last_discover_ts", time.time() - 60)
+    db.reset_status(3, "skipped")                             # the user said: do not auto-post this one
+    f.listing = [3]                                           # post 2 is no longer on the homepage list
+    assert e.discover() == 0
+    assert db.get(2)["status"] == "known" and db.get(3)["status"] == "skipped"

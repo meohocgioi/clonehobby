@@ -192,7 +192,10 @@ $('plan').onclick=async()=>{
       const reg=document.createElement('a'); reg.href='#'; reg.className='reg'; reg.textContent='already in channel?'; reg.title='Tell the app this post is already in your channel (paste the message number or its t.me link)';
       reg.onclick=async(ev)=>{ev.preventDefault(); const v=prompt('Which message in your channel already contains this post?\nPaste its number or its t.me link (e.g. https://t.me/yourchannel/354):'); if(!v) return;
         const r=await api('/api/post/register',{id:p.id,message:v}); if(r.error){alert(r.error);return} setBtn(btn,'posted'); reg.remove(); refresh()};
-      if(p.status!=='posted') c.appendChild(reg)}};
+      if(p.status!=='posted'){c.appendChild(reg);
+        const sk=document.createElement('a'); sk.href='#'; sk.className='reg'; sk.textContent='don\'t auto-post'; sk.title='Keep this post out of the automatic watcher (you can still press Post yourself)';
+        sk.onclick=async(ev)=>{ev.preventDefault(); await api('/api/post/resolve',{id:p.id,action:'skip'}); sk.textContent='✓ will not auto-post'; sk.onclick=(e2)=>e2.preventDefault()};
+        c.appendChild(sk)}}};
   tick();
 };
 $('pub').onclick=async()=>{const r=await api('/api/date/publish',{date:planData.date,ids:planData.to_publish});
