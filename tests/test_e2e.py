@@ -157,13 +157,13 @@ def test_settings_from_browser_and_start_gate(stack, tmp_path):
 def test_style_setting_and_samples(stack):
     e, w, db, base = stack
     v = httpx.get(base + "/api/settings").json()
-    assert set(v["show_more_styles"]) == {"classic", "highlight", "pill", "plain"} and v["show_more_style"] == "classic"
+    assert set(v["show_more_styles"]) == {"classic", "highlight", "pill", "plain", "telegram"} and v["show_more_style"] == "classic"
     post(base, "/api/settings", {"show_more_style": "pill"})
     assert e.s.show_more_style == "pill"
     n0 = len(SENT)
     e.s.telegram_chat_id = "@c"
     r = post(base, "/api/send-style-samples")
-    assert set(r["results"].values()) == {"sent"} and len(SENT) - n0 == 4
+    assert set(r["results"].values()) == {"sent"} and len(SENT) - n0 == 5
     bodies = b"".join(x["body"] for x in SENT[n0:])
     assert bodies.count(b"Style+sample") + bodies.count(b"Style%20sample") + bodies.count(b"Style sample") >= 4
 

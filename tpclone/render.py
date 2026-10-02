@@ -59,6 +59,7 @@ SHOW_MORE_STYLES = {
     "highlight": "Same, with a highlighted background",
     "pill": "Blue pill button (Telegram shows its text faded)",
     "plain": "Plain toggle text",
+    "telegram": "No toggle of ours: Telegram's own green “Show more” (long posts only)",
 }
 
 
@@ -131,6 +132,8 @@ def build_html(art: Article, settings: Settings, plan: MediaPlan, src: Callable[
 
     if not inner:   # nothing to expand
         return "".join(head)
+    if settings.show_more_style == "telegram":    # full content inline; Telegram itself folds LONG posts behind its button
+        return "".join(head) + "".join(inner)
     summary = summary_html(settings.show_more_label, settings.show_more_style, settings.show_more_emoji)
     return "".join(head) + f"<details>{summary}{''.join(inner)}</details>"
 

@@ -235,9 +235,10 @@ function showPreview(a){
   if(a.cover){const i=el('img'); i.src=a.cover; i.referrerPolicy='no-referrer'} else el('div','(no cover photo found)','mut');
   {const st=a.show_more_style||'classic'; const e=a.show_more_emoji||'';
    const loud=(e?e+' ':'')+(a.show_more_label||'Show More').toUpperCase()+(e?' '+e:'');
+   if(st==='telegram'){el('div','(no toggle of ours — Telegram decides: long posts get its own green “Show more” button)','mut')} else {
    const m=el('div', st==='plain'?('▾ '+(a.show_more_label||'Show More')):(st==='pill'?(a.show_more_label||'Show More'):loud), 'more');
    if(st==='classic'||st==='highlight'){m.style.cssText='font-weight:800;font-size:15px;margin:10px 0;color:inherit'; if(st==='highlight') m.style.background='#fff3a3'}
-   if(st==='pill') m.style.cssText='display:inline-block;background:#3a9ee0;color:#fff;border-radius:99px;padding:5px 18px;margin:8px 0;opacity:.8'}
+   if(st==='pill') m.style.cssText='display:inline-block;background:#3a9ee0;color:#fff;border-radius:99px;padding:5px 18px;margin:8px 0;opacity:.8'}}
   const inner=el('div',undefined,'inner');
   const add=(t,txt,st)=>{const e=document.createElement(t); e.textContent=txt; if(st)e.style.fontStyle=st; inner.appendChild(e)};
   if(a.scheduled) add('p',a.scheduled,'italic');

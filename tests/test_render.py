@@ -93,10 +93,13 @@ def test_show_more_styles():
     def html(**kw):
         return render.build_html(a, Settings(**kw), render.plan_media(a), ident)
 
-    assert set(render.SHOW_MORE_STYLES) == {"classic", "highlight", "pill", "plain"}
-    for style in render.SHOW_MORE_STYLES:
+    assert set(render.SHOW_MORE_STYLES) == {"classic", "highlight", "pill", "plain", "telegram"}
+    for style in set(render.SHOW_MORE_STYLES) - {"telegram"}:
         h = html(show_more_style=style)
         assert "<details><summary>" in h and h.count("<summary>") == 1 and "</summary>" in h
+    t = html(show_more_style="telegram")          # no toggle of ours: content sits inline after the cover
+    assert "<details" not in t and "<summary" not in t and "Scheduled Release" in t and "<tg-collage>" in t and "via:" in t
+    assert t.startswith("<h6>A Title</h6><img src=\"https://x/cover.jpg\"/>")
     # default: bold CAPITALS with the emoji on both sides
     assert "<summary><b>👇 SHOW MORE 👇</b></summary>" in html()
     assert "<summary><b><mark>👇 SHOW MORE 👇</mark></b></summary>" in html(show_more_style="highlight")

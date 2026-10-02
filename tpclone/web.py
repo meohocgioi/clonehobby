@@ -206,9 +206,15 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
                         return self._json({"error": "Set the bot token and channel first (Settings)."}, 400)
                     results = {}
                     for key, desc in render.SHOW_MORE_STYLES.items():
-                        html = (f"<h6>Style sample: {key}</h6>"
-                                f"<details>{render.summary_html(s.show_more_label, key, s.show_more_emoji)}"
-                                f"<p><i>This is the expanded text. If you read this, the style “{key}” works.</i></p></details>")
+                        if key == "telegram":      # no toggle of ours: needs a LONG post to see Telegram's own button
+                            body = "".join(f"<p>Sample paragraph {i}: this is filler text to make the post long, so you can "
+                                           f"see whether Telegram folds it behind its own green “Show more” button.</p>"
+                                           for i in range(1, 31))
+                            html = f"<h6>Style sample: {key} (long post)</h6>{body}"
+                        else:
+                            html = (f"<h6>Style sample: {key}</h6>"
+                                    f"<details>{render.summary_html(s.show_more_label, key, s.show_more_emoji)}"
+                                    f"<p><i>This is the expanded text. If you read this, the style “{key}” works.</i></p></details>")
                         try:
                             res = engine.tg.send_rich(html)
                             engine._calibrate_probe(res.get("message_id"))
