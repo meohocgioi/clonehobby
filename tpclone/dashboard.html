@@ -235,7 +235,7 @@ function showPreview(a){
   if(a.cover){const i=el('img'); i.src=a.cover; i.referrerPolicy='no-referrer'} else el('div','(no cover photo found)','mut');
   {const st=a.show_more_effective||a.show_more_style||'classic'; const e=a.show_more_emoji||'';
    const loud=(e?e+' ':'')+(a.show_more_label||'Show More').toUpperCase()+(e?' '+e:'');
-   if(st==='telegram'){el('div','(no toggle of ours — Telegram decides: long posts get its own green “Show more” button)','mut')} else {
+   if(st==='telegram'){el('div','(no toggle: the whole post is shown open — Telegram only sometimes folds it by itself)','mut')} else {
    const m=el('div', st==='plain'?('▾ '+(a.show_more_label||'Show More')):(st==='pill'?(a.show_more_label||'Show More'):loud), 'more');
    if(st==='classic'||st==='highlight'){m.style.cssText='font-weight:800;font-size:15px;margin:10px 0;color:inherit'; if(st==='highlight') m.style.background='#fff3a3'}
    if(st==='pill') m.style.cssText='display:inline-block;background:#3a9ee0;color:#fff;border-radius:99px;padding:5px 18px;margin:8px 0;opacity:.8'}}
@@ -249,7 +249,7 @@ function showPreview(a){
   const g=document.createElement('div'); g.className='imgs'; for(const u of a.images.slice(0,12)){const i=document.createElement('img'); i.src=u; i.referrerPolicy='no-referrer'; g.appendChild(i)} inner.appendChild(g);
   if(a.credits.length) add('p',a.credit_label+': '+a.credits.map(c=>c[0]).join(', '),'italic');
   const warn=[]; if(!a.title) warn.push('no title'); if(!a.cover) warn.push('no cover photo'); if(!a.post_date) warn.push('no date'); if(!a.paragraphs.length) warn.push('no text'); if(!a.images.length) warn.push('no photos');
-  $('pv_info').textContent=(a.show_more_style&&a.show_more_style!=='classic'?'(button style shown approximately'+(a.show_more_style==='auto'?'; automatic → '+(a.show_more_effective==='telegram'?"Telegram's own button":'our toggle'):'')+') · ':'')+'Date: '+(a.post_date||'?')+' · '+a.images.length+' photos · photo slots used '+a.slots_used+'/'+a.max_media+(a.overflow?(' ('+a.overflow+' photos merged into the last collage)'):'')+(warn.length?(' · ⚠ missing: '+warn.join(', ')):' · looks complete ✅');
+  $('pv_info').textContent=(a.show_more_style&&a.show_more_style!=='classic'?'(button style shown approximately'+''+') · ':'')+'Date: '+(a.post_date||'?')+' · '+a.images.length+' photos · photo slots used '+a.slots_used+'/'+a.max_media+(a.overflow?(' ('+a.overflow+' photos merged into the last collage)'):'')+(warn.length?(' · ⚠ missing: '+warn.join(', ')):' · looks complete ✅');
 }
 
 // ---- Post Now / Posted buttons -------------------------------------------------------------

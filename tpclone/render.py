@@ -55,31 +55,18 @@ def plan_media(art: Article, max_media: int = 50) -> MediaPlan:
 
 
 SHOW_MORE_STYLES = {
-    "auto": "Automatic (recommended): Telegram's own green button where it will appear, ours only where it won't",
     "classic": "Bold CAPITALS with emoji on both sides (recommended)",
     "highlight": "Same, with a highlighted background",
     "pill": "Blue pill button (Telegram shows its text faded)",
     "plain": "Plain toggle text",
-    "telegram": "No toggle of ours: Telegram's own green “Show more” (long posts only)",
+    "telegram": "No toggle (not recommended: the post is shown fully open; Telegram only sometimes folds it)",
 }
 
 
-FOLD_TEXT_CHARS = 600     # a post with more text than this is expected to be folded by Telegram
-
-
-def likely_folded_by_telegram(art: Article, plan: MediaPlan) -> bool:
-    """Telegram's apps fold a rich message in the chat after about the first large block and show their own green
-    'Show more' button. Observed: a post with a cover photo is folded right after the cover (even our small toggle was
-    hidden). So: a cover, any gallery photo, or a lot of text => expect Telegram's own button. The API cannot tell us;
-    this is a rule of thumb."""
-    text_len = sum(len(re.sub(r"<[^>]+>", "", p)) for p in art.paragraphs)
-    return bool(plan.cover or plan.originals or plan.overflow or text_len > FOLD_TEXT_CHARS)
-
-
-def effective_style(style: str, art: Article, plan: MediaPlan) -> str:
-    if style == "auto":
-        return "telegram" if likely_folded_by_telegram(art, plan) else "classic"
-    return style
+def effective_style(style: str, art: Article | None = None, plan: MediaPlan | None = None) -> str:
+    """'auto' was an experiment (guessing when Telegram folds a post behind its own button) that proved unreliable:
+    it left real posts completely open. Anything saved as 'auto' now simply means 'classic' (our toggle)."""
+    return "classic" if style == "auto" else style
 
 
 def summary_html(label: str, style: str, emoji: str = "👇") -> str:

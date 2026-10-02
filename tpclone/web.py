@@ -206,8 +206,6 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
                         return self._json({"error": "Set the bot token and channel first (Settings)."}, 400)
                     results = {}
                     for key, desc in render.SHOW_MORE_STYLES.items():
-                        if key == "auto":       # picks one of the others per post; no sample of its own
-                            continue
                         if key == "telegram":      # no toggle of ours: needs a LONG post to see Telegram's own button
                             body = "".join(f"<p>Sample paragraph {i}: this is filler text to make the post long, so you can "
                                            f"see whether Telegram folds it behind its own green “Show more” button.</p>"
