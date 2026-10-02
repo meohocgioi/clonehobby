@@ -212,6 +212,25 @@ def _img_url(img: Tag, base: str) -> str | None:
     return _abs(img.get("src"), base)
 
 
+_INTERNAL_URL_TEXT = re.compile(r"https?://(?:[\w-]+\.)*toy-people\.com[^\s<>()\"']*", re.I)
+
+
+def _is_internal(href: str) -> bool:
+    """A link back to toy-people.com itself (relative links resolve to it as well)."""
+    host = (urlparse(href).hostname or "").lower()
+    return host == "toy-people.com" or host.endswith(".toy-people.com")
+
+
+def _clean_text(text: str) -> str:
+    """Plain text of the body: drop typed-out toy-people URLs (and the parentheses left empty by that)."""
+    if not _INTERNAL_URL_TEXT.search(text):
+        return text
+    text = _INTERNAL_URL_TEXT.sub("", text)
+    text = re.sub(r"\(\s*\)|\[\s*\]", "", text)
+    text = re.sub(r"[ \t]+([,.;:!?])", r"\1", text)          # no space left before punctuation
+    return re.sub(r"[ \t]{2,}", " ", text)
+
+
 def _inline(node, base: str) -> str:
     """Sanitised inline HTML (only b/i/u/s/a/br)."""
     out: list[str] = []
@@ -219,7 +238,7 @@ def _inline(node, base: str) -> str:
         if isinstance(ch, NavigableString):
             if ch.__class__.__name__ in ("Comment", "Doctype", "CData"):
                 continue
-            out.append(escape(str(ch).replace("\xa0", " "), quote=False))
+            out.append(escape(_clean_text(str(ch).replace("\xa0", " ")), quote=False))
         elif isinstance(ch, Tag):
             n = ch.name
             if n in ("script", "style", "noscript", "img", "iframe", "svg", "video", "audio", "button", "form"):
@@ -237,7 +256,9 @@ def _inline(node, base: str) -> str:
                 out.append("<br>")
             elif n == "a":
                 href = _abs(ch.get("href"), base)
-                if href and href.startswith(("http://", "https://", "mailto:")) and inner.strip():
+                if href and _is_internal(href):
+                    out.append(inner)            # a link back to toy-people: keep the words, drop the hyperlink
+                elif href and href.startswith(("http://", "https://", "mailto:")) and inner.strip():
                     out.append(f'<a href="{escape(href, quote=True)}">{inner}</a>')
                 else:
                     out.append(inner)
@@ -268,7 +289,7 @@ def _paragraphs(container: Tag, base: str) -> list[str]:
         for ch in node.children:
             if isinstance(ch, NavigableString):
                 if ch.__class__.__name__ not in ("Comment", "Doctype", "CData"):
-                    buf.append(escape(str(ch).replace("\xa0", " "), quote=False))
+                    buf.append(escape(_clean_text(str(ch).replace("\xa0", " ")), quote=False))
                 continue
             if not isinstance(ch, Tag):
                 continue

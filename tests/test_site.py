@@ -39,7 +39,7 @@ def test_parse_article_fixture():
                         "https://www.toy-people.com/img/114949/3.jpg"]
     joined = " ".join(a.paragraphs)
     assert "Megalo Maria</b> Airly model kit &amp; its articulation" in joined
-    assert '<a href="https://www.toy-people.com/en/?p=1">more</a>' in joined
+    assert "See more." in joined and "toy-people.com/en/?p=1" not in joined     # internal link: words kept, hyperlink dropped
     assert "Pre-orders open <i>soon</i>.<br>Stay tuned." in joined
     # structured bits must not be duplicated in the body
     assert "Scheduled Release" not in joined and "bandaispirits" not in joined
@@ -111,3 +111,45 @@ def test_parse_listing_cards():
 def test_parse_listing_empty_page():
     from tpclone.site import parse_listing
     assert parse_listing("<html><body>Just a moment...</body></html>") == []
+
+
+def _body(inner: str):
+    html = ('<html><head><meta property="og:image" content="https://c/x.jpg"></head><body><h1>Title</h1>'
+            f'<article><div class="entry-content">{inner}</div></article></body></html>')
+    return parse_article(html, "https://www.toy-people.com/en/?p=1", 1, S)
+
+
+def test_links_back_to_toy_people_are_removed_but_words_stay():
+    a = _body('<p>Following the strong reception for the first Zenless Zone Zero release, '
+              '<a href="https://www.toy-people.com/en/?p=102903">Billy Kid</a>, S.H.Figuarts has continued. '
+              'Members: <a href="/en/?p=115040">Sunna</a>, <a href="https://toy-people.com/jp/?p=115046">Aria</a> '
+              'and <b><a href="https://shop.toy-people.com/x">Shop</a></b>.</p>')
+    p = a.paragraphs[0]
+    assert "<a " not in p and "toy-people" not in p
+    assert "Billy Kid, S.H.Figuarts" in p and "Sunna, Aria and <b>Shop</b>." in p
+
+
+def test_external_links_are_kept():
+    a = _body('<p>See <a href="https://www.bandaispirits.com/x?a=1&b=2">the source</a> and '
+              '<a href="mailto:a@b.com">mail</a> and <a href="https://notoy-people.com/x">lookalike</a>.</p>')
+    p = a.paragraphs[0]
+    assert '<a href="https://www.bandaispirits.com/x?a=1&amp;b=2">the source</a>' in p
+    assert '<a href="mailto:a@b.com">mail</a>' in p
+    assert '<a href="https://notoy-people.com/x">lookalike</a>' in p          # only the real toy-people.com is internal
+
+
+def test_typed_out_toy_people_urls_are_removed():
+    a = _body("<p>Billy Kid (https://www.toy-people.com/en/?p=102903), then Sunna (https://www.toy-people.com/en/?p=115040) "
+              "and Aria (https://www.toy-people.com/en/?p=115046). Visit https://www.toy-people.com/ today. "
+              "Keep https://example.com/x here.</p>")
+    p = a.paragraphs[0]
+    assert "toy-people" not in p
+    assert "Billy Kid, then Sunna and Aria." in p and "()" not in p
+    assert "Keep https://example.com/x here." in p
+
+
+def test_credit_and_body_links_are_handled_separately():
+    html = ('<html><body><h1>T</h1><article><div class="entry-content"><p>Text <a href="/en/?p=9">linked</a>.</p>'
+            '<p>via: <a href="https://www.bandaispirits.com/n">bandaispirits</a></p></div></article></body></html>')
+    a = parse_article(html, "https://www.toy-people.com/en/?p=1", 1, S)
+    assert a.paragraphs == ["Text linked."] and a.credits == [("bandaispirits", "https://www.bandaispirits.com/n")]
