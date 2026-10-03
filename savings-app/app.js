@@ -203,6 +203,7 @@ const sec = (html, id) => (html ? `<div class="sec"${id ? ` id="${id}"` : ''}>${
 const ICON = {
   bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>',
   chev: '<svg class="go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>',
   down: '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>',
 };
 
@@ -257,7 +258,7 @@ function dueHTML(list, scope, inBanner) {
     .sort((a, b) => a.c.mat - b.c.mat).slice(0, 5);
   if (!items.length) return '';
   const cards = items.map(({ b, c }) => `
-    <div class="due card" data-edit="${b.id}" role="button">
+    <div class="due card" data-detail="${b.id}" role="button">
       <div class="due-h">${logoHTML(b.bank)}
         <div class="nm">${esc(b.bank)}${scope === 'all' ? `<small class="own ${b.owner}">${esc(ownerName(b.owner))}</small>` : ''}</div>
         <div class="amt">${short(b.principal)} ₫</div></div>
@@ -473,7 +474,7 @@ function bookHTML(b) {
       : `<span>Đáo hạn ${fmtDate(c.mat)}</span><span class="badge ${c.daysLeft <= 14 ? 'soon' : ''}">còn ${c.daysLeft} ngày</span>`;
   } else foot = '<span>Rút bất cứ lúc nào</span>';
   return `
-  <div class="book" data-edit="${b.id}" role="button">
+  <div class="book" data-detail="${b.id}" role="button">
     <div class="r1"><span class="p">${vnd(b.principal)}</span><span class="rate">${pct(b.rate)}/năm</span></div>
     <div class="meta">${termTxt} · gửi ${fmtDate(c.start)}${b.note ? ' · ' + esc(b.note) : ''}</div>
     <div class="grid">
@@ -493,6 +494,66 @@ function emptyHTML(o) {
     <p>Bấm nút <b>+</b> để thêm sổ${o ? ' của ' + esc(ownerName(o)) : ''}.</p>
     <button class="btn" data-add>＋ Thêm sổ</button>
     <button class="btn ghost" id="btnDemo">Xem thử với dữ liệu mẫu</button></div>`;
+}
+
+/* =====================  Chi tiết một sổ  ===================== */
+function openDetail(id) {
+  const b = state.books.find((x) => x.id === id);
+  if (!b) return;
+  const c = calc(b), info = bankInfo(b.bank);
+  const row = (k, v, cls = '') => `<div class="dt-row"><span>${k}</span><b class="${cls}">${v}</b></div>`;
+  const progress = c.mat
+    ? `<div class="dt-rem ${c.matured ? 'warn' : ''}">${c.matured ? 'Đã đến hạn' : 'Còn ' + remainText(c.mat)}</div>
+       <div class="prog"><i style="width:${Math.max(1, c.progress * 100).toFixed(1)}%"></i></div>
+       <div class="dt-dates"><span>Ngày gửi <b>${fmtDate(c.start)}</b></span><span>Đáo hạn <b>${fmtDate(c.mat)}</b></span></div>
+       ${c.matured ? `<button class="renew" id="dRenew" type="button">↻ Tái tục (tính lại từ ngày đáo hạn)</button>` : ''}`
+    : `<div class="dt-rem">Không kỳ hạn · rút bất cứ lúc nào</div><div class="dt-dates"><span>Ngày gửi <b>${fmtDate(c.start)}</b></span><span>Đã gửi <b>${Math.max(0, diffDays(c.start, today0()))} ngày</b></span></div>`;
+  sheet.className = 'sheet full';
+  sheet.innerHTML = `
+  <div class="panel full" role="dialog">
+    <div class="dt-head"><button type="button" class="dt-back" id="dBack" aria-label="Quay lại">${ICON.chev}</button><h2>Sổ tiết kiệm</h2><span class="dt-sp"></span></div>
+    <div class="dt-body">
+      <div class="dt-top">
+        <div class="lbl">Tiền gửi</div>
+        <div class="dt-big">${money(b.principal)}<small>₫</small></div>
+        <div class="muted">${c.total != null ? 'Tiền lãi ' + money(c.total) : 'Lãi mỗi năm ' + money(c.yearly)} ₫</div>
+      </div>
+      <div class="card"><div class="ct">Tiến độ</div>${progress}</div>
+      <div class="card"><div class="ct">Tiền lãi</div>
+        ${row('Lãi cả kỳ', c.total != null ? vnd(c.total) : '—', 'gain')}
+        ${row('Lãi mỗi ngày', vnd(c.daily), 'gain')}
+        ${row('Lãi mỗi tháng', vnd(c.monthly), 'gain')}
+        ${row('Lãi tích lũy tới hôm nay', vnd(c.accrued), 'gain')}
+      </div>
+      <div class="card"><div class="ct">Khoản gửi</div>
+        ${row('Chủ sổ', esc(ownerName(b.owner)))}
+        ${row('Lãi suất', pct(b.rate) + ' /năm')}
+        ${row('Kỳ hạn', b.term > 0 ? b.term + ' tháng' : 'Không kỳ hạn')}
+        ${row('Nhận lãi', 'Khi đáo hạn')}
+      </div>
+      <div class="card"><div class="ct">Ngân hàng</div>
+        <div class="dt-bank">${logoHTML(b.bank)}<div><b>${esc(b.bank)}</b>${info && info.f ? `<span>Ngân hàng ${esc(info.f)}</span>` : ''}</div></div>
+      </div>
+      <div class="card"><div class="ct">Thông tin thêm</div>
+        <div class="muted" style="margin:8px 0 6px">Nhãn</div>
+        ${b.note ? `<span class="lchip"><i class="d"></i>${esc(b.note)}</span>` : '<span class="muted">Chưa có nhãn</span>'}
+      </div>
+    </div>
+    <div class="dt-foot">
+      <button type="button" class="dt-del" id="dDel" aria-label="Xoá sổ">${ICON.trash}</button>
+      <button type="button" class="dt-edit" id="dEdit">Chỉnh sửa</button>
+    </div>
+  </div>`;
+  sheet.hidden = false;
+  const $ = (s) => sheet.querySelector(s);
+  sheet.onclick = null;
+  $('#dBack').onclick = closeForm;
+  $('#dEdit').onclick = () => openForm(b.id, null, true);
+  $('#dDel').onclick = () => {
+    if (confirm('Xoá sổ tiết kiệm này?')) { state.books = state.books.filter((x) => x.id !== b.id); save(); closeForm(); render(true); toast('Đã xoá sổ'); }
+  };
+  const rn = $('#dRenew');
+  if (rn) rn.onclick = () => { b.start = iso(c.mat); save(); render(true); openDetail(b.id); toast('Đã tái tục ↻'); };
 }
 
 /* =====================  Bảng phụ: thông báo, tháng, tùy biến  ===================== */
@@ -549,7 +610,8 @@ setInterval(() => {
 /* =====================  Form thêm / sửa  ===================== */
 const sheet = document.getElementById('sheet');
 
-function openForm(id, defOwner) {
+function openForm(id, defOwner, back) {
+  sheet.className = 'sheet';
   const b = id ? state.books.find((x) => x.id === id) : null;
   const d = b || { owner: defOwner || (tab !== 'all' ? tab : 'vo'), bank: '', principal: '', rate: '', term: 12, start: iso(new Date()), note: '' };
   sheet.innerHTML = `
@@ -618,8 +680,9 @@ function openForm(id, defOwner) {
   });
   ['#fRate', '#fTerm', '#fStart'].forEach((s) => $(s).addEventListener('input', preview));
   $('#fChips').onclick = (e) => { const c = e.target.closest('.lchip'); if (c) $('#fNote').value = c.dataset.l; };
-  $('#fCancel').onclick = closeForm;
-  sheet.onclick = (e) => { if (e.target === sheet) closeForm(); };
+  const cancel = () => (back && b ? openDetail(b.id) : closeForm());
+  $('#fCancel').onclick = cancel;
+  sheet.onclick = (e) => { if (e.target === sheet) cancel(); };
   if (b) $('#fDel').onclick = () => {
     if (confirm('Xoá sổ tiết kiệm này?')) { state.books = state.books.filter((x) => x.id !== b.id); save(); closeForm(); render(true); toast('Đã xoá sổ'); }
   };
@@ -635,6 +698,7 @@ function openForm(id, defOwner) {
     openBanks.add(rec.owner + '|' + rec.bank);
     if (tab !== 'all') tab = rec.owner;
     render(true); toast('Đã lưu ✓');
+    if (back && b) openDetail(rec.id);
   };
 }
 function openBankPicker(current, onPick) {
@@ -661,7 +725,7 @@ function openBankPicker(current, onPick) {
   draw();
 }
 
-function closeForm() { sheet.hidden = true; sheet.innerHTML = ''; }
+function closeForm() { sheet.hidden = true; sheet.innerHTML = ''; sheet.className = 'sheet'; }
 
 /* =====================  Cài đặt / sao lưu  ===================== */
 function openSettings() {
@@ -746,7 +810,7 @@ view.addEventListener('click', (e) => {
     bank.classList.contains('open') ? openBanks.add(key) : openBanks.delete(key);
     return;
   }
-  const ed = t.closest('[data-edit]'); if (ed) return openForm(ed.dataset.edit);
+  const ed = t.closest('[data-detail]'); if (ed) return openDetail(ed.dataset.detail);
   const go = t.closest('[data-go]'); if (go) { tab = go.dataset.go; return render(); }
   if (t.closest('[data-add]')) return openForm(null);
   if (t.closest('#btnDemo')) return loadDemo();
