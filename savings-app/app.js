@@ -386,7 +386,7 @@ function flowInner(fd) {
       <div></div>
       <div class="xx" style="grid-template-columns:repeat(${fd.length},1fr)">${months}${yr}</div>
     </div>
-    <div class="note">${flowMode === 'all' ? '<i class="lg-p"></i>Gốc <i class="lg-i"></i>Lãi · ' : ''}Hiển thị ${fd.length >= 6 ? '6 tháng' : 'các tháng'} tiếp theo có tiền về.</div>
+    <div class="note">${flowMode === 'all' ? '<span class="lgd"><i class="lg-p"></i>Gốc</span><span class="lgd"><i class="lg-i"></i>Lãi</span>' : '<span class="lgd"><i class="lg-i"></i>Tiền lãi nhận khi đáo hạn</span>'}<span class="nt">${fd.length >= 6 ? '6 tháng' : 'Các tháng'} tiếp theo có tiền về</span></div>
   </div>`;
 }
 
@@ -484,7 +484,7 @@ function barsHTML(list) {
   if (expOwner && !owners.includes(expOwner)) expOwner = null;
   const box = (o) => {
     const parts = s.parts.filter((x) => x.b.owner === o), tot = parts.reduce((t, x) => t + x.v, 0);
-    const rows = parts.length ? parts.map(({ b, v }) => `<div class="mrow">${logoHTML(b.bank)}<div class="mt"><b>${esc(b.bank)}</b><span>${short(b.principal)} · ${pct(b.rate)}/năm</span></div><b class="gain">${vnd(v)}</b></div>`).join('')
+    const rows = parts.length ? parts.map(({ b, v }) => `<div class="mrow">${logoHTML(b.bank)}<div class="mt"><b>${esc(b.bank)}</b><span>${sv(b.principal)} · ${pct(b.rate)}/năm</span></div><b class="gain">${vnd(v)}</b></div>`).join('')
       : '<p class="muted" style="margin:6px 0 0">Không có sổ nào sinh lãi trong tháng này.</p>';
     return `<div class="obx ${o} ${expOwner === o ? 'open' : ''}">
       <button type="button" class="obx-h" data-ob="${o}" aria-expanded="${expOwner === o}"><span class="on">Sổ ${esc(ownerName(o))}</span><b>${vnd(tot)}</b>${ICON.down}</button>

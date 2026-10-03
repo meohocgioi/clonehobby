@@ -509,3 +509,21 @@ textarea { resize: vertical; min-height: 120px; }
 
 .obx-h .on { font-size: 16px; font-weight: 600; text-transform: none; letter-spacing: 0; }
 .ob { margin-bottom: 2px; }
+
+/* ---------- biểu đồ dòng tiền: làm lại cho gọn ---------- */
+@keyframes grow { from { clip-path: inset(100% 0 0 0); } to { clip-path: inset(0); } }
+.bar .col, .fb { transform: none; }
+.gl { border-top: 1px dashed var(--ov2); }
+.gl:first-child { border-top-style: solid; }
+.fb { width: 66%; max-width: 44px; gap: 2px; border-radius: 6px 6px 2px 2px; overflow: hidden; background: transparent; }
+.fb i { border-radius: 0; min-height: 4px; }
+.fb .sp { background: linear-gradient(180deg, #a78bfa, #7c3aed); }
+.fb .si { background: linear-gradient(180deg, #6ee7b7, #10b981); }
+.fv { font-size: 11px; color: var(--mut); font-weight: 600; }
+.fcol.on .fv { color: var(--txt); font-weight: 800; }
+.cols.multi .fcol:not(.on) .fb { opacity: .55; }
+.cols.multi .fcol:not(.on) .fv { opacity: 1; }
+.note { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--ov2); font-size: 13px; color: var(--mut); }
+.lgd { display: inline-flex; align-items: center; gap: 6px; color: var(--txt); font-weight: 600; }
+.lg-i { margin-left: 0; }
+.note .nt { margin-left: auto; font-weight: 400; color: var(--mut); }
