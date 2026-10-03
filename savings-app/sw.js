@@ -1,4 +1,4 @@
-const CACHE = 'sotietkiem-v10';
+const CACHE = 'sotietkiem-v11';
 const ASSETS = ['./', 'index.html', 'style.css', 'app.js', 'banks.js', 'settings.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {

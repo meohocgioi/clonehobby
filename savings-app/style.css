@@ -19,12 +19,13 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; background: var(--bg); color: var(--txt); }
 body {
-  font: 16px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  font: 400 16px/1.45 "Be Vietnam Pro", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  font-feature-settings: "tnum" 1, "lnum" 1;
   min-height: 100vh; overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
 }
 button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
-input, select { font: inherit; color: inherit; }
+input, select, textarea { font: inherit; color: inherit; }
 
 /* ---------- animated background ---------- */
 .bg { position: fixed; inset: 0; z-index: -1; overflow: hidden; background: radial-gradient(120% 80% at 50% 0%, var(--bg-a) 0%, var(--bg) 60%); }
@@ -63,7 +64,7 @@ main { padding: calc(var(--sat) + 18px) 16px calc(var(--sab) + 120px); max-width
 .bar { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 5px; }
 .bar .col { width: 100%; border-radius: 8px 8px 3px 3px; background: linear-gradient(180deg, #6ee7b7, #059669); transform-origin: bottom; animation: grow .9s cubic-bezier(.2, .9, .2, 1) both; }
 .bar.now .col { background: linear-gradient(180deg, #fde68a, #f59e0b); }
-.bar small { font-size: 10px; color: var(--mut); }
+.bar small { font-size: 11px; color: var(--mut); }
 @keyframes grow { from { transform: scaleY(0); } }
 
 /* ---------- banks accordion ---------- */
@@ -297,9 +298,9 @@ main { padding: calc(var(--sat) + 18px) 16px calc(var(--sab) + 120px); max-width
   border-radius: 26px; background: var(--nav); border: 1px solid var(--card-b);
   backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
 }
-.tabs .tb { padding: 7px 2px; border-radius: 20px; font-size: 11.5px; font-weight: 600; color: var(--mut); display: flex; flex-direction: column; align-items: center; gap: 2px; transition: background .25s, color .25s; min-width: 0; }
+.tabs .tb { padding: 7px 2px; border-radius: 20px; font-size: 11px; font-weight: 600; color: var(--mut); display: flex; flex-direction: column; align-items: center; gap: 2px; transition: background .25s, color .25s; min-width: 0; }
 .tabs .tb svg { width: 22px; height: 22px; }
-.tabs .ti { font-size: 19px; line-height: 22px; height: 22px; }
+.tabs .ti { font-size: 18px; line-height: 22px; height: 22px; }
 .tabs .tb.on { background: var(--ov2); color: var(--txt); }
 .tabs .add {
   width: 58px; height: 58px; margin: -30px auto 0; border-radius: 50%; font-size: 34px; line-height: 1; padding: 0 0 3px;
@@ -538,3 +539,25 @@ textarea { resize: vertical; min-height: 120px; }
 /* cột rất nhỏ: đủ chỗ cho cả hai lớp màu, không lòi xuống dưới vạch 0 */
 .fb { min-height: 4px; }
 .fb.two { min-height: 10px; }
+
+/* ---------- kiểu chữ thống nhất ---------- */
+:root { --fs-cap: 12px; --fs-sm: 13px; --fs-md: 15px; --fs-title: 17px; }
+h1, h2, h3, .ct, .top-title, .sec-title { letter-spacing: -.2px; }
+.ct, .top-title { font-size: var(--fs-title); font-weight: 700; }
+.sec-title { margin: 22px 4px 10px; font-size: var(--fs-title); font-weight: 700; color: var(--txt); text-transform: none; letter-spacing: -.2px; }
+.sgrp, .panel label, .pkgrp, .ct.up { font-size: var(--fs-cap); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+.ct.up { color: var(--mut); }
+.muted, .due-r, .dt-dates, .note { font-size: var(--fs-sm); }
+.dt-row, .trow, .bl-h { font-size: var(--fs-md); }
+
+/* số tiêu điểm: con số to + cụm "đơn vị ₫" nhỏ đi sau, cùng một kiểu ở mọi nơi */
+.num-xl, .num-l { font-weight: 800; letter-spacing: -1px; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.num-xl .u, .num-l .u { font-size: .5em; font-weight: 700; letter-spacing: 0; margin-left: .3em; opacity: .9; }
+.num-xl .u.pre, .num-l .u.pre { margin: 0 .3em 0 0; }
+.top .big.num-xl { font-size: clamp(30px, 10vw, 42px); margin-top: 4px; }
+.top .big small { margin-left: 0; color: inherit; }
+.dt-big.num-xl { font-size: clamp(28px, 9vw, 38px); }
+.mbig.num-l, .ac-big.num-l, .pv.num-l { font-size: 30px; }
+.ac-big.num-l { color: var(--txt); }
+.top .big.num-xl .u { margin-left: .3em; font-size: .48em; font-weight: 700; opacity: .9; }
+.top .big.num-xl .u.pre { margin: 0 .3em 0 0; }

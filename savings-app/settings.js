@@ -109,7 +109,7 @@ function pageFormat() {
   const withFmt = (fmt, fn) => { const old = F; F = fmt; try { return fn(); } finally { F = old; } };
   const dirty = () => JSON.stringify(d) !== JSON.stringify(state.settings.fmt);
   const body = () => `
-    <div class="card pvcard"><div class="muted">Xem trước</div><div class="pv">${withFmt(d, () => sv(1250000000))}</div>
+    <div class="card pvcard"><div class="muted">Xem trước</div><div class="pv num-l">${withFmt(d, () => bigHTML(1250000000))}</div>
       <div class="muted small">${withFmt(d, () => vnd(-1250000))} · ${withFmt(d, () => vnd(35000000))}</div>
       <div class="muted small">Số tiền sẽ hiển thị theo định dạng này trong toàn ứng dụng.</div></div>
     <div class="sgrp">Định dạng</div>

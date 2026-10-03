@@ -138,11 +138,16 @@ const liveFmt = (v) => {
   if (F.display !== 'full') return withCur(shortM(v));
   const [i, f] = v.toFixed(1).split('.'); return withCur(group(+i) + decSep() + f);
 };
-// Số lớn ở đầu trang: ký hiệu tiền tệ chữ nhỏ
-function bigWrap(inner) {
-  if (F.sym === 'none') return inner;
-  const small = `<small>${F.sym}</small>`;
-  return F.pos === 'before' ? small + inner : inner + small;
+// Số lớn (tiêu điểm): con số to, đơn vị + ký hiệu thành một cụm chữ nhỏ đi sau — "14,46 tỷ ₫"
+function bigHTML(n, shortMode = F.display !== 'full') {
+  let num = money(n), unit = '';
+  const a = Math.abs(n);
+  if (shortMode && a >= 1e9) { num = dec(n / 1e9, 2); unit = 'tỷ'; }
+  else if (shortMode && a >= 1e6) { num = dec(n / 1e6, 2); unit = 'triệu'; }
+  const sym = F.sym === 'none' ? '' : F.sym;
+  const after = [unit, F.pos === 'after' ? sym : ''].filter(Boolean).join('\u00a0');
+  const before = F.pos === 'before' && sym ? `<small class="u pre">${sym}</small>` : '';
+  return `${before}<span class="n">${num}</span>${after ? `<small class="u">${after}</small>` : ''}`;
 }
 // Nhãn trục biểu đồ: "3 T", "500 Tr", "20 K"
 function axisLabel(v, dec = 1) {
@@ -202,7 +207,8 @@ function countUp(el, to, fmt = money, dur = 1100) {
   const step = (now) => {
     const k = Math.min(1, (now - t0) / dur);
     const e = 1 - Math.pow(1 - k, 4);
-    el.textContent = fmt(from + (to - from) * e);
+    const v = fmt(from + (to - from) * e);
+    if (el.dataset.fmt === 'bigh') el.innerHTML = v; else el.textContent = v;
     if (k < 1) requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
@@ -210,7 +216,7 @@ function countUp(el, to, fmt = money, dur = 1100) {
 function runCounters(root) {
   root.querySelectorAll('[data-count]').forEach((el) => {
     const kind = el.dataset.fmt;
-    countUp(el, parseFloat(el.dataset.count), { vnd, sv, pct, big: bigNum }[kind] || money);
+    countUp(el, parseFloat(el.dataset.count), { vnd, sv, pct, big: bigNum, bigh: (v) => bigHTML(v) }[kind] || money);
   });
 }
 
@@ -305,7 +311,7 @@ function topHTML(list, scope, title, seg) {
   <section class="top ${scope}">
     ${seg ? `<div class="seg3">${segButtons()}</div>` : ''}
     <div class="top-row">
-      <div><div class="lbl">${label}</div><div class="big">${bigWrap(`<span data-count="${s.principal}" data-fmt="big">0</span>`)}</div></div>
+      <div><div class="lbl">${label}</div><div class="big num-xl" data-count="${s.principal}" data-fmt="bigh">0</div></div>
       <button class="bell" data-bell aria-label="Sổ đến hạn">${ICON.bell}${n ? `<i>${n}</i>` : ''}</button>
     </div>
     <div class="sub">Lãi dự kiến <b data-count="${s.expected}" data-fmt="sv">0</b></div>
@@ -344,7 +350,7 @@ function monthInner(fd) {
   return `
   <div class="card tap" data-month="${e.k}">
     <div class="mh"><div class="ct">Tổng nhận tháng ${e.m}/${e.y}</div>${ICON.chev}</div>
-    <div class="mbig"><span data-count="${e.principal + e.interest}" data-fmt="vnd">0</span></div>
+    <div class="mbig num-l" data-count="${e.principal + e.interest}" data-fmt="bigh">0</div>
     <div class="muted">Gốc ${sv(e.principal)} · Lãi ${sv(e.interest)}</div>
   </div>`;
 }
@@ -463,7 +469,7 @@ function accruedHTML(list) {
   <div class="card">
     <div class="ct">Lãi tạm tính</div>
     <div class="ac-top"><span>Đã tích lũy đến hôm nay</span><b class="pc">${(p * 100).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%</b></div>
-    <div class="ac-big"><span data-count="${s.accrued}" data-fmt="sv">0</span></div>
+    <div class="ac-big num-l" data-count="${s.accrued}" data-fmt="bigh">0</div>
     <div class="prog"><i style="width:${Math.max(1, p * 100).toFixed(1)}%"></i></div>
     <div class="ac-bot"><div><span>Còn lại</span><b>${sv(s.expected - s.accrued)}</b></div><div class="r"><span>Tổng dự kiến</span><b>${sv(s.expected)}</b></div></div>
   </div>`;
@@ -600,7 +606,7 @@ function openDetail(id) {
     <div class="dt-body">
       <div class="dt-top">
         <div class="lbl">Tiền gửi</div>
-        <div class="dt-big">${bigWrap(bigNum(b.principal))}</div>
+        <div class="dt-big num-xl">${bigHTML(b.principal)}</div>
         <div class="muted">${c.total != null ? 'Tiền lãi ' + vnd(c.total) : 'Lãi mỗi năm ' + vnd(c.yearly)}</div>
       </div>
       <div class="card"><div class="ct">Tiến độ</div>${progress}</div>
