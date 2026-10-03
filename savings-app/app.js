@@ -118,6 +118,8 @@ const shortM = (n) => {
   return money(n);
 };
 const vnd = (n) => withCur(F.display === 'full' ? money(n) : shortM(n));
+// Số lớn ở đầu trang (không kèm ký hiệu tiền tệ)
+const bigNum = (n) => (F.display === 'full' ? money(n) : shortM(n));
 function dec(v, max) {
   const t = Math.abs(v).toFixed(max).replace(/\.?0+$/, ''), [i, f] = t.split('.');
   return (v < 0 ? '-' : '') + group(+i) + (f ? decSep() + f : '');
@@ -132,7 +134,10 @@ function shortNum(n) {
 }
 const short = (n) => (F.display === 'full' ? money(n) : shortNum(n));
 const sv = (n) => withCur(short(n));
-const liveFmt = (v) => { const [i, f] = v.toFixed(1).split('.'); return withCur(group(+i) + decSep() + f); };
+const liveFmt = (v) => {
+  if (F.display !== 'full') return withCur(shortM(v));
+  const [i, f] = v.toFixed(1).split('.'); return withCur(group(+i) + decSep() + f);
+};
 // Số lớn ở đầu trang: ký hiệu tiền tệ chữ nhỏ
 function bigWrap(inner) {
   if (F.sym === 'none') return inner;
@@ -205,7 +210,7 @@ function countUp(el, to, fmt = money, dur = 1100) {
 function runCounters(root) {
   root.querySelectorAll('[data-count]').forEach((el) => {
     const kind = el.dataset.fmt;
-    countUp(el, parseFloat(el.dataset.count), { vnd, sv, pct }[kind] || money);
+    countUp(el, parseFloat(el.dataset.count), { vnd, sv, pct, big: bigNum }[kind] || money);
   });
 }
 
@@ -299,7 +304,7 @@ function topHTML(list, scope, title, seg) {
   <section class="top ${scope}">
     ${seg ? `<div class="seg3">${segButtons()}</div>` : ''}
     <div class="top-row">
-      <div><div class="lbl">${label}</div><div class="big">${bigWrap(`<span data-count="${s.principal}">0</span>`)}</div></div>
+      <div><div class="lbl">${label}</div><div class="big">${bigWrap(`<span data-count="${s.principal}" data-fmt="big">0</span>`)}</div></div>
       <button class="bell" data-bell aria-label="Sổ đến hạn">${ICON.bell}${n ? `<i>${n}</i>` : ''}</button>
     </div>
     <div class="sub">Lãi dự kiến <b data-count="${s.expected}" data-fmt="sv">0</b></div>
@@ -582,7 +587,7 @@ function openDetail(id) {
     <div class="dt-body">
       <div class="dt-top">
         <div class="lbl">Tiền gửi</div>
-        <div class="dt-big">${bigWrap(money(b.principal))}</div>
+        <div class="dt-big">${bigWrap(bigNum(b.principal))}</div>
         <div class="muted">${c.total != null ? 'Tiền lãi ' + vnd(c.total) : 'Lãi mỗi năm ' + vnd(c.yearly)}</div>
       </div>
       <div class="card"><div class="ct">Tiến độ</div>${progress}</div>
