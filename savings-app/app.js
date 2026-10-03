@@ -334,7 +334,7 @@ function dueHTML(list, scope, inBanner) {
     <div class="due card" data-detail="${b.id}" role="button">
       <div class="due-h">${logoHTML(b.bank)}
         <div class="nm">${esc(b.bank)}${scope === 'all' ? `<small class="own ${b.owner}">${esc(ownerName(b.owner))}</small>` : ''}</div>
-        <div class="amt">${sv(b.principal)}</div></div>
+        <div class="amt num-m">${bigHTML(b.principal)}</div></div>
       <div class="due-r"><span>Lãi suất ${pct(b.rate)}</span><span>Lãi ${sv(c.total)}</span></div>
       <div class="due-r"><span>${c.matured ? '<b class="warn">Đã đến hạn</b>' : 'Còn ' + remainText(c.mat)}</span><span>Đáo hạn ${fmtDate(c.mat)}</span></div>
       <div class="prog"><i style="width:${(c.progress * 100).toFixed(1)}%"></i></div>
@@ -545,7 +545,7 @@ function renderOwner(o) {
       <button class="bank-h" data-toggle>
         ${logoHTML(name)}
         <div class="mid"><div class="nm">${esc(name)}</div><div class="sub">${arr.length} sổ</div></div>
-        <div class="amt">${vnd(t.principal)}<small>+${vnd(t.daily)}/ngày</small></div>
+        <div class="amt"><span class="num-m">${bigHTML(t.principal)}</span><small>+${vnd(t.daily)}/ngày</small></div>
         ${ICON.down}
       </button>
       <div class="acc"><div><div class="books">${arr.sort((a, b) => b.principal - a.principal).map(bookHTML).join('')}</div></div></div>
@@ -566,7 +566,7 @@ function bookHTML(b) {
   } else foot = '<span>Rút bất cứ lúc nào</span>';
   return `
   <div class="book" data-detail="${b.id}" role="button">
-    <div class="r1"><span class="p">${vnd(b.principal)}</span><span class="rate">${pct(b.rate)}/năm</span></div>
+    <div class="r1"><span class="p num-m">${bigHTML(b.principal)}</span><span class="rate">${pct(b.rate)}/năm</span></div>
     <div class="meta">${tab === 'books' && bookScope === 'all' ? `<span class="own ${b.owner}">${esc(ownerName(b.owner))}</span> · ` : ''}${termTxt} · gửi ${fmtDate(c.start)}${b.note ? ' · ' + esc(b.note) : ''}</div>
     <div class="grid">
       <div><span>Lãi mỗi ngày</span><b>${vnd(c.daily)}</b></div>

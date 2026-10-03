@@ -561,3 +561,16 @@ h1, h2, h3, .ct, .top-title, .sec-title { letter-spacing: -.2px; }
 .ac-big.num-l { color: var(--txt); }
 .top .big.num-xl .u { margin-left: .3em; font-size: .48em; font-weight: 700; opacity: .9; }
 .top .big.num-xl .u.pre { margin: 0 .3em 0 0; }
+
+/* số tiền tiêu điểm theo mẫu: số đậm to, "triệu ₫ / tỷ ₫" nét thường, nhỏ ~2/3, màu nhạt, cùng chân chữ */
+.num-xl, .num-l, .num-m { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.num-m { font-weight: 800; letter-spacing: -.3px; }
+.num-xl .u, .num-l .u, .num-m .u,
+.top .big.num-xl .u { font-size: .62em; font-weight: 500; letter-spacing: 0; margin-left: .22em; opacity: .62; vertical-align: baseline; }
+.top .big.num-xl .u { opacity: .78; }
+.num-xl .u.pre, .num-l .u.pre, .num-m .u.pre, .top .big.num-xl .u.pre { margin: 0 .22em 0 0; }
+.bank-h .amt .num-m { display: block; font-size: 17px; }
+.bank-h .amt small { display: block; }
+.due-h .amt.num-m { font-size: 24px; }
+.book .p.num-m { font-size: 20px; }
+.bank-h .amt .num-m .u { display: inline; font-size: .62em; font-weight: 500; color: inherit; opacity: .62; }
