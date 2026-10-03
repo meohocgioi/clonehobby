@@ -17,11 +17,12 @@
 <body>
   <div class="bg"><i class="blob b1"></i><i class="blob b2"></i><i class="blob b3"></i></div>
   <main id="view"></main>
-  <button id="fab" class="fab" aria-label="Thêm sổ">+</button>
   <nav class="tabs" id="tabs">
-    <button data-tab="all"><span class="ti">◎</span>Tổng quan</button>
-    <button data-tab="vo"><span class="ti">♀</span><span class="nm">Vợ</span></button>
-    <button data-tab="chong"><span class="ti">♂</span><span class="nm">Chồng</span></button>
+    <button class="tb" data-tab="all"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>Tổng quan</button>
+    <button class="tb" data-tab="vo"><span class="ti">♀</span><span class="nm">Vợ</span></button>
+    <button class="add" id="fab" aria-label="Thêm sổ tiết kiệm">+</button>
+    <button class="tb" data-tab="chong"><span class="ti">♂</span><span class="nm">Chồng</span></button>
+    <button class="tb" id="navSettings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Cài đặt</button>
   </nav>
   <div id="sheet" class="sheet" hidden></div>
   <div id="toast" class="toast"></div>

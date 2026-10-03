@@ -8,6 +8,7 @@ BANK_LIST.forEach((b) => [b.n, ...b.a].forEach((k) => BANK_INDEX.set(normName(k)
 const bankInfo = (name) => BANK_INDEX.get(normName(name)) || null;
 const PALETTE = ['#34d399', '#60a5fa', '#f472b6', '#fbbf24', '#a78bfa', '#fb923c', '#22d3ee', '#f87171'];
 
+const DEFAULTS = () => ({ names: { vo: 'Vợ', chong: 'Chồng' }, books: [], hidden: [] });
 let state = load();
 let tab = 'all';
 const openBanks = new Set();
@@ -15,9 +16,9 @@ const openBanks = new Set();
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s && Array.isArray(s.books)) return { names: { vo: 'Vợ', chong: 'Chồng' }, ...s };
+    if (s && Array.isArray(s.books)) return { ...DEFAULTS(), ...s };
   } catch (e) { /* ignore */ }
-  return { names: { vo: 'Vợ', chong: 'Chồng' }, books: [] };
+  return DEFAULTS();
 }
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { toast('Không lưu được dữ liệu!'); }
@@ -86,6 +87,32 @@ function compact(n) {
   if (a >= 1e3) return (n / 1e3).toLocaleString('vi-VN', { maximumFractionDigits: 0 }) + 'k';
   return String(Math.round(n));
 }
+// Số rút gọn kiểu "23,1 triệu", "3 tỷ", "760,27K"
+function short(n) {
+  const a = Math.abs(n), f = (v, u) => v.toLocaleString('vi-VN', { maximumFractionDigits: 2 }) + u;
+  if (a >= 1e9) return f(n / 1e9, ' tỷ');
+  if (a >= 1e6) return f(n / 1e6, ' triệu');
+  if (a >= 1e3) return f(n / 1e3, 'K');
+  return String(Math.round(n));
+}
+// Nhãn trục biểu đồ: "3 T", "500 Tr", "20 K"
+function axisLabel(v, dec = 1) {
+  const a = Math.abs(v), f = (x, u) => x.toLocaleString('vi-VN', { maximumFractionDigits: dec }) + u;
+  if (a >= 1e9) return f(v / 1e9, ' T');
+  if (a >= 1e6) return f(v / 1e6, ' Tr');
+  if (a >= 1e3) return f(v / 1e3, ' K');
+  return String(Math.round(v));
+}
+const pct = (r) => r.toLocaleString('vi-VN', { maximumFractionDigits: 2 }) + '%';
+const pctInt = (p) => Math.max(p > 0 ? 1 : 0, Math.round(p * 100));
+// "5 tháng 30 ngày" còn lại đến ngày đáo hạn
+function remainText(mat) {
+  const t = today0();
+  let m = (mat.getFullYear() - t.getFullYear()) * 12 + mat.getMonth() - t.getMonth();
+  if (addMonths(t, m) > mat) m--;
+  const d = diffDays(addMonths(t, Math.max(m, 0)), mat);
+  return [m > 0 ? m + ' tháng' : '', d > 0 ? d + ' ngày' : ''].filter(Boolean).join(' ') || 'hôm nay';
+}
 const fmtDate = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ownerName = (o) => state.names[o];
@@ -120,67 +147,255 @@ function countUp(el, to, fmt = money, dur = 1100) {
 function runCounters(root) {
   root.querySelectorAll('[data-count]').forEach((el) => {
     const kind = el.dataset.fmt;
-    countUp(el, parseFloat(el.dataset.count), kind === 'vnd' ? vnd : money);
+    countUp(el, parseFloat(el.dataset.count), { vnd, short, pct }[kind] || money);
   });
+}
+
+
+/* =====================  Số liệu tổng hợp  ===================== */
+// Lãi dự kiến / lãi tạm tính chỉ tính các sổ có kỳ hạn (sổ không kỳ hạn không có ngày đáo hạn).
+function stats(list) {
+  const s = { principal: 0, daily: 0, monthly: 0, expected: 0, accrued: 0, books: list.length, banks: 0, avgRate: 0 };
+  const banks = new Set();
+  let weighted = 0;
+  for (const b of list) {
+    const c = calc(b);
+    s.principal += b.principal; s.daily += c.activeDaily; s.monthly += c.activeMonthly;
+    weighted += b.principal * b.rate; banks.add(b.bank);
+    if (c.total != null) { s.expected += c.total; s.accrued += c.accrued; }
+  }
+  s.banks = banks.size;
+  s.avgRate = s.principal ? weighted / s.principal : 0;
+  return s;
+}
+
+const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+// Tiền về theo tháng đáo hạn: 6 tháng đầu tiên (kể từ nay) có sổ đáo hạn
+function flowData(list) {
+  const m = new Map();
+  for (const b of list) {
+    const c = calc(b);
+    if (!c.mat || c.matured) continue;
+    const k = monthKey(c.mat);
+    const e = m.get(k) || { k, y: c.mat.getFullYear(), m: c.mat.getMonth() + 1, principal: 0, interest: 0, books: [] };
+    e.principal += b.principal; e.interest += c.total; e.books.push(b);
+    m.set(k, e);
+  }
+  return [...m.values()].sort((a, b) => (a.k < b.k ? -1 : 1)).slice(0, 6);
+}
+
+// Sổ đã đến hạn hoặc sắp đến hạn trong 30 ngày
+function alerts(list) {
+  return list.map((b) => ({ b, c: calc(b) })).filter((x) => x.c.mat && (x.c.matured || x.c.daysLeft <= 30))
+    .sort((a, b) => a.c.mat - b.c.mat);
 }
 
 /* =====================  Render  ===================== */
 const view = document.getElementById('view');
+const SECTIONS = [
+  ['due', 'Sổ sắp đáo hạn'], ['month', 'Tổng nhận theo tháng'], ['flow', 'Dòng tiền sắp tới'],
+  ['bank', 'Tiền gửi theo ngân hàng'], ['owner', 'Tiền gửi theo chủ sổ'], ['label', 'Tiền gửi theo nhãn'],
+  ['accrued', 'Lãi tạm tính'], ['monthly', 'Lãi sinh ra mỗi tháng'],
+];
+const shown = (id) => !state.hidden.includes(id);
+const sec = (html, id) => (html ? `<div class="sec"${id ? ` id="${id}"` : ''}>${html}</div>` : '');
+const ICON = {
+  bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>',
+  chev: '<svg class="go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
+  down: '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>',
+};
 
-function render() {
-  document.querySelectorAll('#tabs button').forEach((b) => {
+let flowMode = 'all';   // 'all' = gốc + lãi, 'int' = chỉ tiền lãi
+let selMonth = null;    // tháng đang chọn trên biểu đồ dòng tiền ('YYYY-MM')
+let ctx = { list: [], scope: 'all' };
+
+function render(keep = false) {
+  const y = window.scrollY;
+  document.querySelectorAll('#tabs [data-tab]').forEach((b) => {
     b.classList.toggle('on', b.dataset.tab === tab);
     if (b.dataset.tab !== 'all') b.querySelector('.nm').textContent = ownerName(b.dataset.tab);
   });
-  document.getElementById('fab').style.display = 'block';
-  view.innerHTML = tab === 'all' ? renderAll() : renderOwner(tab);
-  view.className = 'fade-in';
+  ctx = { list: scoped(tab), scope: tab };
+  view.innerHTML = ctx.list.length ? (tab === 'all' ? renderAll() : renderOwner(tab)) : renderEmpty(tab);
+  view.className = keep ? '' : 'fade-in';
   runCounters(view);
-  requestAnimationFrame(() => requestAnimationFrame(() => animateDonut()));
-  window.scrollTo(0, 0);
+  requestAnimationFrame(() => requestAnimationFrame(animateDonut));
+  window.scrollTo(0, keep ? y : 0);
 }
 
-function heroHTML(title, sub, list) {
-  const t = totals(list);
+function renderEmpty(o) {
+  const title = o === 'all' ? 'Tổng quan' : 'Sổ ' + ownerName(o);
+  return `<div class="head"><div><h1>${esc(title)}</h1><small>${fmtDate(new Date())}</small></div><div class="dot">💰</div></div>${emptyHTML(o === 'all' ? '' : o)}`;
+}
+
+/* ---- banner ---- */
+function topHTML(list, scope, title) {
+  const s = stats(list);
+  const n = alerts(list).length;
+  const label = scope === 'all' ? 'Tổng tiền đang gửi' : `Tổng tiền đang gửi · ${esc(ownerName(scope))}`;
   return `
-  <section class="card hero">
-    <div class="lbl">${esc(sub)}</div>
-    <div class="big"><span data-count="${t.principal}">0</span><small>₫</small></div>
-    <div class="pair">
-      <div class="chip"><div class="k">Lãi mỗi ngày</div><div class="v"><span data-count="${t.daily}">0</span> ₫</div></div>
-      <div class="chip"><div class="k">Lãi mỗi tháng</div><div class="v"><span data-count="${t.monthly}">0</span> ₫</div></div>
+  <section class="top ${scope}">
+    <div class="top-row">
+      <div><div class="lbl">${label}</div><div class="big"><span data-count="${s.principal}">0</span><small>₫</small></div></div>
+      <button class="bell" data-bell aria-label="Sổ đến hạn">${ICON.bell}${n ? `<i>${n}</i>` : ''}</button>
     </div>
-    <div class="live"><i class="pulse"></i><span>Hôm nay đã sinh lãi</span><b data-live="${t.daily}">0</b><span>₫</span></div>
+    <div class="sub">Lãi dự kiến <b data-count="${s.expected}" data-fmt="short">0</b> ₫</div>
+    <div class="stats">
+      <div><b><span data-count="${s.monthly}" data-fmt="short">0</span> ₫</b><span>Lãi / tháng</span></div>
+      <div><b data-count="${s.avgRate}" data-fmt="pct">0</b><span>LS bình quân</span></div>
+      <div><b>${s.books} sổ</b><span>${s.banks} ngân hàng</span></div>
+    </div>
+    <div class="live"><i class="pulse"></i><span>Lãi mỗi ngày <b><span data-count="${s.daily}">0</span> ₫</b></span><span>Hôm nay <b data-live="${s.daily}">0</b> ₫</span></div>
+    ${title ? `<div class="top-title">${esc(title)}</div>` : ''}
   </section>`;
 }
 
-function donutHTML(list) {
+/* ---- sổ sắp đáo hạn ---- */
+function dueHTML(list, scope, inBanner) {
+  const items = list.map((b) => ({ b, c: calc(b) })).filter((x) => x.c.mat)
+    .sort((a, b) => a.c.mat - b.c.mat).slice(0, 5);
+  if (!items.length) return '';
+  const cards = items.map(({ b, c }) => `
+    <div class="due card" data-edit="${b.id}" role="button">
+      <div class="due-h">${logoHTML(b.bank)}
+        <div class="nm">${esc(b.bank)}${scope === 'all' ? `<small class="own ${b.owner}">${esc(ownerName(b.owner))}</small>` : ''}</div>
+        <div class="amt">${short(b.principal)} ₫</div></div>
+      <div class="due-r"><span>Lãi suất ${pct(b.rate)}</span><span>Lãi ${short(c.total)} ₫</span></div>
+      <div class="due-r"><span>${c.matured ? '<b class="warn">Đã đến hạn</b>' : 'Còn ' + remainText(c.mat)}</span><span>Đáo hạn ${fmtDate(c.mat)}</span></div>
+      <div class="prog"><i style="width:${(c.progress * 100).toFixed(1)}%"></i></div>
+    </div>`).join('');
+  return `${inBanner ? '' : '<div class="sec-title">Sổ sắp đáo hạn</div>'}<div class="due-scroll ${items.length > 1 ? 'many' : ''}">${cards}</div>`;
+}
+
+/* ---- tổng nhận theo tháng + dòng tiền ---- */
+function monthInner(fd) {
+  if (!fd.length) return '';
+  const e = fd.find((x) => x.k === selMonth) || fd[0];
+  selMonth = e.k;
+  return `
+  <div class="card tap" data-month="${e.k}">
+    <div class="mh"><div class="ct">Tổng nhận tháng ${e.m}/${e.y}</div>${ICON.chev}</div>
+    <div class="mbig"><span data-count="${e.principal + e.interest}" data-fmt="vnd">0</span></div>
+    <div class="muted">Gốc ${short(e.principal)} ₫ · Lãi ${short(e.interest)} ₫</div>
+  </div>`;
+}
+
+function niceStep(max, n = 3) {
+  const raw = max / n, p = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / p;
+  return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p;
+}
+
+function flowInner(fd) {
+  if (!fd.length) {
+    return `<div class="card"><div class="ct">Dòng tiền sắp tới</div><p class="muted" style="margin:8px 0 0">Chưa có sổ nào sắp đáo hạn. Sổ có kỳ hạn sẽ hiện ở đây theo tháng tiền về.</p></div>`;
+  }
+  const val = (e) => (flowMode === 'all' ? e.principal + e.interest : e.interest);
+  const max = Math.max(...fd.map(val), 1);
+  const step = niceStep(max), n = Math.ceil(max / step), top = step * n;
+  const ticks = Array.from({ length: n + 1 }, (_, i) => i);
+  const yax = ticks.map((i) => `<span style="bottom:${(i / n) * 100}%">${i === 0 ? '0' : axisLabel(i * step)}</span>`).join('');
+  const grid = ticks.map((i) => `<div class="gl" style="bottom:${(i / n) * 100}%"></div>`).join('');
+  const cols = fd.map((e, i) => {
+    const h = Math.max(2, val(e) / top * 100);
+    const inner = flowMode === 'all'
+      ? `<i class="si" style="flex:${e.interest}"></i><i class="sp" style="flex:${e.principal}"></i>`
+      : '<i class="si" style="flex:1"></i>';
+    return `<button class="fcol ${e.k === selMonth ? 'on' : ''}" data-pick="${e.k}" aria-label="Tháng ${e.m}/${e.y}">
+      <span class="fv" style="bottom:calc(${h}% + 4px)">${axisLabel(val(e))}</span>
+      <div class="fbw"><div class="fb" style="height:${h}%;animation-delay:${i * 80}ms">${inner}</div></div></button>`;
+  }).join('');
+  const months = fd.map((e) => `<span class="${e.k === selMonth ? 'on' : ''}">T${e.m}</span>`).join('');
+  const years = [];
+  fd.forEach((e) => { const l = years[years.length - 1]; if (l && l.y === e.y) l.n++; else years.push({ y: e.y, n: 1 }); });
+  const yr = years.map((g) => `<div class="yr" style="grid-column:span ${g.n}"><i></i>${g.y}</div>`).join('');
+  return `
+  <div class="card">
+    <div class="flow-h"><div class="ct">Dòng tiền sắp tới</div>
+      <div class="toggle"><button data-mode="all" class="${flowMode === 'all' ? 'on' : ''}">Gốc + lãi</button><button data-mode="int" class="${flowMode === 'int' ? 'on' : ''}">Tiền lãi</button></div></div>
+    <div class="fl">
+      <div class="yx"><div class="in">${yax}</div></div>
+      <div class="pl"><div class="in">${grid}<div class="cols ${fd.length > 1 ? 'multi' : ''}" style="grid-template-columns:repeat(${fd.length},1fr)">${cols}</div></div></div>
+      <div></div>
+      <div class="xx" style="grid-template-columns:repeat(${fd.length},1fr)">${months}${yr}</div>
+    </div>
+    <div class="note">${flowMode === 'all' ? '<i class="lg-p"></i>Gốc <i class="lg-i"></i>Lãi · ' : ''}Hiển thị ${fd.length >= 6 ? '6 tháng' : 'các tháng'} tiếp theo có tiền về.</div>
+  </div>`;
+}
+
+function refreshFlow() {
+  const fd = flowData(ctx.list);
+  const m = document.getElementById('secMonth'), f = document.getElementById('secFlow');
+  if (m) { m.innerHTML = monthInner(fd); runCounters(m); }
+  if (f) f.innerHTML = flowInner(fd);
+}
+
+/* ---- theo ngân hàng / chủ sổ / nhãn ---- */
+function bankHTML(list) {
   const byBank = {};
   list.forEach((b) => { byBank[b.bank] = (byBank[b.bank] || 0) + b.principal; });
   const rows = Object.entries(byBank).sort((a, b) => b[1] - a[1]);
   const total = rows.reduce((s, r) => s + r[1], 0);
   if (!total) return '';
-  const R = 60, C = 2 * Math.PI * R;
+  const R = 82, SW = 18, GAP = 6, C = 2 * Math.PI * R;
   let cum = 0, segs = '', leg = '';
   rows.forEach(([name, val], i) => {
     const f = val / total, col = PALETTE[i % PALETTE.length];
-    const len = Math.max(0, f * C - (rows.length > 1 ? 3 : 0));
-    segs += `<circle class="seg" cx="80" cy="80" r="${R}" stroke="${col}" stroke-dasharray="0 ${C}" data-d="${len} ${C - len}" stroke-dashoffset="${-cum * C}" stroke-linecap="butt"/>`;
-    leg += `<div><i style="background:${col}"></i><span>${esc(name)}</span><em>${Math.round(f * 100)}%</em></div>`;
+    const len = Math.max(0.01, f * C - SW - GAP);
+    segs += `<circle class="seg" cx="100" cy="100" r="${R}" stroke="${col}" style="stroke-dasharray:0 ${C}" data-d="${len} ${C - len}" stroke-dashoffset="${-(cum * C + (SW + GAP) / 2)}"/>`;
+    leg += `<div class="lg">${logoHTML(name)}<div class="lt"><b>${esc(name)}</b><span>${pctInt(f)}% · ${short(val)} ₫</span></div><i class="lb" style="width:${Math.max(14, f * 100)}px;background:${col}"></i></div>`;
     cum += f;
   });
   return `
-  <section class="card">
-    <h3>Phân bổ theo ngân hàng</h3>
-    <div class="donut-wrap">
-      <div class="donut"><svg viewBox="0 0 160 160"><circle cx="80" cy="80" r="${R}" stroke="rgba(255,255,255,.06)"/>${segs}</svg>
-        <div class="ctr"><div><b>${compact(total)}</b>${rows.length} ngân hàng</div></div></div>
-      <div class="legend">${leg}</div>
-    </div>
-  </section>`;
+  <div class="card">
+    <div class="ct">Tiền gửi theo ngân hàng</div>
+    <div class="donut"><svg viewBox="0 0 200 200"><circle cx="100" cy="100" r="${R}" class="trk"/>${segs}</svg>
+      <div class="ctr"><b>${rows.length}</b><span>Ngân hàng</span></div></div>
+    <div class="legend">${leg}</div>
+  </div>`;
 }
 function animateDonut() {
-  document.querySelectorAll('.donut .seg').forEach((c) => c.setAttribute('stroke-dasharray', c.dataset.d));
+  document.querySelectorAll('.donut .seg').forEach((c) => { c.style.strokeDasharray = c.dataset.d; });
+}
+
+function rowsHTML(rows, total) {
+  return rows.map((r) => {
+    const p = total ? r.val / total : 0;
+    return `<div class="bl ${r.go ? 'tap' : ''}" ${r.go ? `data-go="${r.go}"` : ''}>
+      <div class="bl-h"><span><i class="d" style="background:${r.col}"></i>${esc(r.name)} (${pctInt(p)}%)</span><b>${short(r.val)} ₫</b></div>
+      <div class="bl-b"><i style="width:${(p * 100).toFixed(1)}%;background:${r.col}"></i></div></div>`;
+  }).join('');
+}
+
+function ownerHTML(list) {
+  const rows = ['vo', 'chong'].map((o) => ({ name: ownerName(o), go: o, col: `var(--${o})`, val: list.filter((b) => b.owner === o).reduce((s, b) => s + b.principal, 0) })).filter((r) => r.val > 0);
+  const total = rows.reduce((s, r) => s + r.val, 0);
+  return rows.length ? `<div class="card"><div class="ct">Tiền gửi theo chủ sổ</div>${rowsHTML(rows, total)}</div>` : '';
+}
+
+function labelHTML(list) {
+  const g = {};
+  list.forEach((b) => { const k = b.note || ''; g[k] = (g[k] || 0) + b.principal; });
+  if (!Object.keys(g).some((k) => k)) return '';
+  let i = 0;
+  const rows = Object.entries(g).sort((a, b) => b[1] - a[1]).map(([k, val]) => ({ name: k || 'Chưa gắn nhãn', val, col: k ? PALETTE[i++ % PALETTE.length] : '#64748b' }));
+  const total = rows.reduce((s, r) => s + r.val, 0);
+  return `<div class="card"><div class="ct">Tiền gửi theo nhãn</div>${rowsHTML(rows, total)}</div>`;
+}
+
+/* ---- lãi tạm tính + lãi từng tháng ---- */
+function accruedHTML(list) {
+  const s = stats(list);
+  if (!s.expected) return '';
+  const p = Math.min(1, s.accrued / s.expected);
+  return `
+  <div class="card">
+    <div class="ct">Lãi tạm tính</div>
+    <div class="ac-top"><span>Đã tích lũy đến hôm nay</span><b class="pc">${(p * 100).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%</b></div>
+    <div class="ac-big"><span data-count="${s.accrued}" data-fmt="short">0</span> ₫</div>
+    <div class="prog"><i style="width:${Math.max(1, p * 100).toFixed(1)}%"></i></div>
+    <div class="ac-bot"><div><span>Còn lại</span><b>${short(s.expected - s.accrued)} ₫</b></div><div class="r"><span>Tổng dự kiến</span><b>${short(s.expected)} ₫</b></div></div>
+  </div>`;
 }
 
 function barsHTML(list) {
@@ -196,56 +411,41 @@ function barsHTML(list) {
   const bars = items.map((x, i) =>
     `<div class="bar ${x.now ? 'now' : ''}"><div class="col" style="height:${Math.max(4, x.v / max * 100)}%;animation-delay:${i * 60}ms"></div><small>${x.label}</small></div>`).join('');
   return `
-  <section class="card">
-    <h3>Lãi dự kiến 12 tháng tới</h3>
+  <div class="card">
+    <div class="ct">Lãi sinh ra mỗi tháng</div>
     <div class="bars">${bars}</div>
     <div class="bar-note">Tháng này: <b style="color:var(--gold)">${vnd(items[0].v)}</b> · Cao nhất: ${vnd(max)}<br>Chưa tính tái tục các sổ đến hạn.</div>
-  </section>`;
-}
-
-function upcomingHTML(list) {
-  const up = list.map((b) => ({ b, c: calc(b) })).filter((x) => x.c.mat && !x.c.matured)
-    .sort((a, b) => a.c.daysLeft - b.c.daysLeft).slice(0, 3);
-  if (!up.length) return '';
-  return `<section class="card"><h3>Sắp đến hạn</h3>${up.map(({ b, c }) => `
-    <div style="display:flex;align-items:center;gap:12px;padding:6px 0">
-      ${logoHTML(b.bank)}
-      <div style="flex:1;min-width:0"><b>${esc(b.bank)}</b> · ${esc(ownerName(b.owner))}<div class="meta" style="font-size:12px;color:var(--mut)">${vnd(b.principal)} — ${fmtDate(c.mat)}</div></div>
-      <span class="badge ${c.daysLeft <= 14 ? 'soon' : ''}">${c.daysLeft} ngày</span>
-    </div>`).join('')}</section>`;
-}
-
-function renderAll() {
-  const list = scoped('all');
-  if (!list.length) return emptyHTML();
-  const split = ['vo', 'chong'].map((o) => {
-    const t = totals(scoped(o));
-    return `<button class="who ${o}" data-go="${o}"><div class="n">${o === 'vo' ? '♀' : '♂'} ${esc(ownerName(o))}</div><div class="a">${compact(t.principal)}</div><div class="d">+${vnd(t.daily)}/ngày</div></button>`;
-  }).join('');
-  return `
-  <div class="head"><div><h1>Tổng quan</h1><small>${fmtDate(new Date())}</small></div><div class="dot">💰</div></div>
-  ${heroHTML('', 'Tổng tiền gửi cả nhà', list)}
-  <div class="split" style="margin-bottom:14px">${split}</div>
-  ${donutHTML(list)}
-  ${barsHTML(list)}
-  ${upcomingHTML(list)}
-  <div style="text-align:center;margin-top:8px">
-    <button class="btn ghost" id="btnSettings">⚙︎ Sao lưu & cài đặt</button>
   </div>`;
 }
 
-function renderOwner(o) {
-  const list = scoped(o);
-  const icon = o === 'vo' ? '♀' : '♂';
-  const head = `<div class="head"><div><h1>Sổ ${esc(ownerName(o))}</h1><small>${list.length} sổ tiết kiệm</small></div><div class="dot" style="color:var(--${o})">${icon}</div></div>`;
-  if (!list.length) return head + emptyHTML(o);
+/* ---- các phần của dashboard (trừ "sổ sắp đáo hạn") ---- */
+function dashSections(list, scope) {
+  const fd = flowData(list);
+  if (!fd.some((e) => e.k === selMonth)) selMonth = fd.length ? fd[0].k : null;
+  const out = [];
+  if (shown('month') && fd.length) out.push(sec(monthInner(fd), 'secMonth'));
+  if (shown('flow')) out.push(sec(flowInner(fd), 'secFlow'));
+  if (shown('bank')) out.push(sec(bankHTML(list)));
+  if (shown('owner') && scope === 'all') out.push(sec(ownerHTML(list)));
+  if (shown('label')) out.push(sec(labelHTML(list)));
+  if (shown('accrued')) out.push(sec(accruedHTML(list)));
+  if (shown('monthly')) out.push(sec(barsHTML(list)));
+  out.push(`<div class="sec"><button class="custom" id="btnCustom">Tùy biến</button></div>`);
+  return out.join('');
+}
 
+function renderAll() {
+  const list = ctx.list;
+  const due = shown('due') ? dueHTML(list, 'all', true) : '';
+  return topHTML(list, 'all', due ? 'Sổ sắp đáo hạn' : '') + sec(due) + dashSections(list, 'all');
+}
+
+function renderOwner(o) {
+  const list = ctx.list;
   const byBank = {};
   list.forEach((b) => (byBank[b.bank] = byBank[b.bank] || []).push(b));
-  const banks = Object.entries(byBank).sort((a, b) => sum(b[1]) - sum(a[1]));
-  function sum(arr) { return arr.reduce((s, x) => s + x.principal, 0); }
-
-  const acc = banks.map(([name, arr]) => {
+  const sum = (arr) => arr.reduce((s, x) => s + x.principal, 0);
+  const acc = Object.entries(byBank).sort((a, b) => sum(b[1]) - sum(a[1])).map(([name, arr]) => {
     const t = totals(arr);
     const key = o + '|' + name;
     return `
@@ -254,18 +454,13 @@ function renderOwner(o) {
         ${logoHTML(name)}
         <div class="mid"><div class="nm">${esc(name)}</div><div class="sub">${arr.length} sổ</div></div>
         <div class="amt">${vnd(t.principal)}<small>+${vnd(t.daily)}/ngày</small></div>
-        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+        ${ICON.down}
       </button>
       <div class="acc"><div><div class="books">${arr.sort((a, b) => b.principal - a.principal).map(bookHTML).join('')}</div></div></div>
     </div>`;
   }).join('');
-
-  return `${head}
-  ${heroHTML('', 'Tổng tiền gửi', list)}
-  ${donutHTML(list)}
-  ${barsHTML(list)}
-  <div class="sec-title">Ngân hàng đang gửi</div>
-  ${acc}`;
+  const due = shown('due') ? dueHTML(list, o, false) : '';
+  return topHTML(list, o, 'Ngân hàng đang gửi') + sec(acc) + sec(due) + dashSections(list, o);
 }
 
 function bookHTML(b) {
@@ -279,7 +474,7 @@ function bookHTML(b) {
   } else foot = '<span>Rút bất cứ lúc nào</span>';
   return `
   <div class="book" data-edit="${b.id}" role="button">
-    <div class="r1"><span class="p">${vnd(b.principal)}</span><span class="rate">${String(b.rate).replace('.', ',')}%/năm</span></div>
+    <div class="r1"><span class="p">${vnd(b.principal)}</span><span class="rate">${pct(b.rate)}/năm</span></div>
     <div class="meta">${termTxt} · gửi ${fmtDate(c.start)}${b.note ? ' · ' + esc(b.note) : ''}</div>
     <div class="grid">
       <div><span>Lãi mỗi ngày</span><b>${vnd(c.daily)}</b></div>
@@ -299,6 +494,48 @@ function emptyHTML(o) {
     <button class="btn" data-add>＋ Thêm sổ</button>
     <button class="btn ghost" id="btnDemo">Xem thử với dữ liệu mẫu</button></div>`;
 }
+
+/* =====================  Bảng phụ: thông báo, tháng, tùy biến  ===================== */
+function openBell() {
+  const items = alerts(ctx.list);
+  sheet.innerHTML = `<div class="panel"><h2>Sổ đến hạn</h2>${items.length ? items.map(({ b, c }) => `
+    <div class="mrow">${logoHTML(b.bank)}
+      <div class="mt"><b>${esc(b.bank)} · ${esc(ownerName(b.owner))}</b><span>${short(b.principal)} ₫ · đáo hạn ${fmtDate(c.mat)}</span></div>
+      <span class="badge ${c.matured || c.daysLeft <= 14 ? 'soon' : ''}">${c.matured ? 'Đã đến hạn' : 'còn ' + remainText(c.mat)}</span></div>`).join('')
+    : '<p class="muted">Không có sổ nào đến hạn trong 30 ngày tới.</p>'}
+    <div class="actions"><button class="btn" id="mClose" type="button">Đóng</button></div></div>`;
+  sheet.hidden = false;
+  sheet.onclick = (e) => { if (e.target === sheet || e.target.id === 'mClose') closeForm(); };
+}
+
+function openMonth(k) {
+  const e = flowData(ctx.list).find((x) => x.k === k);
+  if (!e) return;
+  sheet.innerHTML = `<div class="panel"><h2>Đáo hạn tháng ${e.m}/${e.y}</h2>${e.books.map((b) => {
+    const c = calc(b);
+    return `<div class="mrow">${logoHTML(b.bank)}
+      <div class="mt"><b>${esc(b.bank)} · ${esc(ownerName(b.owner))}</b><span>${fmtDate(c.mat)} · gốc ${short(b.principal)} ₫ + lãi ${short(c.total)} ₫</span></div>
+      <b class="gain">${short(b.principal + c.total)} ₫</b></div>`;
+  }).join('')}<div class="actions"><button class="btn" id="mClose" type="button">Đóng</button></div></div>`;
+  sheet.hidden = false;
+  sheet.onclick = (ev) => { if (ev.target === sheet || ev.target.id === 'mClose') closeForm(); };
+}
+
+function openCustomize() {
+  sheet.innerHTML = `<div class="panel"><h2>Tùy biến trang tổng quan</h2><p class="muted" style="margin:0 0 6px">Chọn các phần muốn hiển thị.</p>
+    ${SECTIONS.map(([id, name]) => `<label class="swrow"><span>${name}</span><input type="checkbox" class="sw" data-sec="${id}" ${shown(id) ? 'checked' : ''}></label>`).join('')}
+    <div class="actions"><button class="btn" id="cDone" type="button">Xong</button></div></div>`;
+  sheet.hidden = false;
+  const done = () => { closeForm(); render(true); };
+  sheet.onclick = (e) => { if (e.target === sheet || e.target.id === 'cDone') done(); };
+  sheet.onchange = (e) => {
+    const id = e.target.dataset.sec; if (!id) return;
+    state.hidden = state.hidden.filter((x) => x !== id);
+    if (!e.target.checked) state.hidden.push(id);
+    save();
+  };
+}
+
 
 /* =====================  Số "đang chạy" trong ngày  ===================== */
 setInterval(() => {
@@ -332,8 +569,9 @@ function openForm(id, defOwner) {
     </div>
     <label>Ngày gửi</label>
     <input id="fStart" type="date" value="${d.start}">
-    <label>Ghi chú (tuỳ chọn)</label>
-    <input id="fNote" placeholder="vd: Sổ mua nhà" value="${esc(d.note || '')}">
+    <label>Nhãn (tuỳ chọn)</label>
+    <input id="fNote" placeholder="vd: Mua nhà, Quỹ học phí" value="${esc(d.note || '')}">
+    <div class="chips" id="fChips">${[...new Set(state.books.map((x) => x.note).filter(Boolean))].map((l) => `<button type="button" class="lchip" data-l="${esc(l)}">${esc(l)}</button>`).join('')}</div>
     <div class="preview" id="fPrev"></div>
     <div class="actions">
       ${b ? '<button class="btn danger" id="fDel" type="button">Xoá</button>' : ''}
@@ -379,10 +617,11 @@ function openForm(id, defOwner) {
     preview();
   });
   ['#fRate', '#fTerm', '#fStart'].forEach((s) => $(s).addEventListener('input', preview));
+  $('#fChips').onclick = (e) => { const c = e.target.closest('.lchip'); if (c) $('#fNote').value = c.dataset.l; };
   $('#fCancel').onclick = closeForm;
   sheet.onclick = (e) => { if (e.target === sheet) closeForm(); };
   if (b) $('#fDel').onclick = () => {
-    if (confirm('Xoá sổ tiết kiệm này?')) { state.books = state.books.filter((x) => x.id !== b.id); save(); closeForm(); render(); toast('Đã xoá sổ'); }
+    if (confirm('Xoá sổ tiết kiệm này?')) { state.books = state.books.filter((x) => x.id !== b.id); save(); closeForm(); render(true); toast('Đã xoá sổ'); }
   };
   $('#fSave').onclick = () => {
     const v = read();
@@ -395,7 +634,7 @@ function openForm(id, defOwner) {
     save(); closeForm();
     openBanks.add(rec.owner + '|' + rec.bank);
     if (tab !== 'all') tab = rec.owner;
-    render(); toast('Đã lưu ✓');
+    render(true); toast('Đã lưu ✓');
   };
 }
 function openBankPicker(current, onPick) {
@@ -445,7 +684,7 @@ function openSettings() {
   $('#sClose').onclick = () => {
     state.names.vo = $('#nVo').value.trim() || 'Vợ';
     state.names.chong = $('#nChong').value.trim() || 'Chồng';
-    save(); closeForm(); render();
+    save(); closeForm(); render(true);
   };
   $('#sExport').onclick = () => {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
@@ -460,7 +699,7 @@ function openSettings() {
       const s = JSON.parse(await e.target.files[0].text());
       if (!Array.isArray(s.books)) throw 0;
       if (!confirm(`Nhập ${s.books.length} sổ và thay thế dữ liệu hiện tại?`)) return;
-      state = { names: { vo: 'Vợ', chong: 'Chồng' }, ...s }; save(); closeForm(); render(); toast('Đã nhập dữ liệu');
+      state = { ...DEFAULTS(), ...s }; save(); closeForm(); render(); toast('Đã nhập dữ liệu');
     } catch (err) { toast('File không hợp lệ'); }
   };
 }
@@ -469,12 +708,12 @@ function loadDemo() {
   const t = new Date();
   const ago = (m, d = 0) => iso(new Date(t.getFullYear(), t.getMonth() - m, t.getDate() - d));
   state.books = [
-    { id: uid(), owner: 'vo', bank: 'Vietcombank', principal: 300000000, rate: 4.7, term: 12, start: ago(4), note: 'Sổ dự phòng' },
-    { id: uid(), owner: 'vo', bank: 'Techcombank', principal: 500000000, rate: 5.6, term: 13, start: ago(2), note: '' },
-    { id: uid(), owner: 'vo', bank: 'MBBank', principal: 150000000, rate: 5.2, term: 6, start: ago(6, 3), note: 'Đã đáo hạn' },
+    { id: uid(), owner: 'vo', bank: 'Vietcombank', principal: 300000000, rate: 4.7, term: 12, start: ago(4), note: 'Dự phòng' },
+    { id: uid(), owner: 'vo', bank: 'Techcombank', principal: 500000000, rate: 5.6, term: 13, start: ago(2), note: 'Mua xe' },
+    { id: uid(), owner: 'vo', bank: 'MBBank', principal: 150000000, rate: 5.2, term: 6, start: ago(6, 3), note: '' },
     { id: uid(), owner: 'chong', bank: 'BIDV', principal: 700000000, rate: 5.0, term: 12, start: ago(7), note: 'Mua nhà' },
-    { id: uid(), owner: 'chong', bank: 'ACB', principal: 250000000, rate: 5.4, term: 9, start: ago(1), note: '' },
-    { id: uid(), owner: 'chong', bank: 'ACB', principal: 120000000, rate: 4.9, term: 6, start: ago(3), note: 'Quỹ học phí' },
+    { id: uid(), owner: 'chong', bank: 'ACB', principal: 250000000, rate: 5.4, term: 9, start: ago(1), note: 'Mua nhà' },
+    { id: uid(), owner: 'chong', bank: 'ACB', principal: 120000000, rate: 4.9, term: 6, start: ago(3), note: 'Học phí' },
   ];
   save(); render();
 }
@@ -488,16 +727,17 @@ function toast(msg) {
 }
 
 document.getElementById('tabs').addEventListener('click', (e) => {
-  const b = e.target.closest('button'); if (!b) return;
+  const b = e.target.closest('[data-tab]'); if (!b) return;
   tab = b.dataset.tab; render();
 });
 document.getElementById('fab').addEventListener('click', () => openForm(null));
+document.getElementById('navSettings').addEventListener('click', openSettings);
 view.addEventListener('click', (e) => {
   const t = e.target;
   const renew = t.closest('[data-renew]');
   if (renew) {
     const b = state.books.find((x) => x.id === renew.dataset.renew);
-    const c = calc(b); b.start = iso(c.mat); save(); render(); toast('Đã tái tục ↻'); return;
+    const c = calc(b); b.start = iso(c.mat); save(); render(true); toast('Đã tái tục ↻'); return;
   }
   const tg = t.closest('[data-toggle]');
   if (tg) {
@@ -510,11 +750,15 @@ view.addEventListener('click', (e) => {
   const go = t.closest('[data-go]'); if (go) { tab = go.dataset.go; return render(); }
   if (t.closest('[data-add]')) return openForm(null);
   if (t.closest('#btnDemo')) return loadDemo();
-  if (t.closest('#btnSettings')) return openSettings();
+  const pick = t.closest('[data-pick]'); if (pick) { selMonth = pick.dataset.pick; return refreshFlow(); }
+  const mode = t.closest('[data-mode]'); if (mode) { flowMode = mode.dataset.mode; return refreshFlow(); }
+  const mo = t.closest('[data-month]'); if (mo) return openMonth(mo.dataset.month);
+  if (t.closest('[data-bell]')) return openBell();
+  if (t.closest('#btnCustom')) return openCustomize();
 });
 
 // Cập nhật lại khi qua ngày mới / mở lại app
-document.addEventListener('visibilitychange', () => { if (!document.hidden && sheet.hidden) render(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && sheet.hidden) render(true); });
 
 render();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
