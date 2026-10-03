@@ -8,15 +8,36 @@ BANK_LIST.forEach((b) => [b.n, ...b.a].forEach((k) => BANK_INDEX.set(normName(k)
 const bankInfo = (name) => BANK_INDEX.get(normName(name)) || null;
 const PALETTE = ['#34d399', '#60a5fa', '#f472b6', '#fbbf24', '#a78bfa', '#fb923c', '#22d3ee', '#f87171'];
 
-const DEFAULTS = () => ({ names: { vo: 'Vợ', chong: 'Chồng' }, books: [], hidden: [] });
+const DEFAULTS = () => ({
+  names: { vo: 'Vợ', chong: 'Chồng' }, books: [], hidden: [], labels: [], customBanks: [], hiddenBanks: [],
+  settings: {
+    theme: 'dark', lastBackup: '',
+    fmt: { sym: '₫', pos: 'after', space: true, sep: 'dot', display: 'short', neg: 'minus' },
+    notif: { on: false, before: true, days: 3, onDay: true, time: '08:00' },
+    lock: { on: false, salt: '', hash: '', delay: 0 },
+  },
+});
+function normalize(s) {
+  const d = DEFAULTS(), st = s.settings || {};
+  return { ...d, ...s, settings: { ...d.settings, ...st, fmt: { ...d.settings.fmt, ...st.fmt }, notif: { ...d.settings.notif, ...st.notif }, lock: { ...d.settings.lock, ...st.lock } } };
+}
 let state = load();
+let F = state.settings.fmt;
+const refreshFmt = () => { F = state.settings.fmt; };
+function applyTheme() {
+  const t = state.settings.theme, r = document.documentElement;
+  if (t === 'auto') r.removeAttribute('data-theme'); else r.setAttribute('data-theme', t);
+  const light = t === 'light' || (t === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches);
+  const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = light ? '#f3f6f5' : '#0b1020';
+}
+applyTheme();
 let tab = 'all';
 const openBanks = new Set();
 
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s && Array.isArray(s.books)) return { ...DEFAULTS(), ...s };
+    if (s && Array.isArray(s.books)) return normalize(s);
   } catch (e) { /* ignore */ }
   return DEFAULTS();
 }
@@ -77,23 +98,38 @@ function totals(list) {
 }
 
 /* =====================  Định dạng  ===================== */
-const nf = new Intl.NumberFormat('vi-VN');
-const money = (n) => nf.format(Math.round(n));
-const vnd = (n) => money(n) + ' ₫';
-function compact(n) {
-  const a = Math.abs(n);
-  if (a >= 1e9) return (n / 1e9).toLocaleString('vi-VN', { maximumFractionDigits: 2 }) + ' tỷ';
-  if (a >= 1e6) return (n / 1e6).toLocaleString('vi-VN', { maximumFractionDigits: 1 }) + ' tr';
-  if (a >= 1e3) return (n / 1e3).toLocaleString('vi-VN', { maximumFractionDigits: 0 }) + 'k';
-  return String(Math.round(n));
+// Định dạng tiền theo cài đặt (ký hiệu, vị trí, dấu phân cách, rút gọn…)
+const SEPS = { dot: ['.', ','], comma: [',', '.'], space: ['\u00a0', ','], none: ['', ','] };
+const decSep = () => SEPS[F.sep][1];
+const group = (n) => String(Math.round(Math.abs(n))).replace(/\B(?=(\d{3})+(?!\d))/g, SEPS[F.sep][0]);
+const signed = (s, n) => (n < 0 && Math.round(Math.abs(n)) > 0 ? (F.neg === 'paren' ? `(${s})` : '-' + s) : s);
+const money = (n) => signed(group(n), n);
+function withCur(s) {
+  if (F.sym === 'none') return s;
+  const sp = F.space ? '\u00a0' : '';
+  return F.pos === 'before' ? F.sym + sp + s : s + sp + F.sym;
+}
+const vnd = (n) => withCur(money(n));
+function dec(v, max) {
+  const t = Math.abs(v).toFixed(max).replace(/\.?0+$/, ''), [i, f] = t.split('.');
+  return (v < 0 ? '-' : '') + group(+i) + (f ? decSep() + f : '');
 }
 // Số rút gọn kiểu "23,1 triệu", "3 tỷ", "760,27K"
-function short(n) {
-  const a = Math.abs(n), f = (v, u) => v.toLocaleString('vi-VN', { maximumFractionDigits: 2 }) + u;
-  if (a >= 1e9) return f(n / 1e9, ' tỷ');
-  if (a >= 1e6) return f(n / 1e6, ' triệu');
-  if (a >= 1e3) return f(n / 1e3, 'K');
-  return String(Math.round(n));
+function shortNum(n) {
+  const a = Math.abs(n);
+  if (a >= 1e9) return dec(n / 1e9, 2) + ' tỷ';
+  if (a >= 1e6) return dec(n / 1e6, 2) + ' triệu';
+  if (a >= 1e3) return dec(n / 1e3, 2) + 'K';
+  return money(n);
+}
+const short = (n) => (F.display === 'full' ? money(n) : shortNum(n));
+const sv = (n) => withCur(short(n));
+const liveFmt = (v) => { const [i, f] = v.toFixed(1).split('.'); return withCur(group(+i) + decSep() + f); };
+// Số lớn ở đầu trang: ký hiệu tiền tệ chữ nhỏ
+function bigWrap(inner) {
+  if (F.sym === 'none') return inner;
+  const small = `<small>${F.sym}</small>`;
+  return F.pos === 'before' ? small + inner : inner + small;
 }
 // Nhãn trục biểu đồ: "3 T", "500 Tr", "20 K"
 function axisLabel(v, dec = 1) {
@@ -121,6 +157,20 @@ function bankColor(name) {
   let h = 0; for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 360;
   return `hsl(${h} 55% 42%)`;
 }
+const LABEL_COLORS = ['#1d5fb4', '#1f9d7a', '#e53935', '#ea580c', '#8e24aa', '#5e35b1', '#f59e0b', '#0ea5e9', '#16a34a', '#d946ef', '#64748b', '#f43f5e'];
+function labelColor(name) {
+  const l = state.labels.find((x) => x.name === name);
+  if (l) return l.color;
+  let h = 0; for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % LABEL_COLORS.length;
+  return LABEL_COLORS[h];
+}
+// Nhãn đã tạo + nhãn đang được dùng trong các sổ
+function allLabels() {
+  const m = new Map();
+  state.labels.forEach((l) => m.set(l.name, l.color));
+  state.books.forEach((b) => { if (b.note && !m.has(b.note)) m.set(b.note, labelColor(b.note)); });
+  return [...m].map(([name, color]) => ({ name, color })).sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+}
 function logoHTML(name) {
   const i = bankInfo(name);
   if (i && i.logo) return `<div class="logo has${i.t ? ' tile' : ''}"><img src="${i.logo}" alt="${esc(name)}" loading="lazy"></div>`;
@@ -147,7 +197,7 @@ function countUp(el, to, fmt = money, dur = 1100) {
 function runCounters(root) {
   root.querySelectorAll('[data-count]').forEach((el) => {
     const kind = el.dataset.fmt;
-    countUp(el, parseFloat(el.dataset.count), { vnd, short, pct }[kind] || money);
+    countUp(el, parseFloat(el.dataset.count), { vnd, sv, pct }[kind] || money);
   });
 }
 
@@ -215,10 +265,10 @@ function render(keep = false) {
   const y = window.scrollY;
   document.querySelectorAll('#tabs [data-tab]').forEach((b) => {
     b.classList.toggle('on', b.dataset.tab === tab);
-    if (b.dataset.tab !== 'all') b.querySelector('.nm').textContent = ownerName(b.dataset.tab);
+    if (b.dataset.tab === 'vo' || b.dataset.tab === 'chong') b.querySelector('.nm').textContent = ownerName(b.dataset.tab);
   });
   ctx = { list: scoped(tab), scope: tab };
-  view.innerHTML = ctx.list.length ? (tab === 'all' ? renderAll() : renderOwner(tab)) : renderEmpty(tab);
+  view.innerHTML = tab === 'settings' ? renderSettings() : ctx.list.length ? (tab === 'all' ? renderAll() : renderOwner(tab)) : renderEmpty(tab);
   view.className = keep ? '' : 'fade-in';
   runCounters(view);
   requestAnimationFrame(() => requestAnimationFrame(animateDonut));
@@ -238,16 +288,16 @@ function topHTML(list, scope, title) {
   return `
   <section class="top ${scope}">
     <div class="top-row">
-      <div><div class="lbl">${label}</div><div class="big"><span data-count="${s.principal}">0</span><small>₫</small></div></div>
+      <div><div class="lbl">${label}</div><div class="big">${bigWrap(`<span data-count="${s.principal}">0</span>`)}</div></div>
       <button class="bell" data-bell aria-label="Sổ đến hạn">${ICON.bell}${n ? `<i>${n}</i>` : ''}</button>
     </div>
-    <div class="sub">Lãi dự kiến <b data-count="${s.expected}" data-fmt="short">0</b> ₫</div>
+    <div class="sub">Lãi dự kiến <b data-count="${s.expected}" data-fmt="sv">0</b></div>
     <div class="stats">
-      <div><b><span data-count="${s.monthly}" data-fmt="short">0</span> ₫</b><span>Lãi / tháng</span></div>
+      <div><b data-count="${s.monthly}" data-fmt="sv">0</b><span>Lãi / tháng</span></div>
       <div><b data-count="${s.avgRate}" data-fmt="pct">0</b><span>LS bình quân</span></div>
       <div><b>${s.books} sổ</b><span>${s.banks} ngân hàng</span></div>
     </div>
-    <div class="live"><i class="pulse"></i><span>Lãi mỗi ngày <b><span data-count="${s.daily}">0</span> ₫</b></span><span>Hôm nay <b data-live="${s.daily}">0</b> ₫</span></div>
+    <div class="live"><i class="pulse"></i><span>Lãi mỗi ngày <b data-count="${s.daily}" data-fmt="vnd">0</b></span><span>Hôm nay <b data-live="${s.daily}">0</b></span></div>
     ${title ? `<div class="top-title">${esc(title)}</div>` : ''}
   </section>`;
 }
@@ -261,8 +311,8 @@ function dueHTML(list, scope, inBanner) {
     <div class="due card" data-detail="${b.id}" role="button">
       <div class="due-h">${logoHTML(b.bank)}
         <div class="nm">${esc(b.bank)}${scope === 'all' ? `<small class="own ${b.owner}">${esc(ownerName(b.owner))}</small>` : ''}</div>
-        <div class="amt">${short(b.principal)} ₫</div></div>
-      <div class="due-r"><span>Lãi suất ${pct(b.rate)}</span><span>Lãi ${short(c.total)} ₫</span></div>
+        <div class="amt">${sv(b.principal)}</div></div>
+      <div class="due-r"><span>Lãi suất ${pct(b.rate)}</span><span>Lãi ${sv(c.total)}</span></div>
       <div class="due-r"><span>${c.matured ? '<b class="warn">Đã đến hạn</b>' : 'Còn ' + remainText(c.mat)}</span><span>Đáo hạn ${fmtDate(c.mat)}</span></div>
       <div class="prog"><i style="width:${(c.progress * 100).toFixed(1)}%"></i></div>
     </div>`).join('');
@@ -278,7 +328,7 @@ function monthInner(fd) {
   <div class="card tap" data-month="${e.k}">
     <div class="mh"><div class="ct">Tổng nhận tháng ${e.m}/${e.y}</div>${ICON.chev}</div>
     <div class="mbig"><span data-count="${e.principal + e.interest}" data-fmt="vnd">0</span></div>
-    <div class="muted">Gốc ${short(e.principal)} ₫ · Lãi ${short(e.interest)} ₫</div>
+    <div class="muted">Gốc ${sv(e.principal)} · Lãi ${sv(e.interest)}</div>
   </div>`;
 }
 
@@ -344,7 +394,7 @@ function bankHTML(list) {
     const f = val / total, col = PALETTE[i % PALETTE.length];
     const len = Math.max(0.01, f * C - SW - GAP);
     segs += `<circle class="seg" cx="100" cy="100" r="${R}" stroke="${col}" style="stroke-dasharray:0 ${C}" data-d="${len} ${C - len}" stroke-dashoffset="${-(cum * C + (SW + GAP) / 2)}"/>`;
-    leg += `<div class="lg">${logoHTML(name)}<div class="lt"><b>${esc(name)}</b><span>${pctInt(f)}% · ${short(val)} ₫</span></div><i class="lb" style="width:${Math.max(14, f * 100)}px;background:${col}"></i></div>`;
+    leg += `<div class="lg">${logoHTML(name)}<div class="lt"><b>${esc(name)}</b><span>${pctInt(f)}% · ${sv(val)}</span></div><i class="lb" style="width:${Math.max(14, f * 100)}px;background:${col}"></i></div>`;
     cum += f;
   });
   return `
@@ -363,7 +413,7 @@ function rowsHTML(rows, total) {
   return rows.map((r) => {
     const p = total ? r.val / total : 0;
     return `<div class="bl ${r.go ? 'tap' : ''}" ${r.go ? `data-go="${r.go}"` : ''}>
-      <div class="bl-h"><span><i class="d" style="background:${r.col}"></i>${esc(r.name)} (${pctInt(p)}%)</span><b>${short(r.val)} ₫</b></div>
+      <div class="bl-h"><span><i class="d" style="background:${r.col}"></i>${esc(r.name)} (${pctInt(p)}%)</span><b>${sv(r.val)}</b></div>
       <div class="bl-b"><i style="width:${(p * 100).toFixed(1)}%;background:${r.col}"></i></div></div>`;
   }).join('');
 }
@@ -378,8 +428,7 @@ function labelHTML(list) {
   const g = {};
   list.forEach((b) => { const k = b.note || ''; g[k] = (g[k] || 0) + b.principal; });
   if (!Object.keys(g).some((k) => k)) return '';
-  let i = 0;
-  const rows = Object.entries(g).sort((a, b) => b[1] - a[1]).map(([k, val]) => ({ name: k || 'Chưa gắn nhãn', val, col: k ? PALETTE[i++ % PALETTE.length] : '#64748b' }));
+  const rows = Object.entries(g).sort((a, b) => b[1] - a[1]).map(([k, val]) => ({ name: k || 'Chưa gắn nhãn', val, col: k ? labelColor(k) : '#64748b' }));
   const total = rows.reduce((s, r) => s + r.val, 0);
   return `<div class="card"><div class="ct">Tiền gửi theo nhãn</div>${rowsHTML(rows, total)}</div>`;
 }
@@ -393,9 +442,9 @@ function accruedHTML(list) {
   <div class="card">
     <div class="ct">Lãi tạm tính</div>
     <div class="ac-top"><span>Đã tích lũy đến hôm nay</span><b class="pc">${(p * 100).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%</b></div>
-    <div class="ac-big"><span data-count="${s.accrued}" data-fmt="short">0</span> ₫</div>
+    <div class="ac-big"><span data-count="${s.accrued}" data-fmt="sv">0</span></div>
     <div class="prog"><i style="width:${Math.max(1, p * 100).toFixed(1)}%"></i></div>
-    <div class="ac-bot"><div><span>Còn lại</span><b>${short(s.expected - s.accrued)} ₫</b></div><div class="r"><span>Tổng dự kiến</span><b>${short(s.expected)} ₫</b></div></div>
+    <div class="ac-bot"><div><span>Còn lại</span><b>${sv(s.expected - s.accrued)}</b></div><div class="r"><span>Tổng dự kiến</span><b>${sv(s.expected)}</b></div></div>
   </div>`;
 }
 
@@ -515,8 +564,8 @@ function openDetail(id) {
     <div class="dt-body">
       <div class="dt-top">
         <div class="lbl">Tiền gửi</div>
-        <div class="dt-big">${money(b.principal)}<small>₫</small></div>
-        <div class="muted">${c.total != null ? 'Tiền lãi ' + money(c.total) : 'Lãi mỗi năm ' + money(c.yearly)} ₫</div>
+        <div class="dt-big">${bigWrap(money(b.principal))}</div>
+        <div class="muted">${c.total != null ? 'Tiền lãi ' + vnd(c.total) : 'Lãi mỗi năm ' + vnd(c.yearly)}</div>
       </div>
       <div class="card"><div class="ct">Tiến độ</div>${progress}</div>
       <div class="card"><div class="ct">Tiền lãi</div>
@@ -536,7 +585,7 @@ function openDetail(id) {
       </div>
       <div class="card"><div class="ct">Thông tin thêm</div>
         <div class="muted" style="margin:8px 0 6px">Nhãn</div>
-        ${b.note ? `<span class="lchip"><i class="d"></i>${esc(b.note)}</span>` : '<span class="muted">Chưa có nhãn</span>'}
+        ${b.note ? `<span class="lchip"><i class="d" style="background:${labelColor(b.note)}"></i>${esc(b.note)}</span>` : '<span class="muted">Chưa có nhãn</span>'}
       </div>
     </div>
     <div class="dt-foot">
@@ -561,7 +610,7 @@ function openBell() {
   const items = alerts(ctx.list);
   sheet.innerHTML = `<div class="panel"><h2>Sổ đến hạn</h2>${items.length ? items.map(({ b, c }) => `
     <div class="mrow">${logoHTML(b.bank)}
-      <div class="mt"><b>${esc(b.bank)} · ${esc(ownerName(b.owner))}</b><span>${short(b.principal)} ₫ · đáo hạn ${fmtDate(c.mat)}</span></div>
+      <div class="mt"><b>${esc(b.bank)} · ${esc(ownerName(b.owner))}</b><span>${sv(b.principal)} · đáo hạn ${fmtDate(c.mat)}</span></div>
       <span class="badge ${c.matured || c.daysLeft <= 14 ? 'soon' : ''}">${c.matured ? 'Đã đến hạn' : 'còn ' + remainText(c.mat)}</span></div>`).join('')
     : '<p class="muted">Không có sổ nào đến hạn trong 30 ngày tới.</p>'}
     <div class="actions"><button class="btn" id="mClose" type="button">Đóng</button></div></div>`;
@@ -575,8 +624,8 @@ function openMonth(k) {
   sheet.innerHTML = `<div class="panel"><h2>Đáo hạn tháng ${e.m}/${e.y}</h2>${e.books.map((b) => {
     const c = calc(b);
     return `<div class="mrow">${logoHTML(b.bank)}
-      <div class="mt"><b>${esc(b.bank)} · ${esc(ownerName(b.owner))}</b><span>${fmtDate(c.mat)} · gốc ${short(b.principal)} ₫ + lãi ${short(c.total)} ₫</span></div>
-      <b class="gain">${short(b.principal + c.total)} ₫</b></div>`;
+      <div class="mt"><b>${esc(b.bank)} · ${esc(ownerName(b.owner))}</b><span>${fmtDate(c.mat)} · gốc ${sv(b.principal)} + lãi ${sv(c.total)}</span></div>
+      <b class="gain">${sv(b.principal + c.total)}</b></div>`;
   }).join('')}<div class="actions"><button class="btn" id="mClose" type="button">Đóng</button></div></div>`;
   sheet.hidden = false;
   sheet.onclick = (ev) => { if (ev.target === sheet || ev.target.id === 'mClose') closeForm(); };
@@ -604,7 +653,7 @@ setInterval(() => {
   if (!el) return;
   const n = new Date();
   const frac = (n - today0()) / DAY;
-  el.textContent = (parseFloat(el.dataset.live) * frac).toLocaleString('vi-VN', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  el.textContent = liveFmt(parseFloat(el.dataset.live) * frac);
 }, 250);
 
 /* =====================  Form thêm / sửa  ===================== */
@@ -623,8 +672,8 @@ function openForm(id, defOwner, back) {
     </div>
     <label>Ngân hàng</label>
     <button type="button" class="pickbtn" id="fBank"></button>
-    <label>Tiền gốc (₫)</label>
-    <input id="fPrincipal" inputmode="numeric" placeholder="vd: 500.000.000" value="${d.principal ? money(d.principal) : ''}">
+    <label>Tiền gốc</label>
+    <input id="fPrincipal" inputmode="numeric" placeholder="vd: ${group(500000000)}" value="${d.principal ? money(d.principal) : ''}">
     <div class="row2">
       <div><label>Lãi suất (%/năm)</label><input id="fRate" inputmode="decimal" placeholder="vd: 5,6" value="${d.rate !== '' ? String(d.rate).replace('.', ',') : ''}"></div>
       <div><label>Kỳ hạn (tháng)</label><input id="fTerm" inputmode="numeric" placeholder="0 = không kỳ hạn" value="${d.term}"></div>
@@ -633,7 +682,7 @@ function openForm(id, defOwner, back) {
     <input id="fStart" type="date" value="${d.start}">
     <label>Nhãn (tuỳ chọn)</label>
     <input id="fNote" placeholder="vd: Mua nhà, Quỹ học phí" value="${esc(d.note || '')}">
-    <div class="chips" id="fChips">${[...new Set(state.books.map((x) => x.note).filter(Boolean))].map((l) => `<button type="button" class="lchip" data-l="${esc(l)}">${esc(l)}</button>`).join('')}</div>
+    <div class="chips" id="fChips">${allLabels().map((l) => `<button type="button" class="lchip" data-l="${esc(l.name)}"><i class="d" style="background:${l.color}"></i>${esc(l.name)}</button>`).join('')}</div>
     <div class="preview" id="fPrev"></div>
     <div class="actions">
       ${b ? '<button class="btn danger" id="fDel" type="button">Xoá</button>' : ''}
@@ -675,7 +724,7 @@ function openForm(id, defOwner, back) {
   $('#fBank').onclick = () => openBankPicker(bank, (v) => { bank = v; showBank(); });
   $('#fPrincipal').addEventListener('input', (e) => {
     const n = e.target.value.replace(/\D/g, '');
-    e.target.value = n ? nf.format(parseInt(n, 10)) : '';
+    e.target.value = n ? group(parseInt(n, 10)) : '';
     preview();
   });
   ['#fRate', '#fTerm', '#fStart'].forEach((s) => $(s).addEventListener('input', preview));
@@ -694,6 +743,7 @@ function openForm(id, defOwner, back) {
     if (!v.start) return toast('Chọn ngày gửi');
     const rec = { id: b ? b.id : uid(), owner, bank, principal: v.principal, rate: v.rate, term: Math.max(0, v.term), start: v.start, note: $('#fNote').value.trim() };
     if (b) state.books[state.books.findIndex((x) => x.id === b.id)] = rec; else state.books.push(rec);
+    if (!bankInfo(bank) && !state.customBanks.includes(bank)) state.customBanks.push(bank);
     save(); closeForm();
     openBanks.add(rec.owner + '|' + rec.bank);
     if (tab !== 'all') tab = rec.owner;
@@ -707,14 +757,15 @@ function openBankPicker(current, onPick) {
   pk.innerHTML = `<div class="panel"><div class="pk-head"><input id="pkQ" placeholder="Tìm ngân hàng (vd: vcb, techcom…)" autocomplete="off"><button type="button" class="btn ghost" id="pkX">Đóng</button></div><div id="pkList"></div></div>`;
   sheet.appendChild(pk);
   const list = pk.querySelector('#pkList'), q = pk.querySelector('#pkQ');
+  const choices = () => { const hide = new Set(state.hiddenBanks); return [...state.customBanks.map((n) => ({ n, f: '', g: 'Ngân hàng của tôi', logo: null, a: [] })), ...BANK_LIST.filter((b) => !hide.has(b.n))]; };
   const row = (b) => `<button type="button" class="pkrow ${b.n === current ? 'on' : ''}" data-n="${esc(b.n)}">${logoHTML(b.n)}<span class="pn">${esc(b.n)}${b.f ? `<small>${esc(b.f)}</small>` : ''}</span></button>`;
   const draw = () => {
     const k = normName(q.value);
-    const hit = BANK_LIST.filter((b) => !k || normName(b.n + b.f + b.a.join('')).includes(k));
+    const hit = choices().filter((b) => !k || normName(b.n + b.f + b.a.join('')).includes(k));
     let html = '', g = '';
     hit.forEach((b) => { if (b.g !== g) { g = b.g; html += `<div class="pkgrp">${esc(g)}</div>`; } html += row(b); });
     const raw = q.value.trim();
-    if (raw && !BANK_LIST.some((b) => normName(b.n) === k)) html += `<button type="button" class="pkrow" data-n="${esc(raw)}"><div class="logo" style="background:${bankColor(raw)}">${esc(initials(raw))}</div><span class="pn">Dùng tên “${esc(raw)}”<small>Ngân hàng / tổ chức khác</small></span></button>`;
+    if (raw && !choices().some((b) => normName(b.n) === k)) html += `<button type="button" class="pkrow" data-n="${esc(raw)}"><div class="logo" style="background:${bankColor(raw)}">${esc(initials(raw))}</div><span class="pn">Dùng tên “${esc(raw)}”<small>Ngân hàng / tổ chức khác</small></span></button>`;
     list.innerHTML = html || '<div class="empty">Không tìm thấy</div>';
   };
   const close = () => pk.remove();
@@ -726,47 +777,6 @@ function openBankPicker(current, onPick) {
 }
 
 function closeForm() { sheet.hidden = true; sheet.innerHTML = ''; sheet.className = 'sheet'; }
-
-/* =====================  Cài đặt / sao lưu  ===================== */
-function openSettings() {
-  sheet.innerHTML = `
-  <div class="panel">
-    <h2>Sao lưu & cài đặt</h2>
-    <label>Tên chủ sổ</label>
-    <div class="row2"><input id="nVo" value="${esc(state.names.vo)}"><input id="nChong" value="${esc(state.names.chong)}"></div>
-    <p style="color:var(--mut);font-size:13px;margin:14px 0 0">Dữ liệu chỉ lưu trên điện thoại này. Hãy xuất file sao lưu thỉnh thoảng (và trước khi xoá app khỏi màn hình chính) để không bị mất.</p>
-    <div class="actions" style="flex-wrap:wrap">
-      <button class="btn ghost" id="sExport" type="button">⬇︎ Xuất sao lưu</button>
-      <button class="btn ghost" id="sImport" type="button">⬆︎ Nhập sao lưu</button>
-    </div>
-    <input type="file" id="sFile" accept="application/json,.json" hidden>
-    <div class="actions"><button class="btn" id="sClose" type="button">Xong</button></div>
-  </div>`;
-  sheet.hidden = false;
-  const $ = (s) => sheet.querySelector(s);
-  sheet.onclick = (e) => { if (e.target === sheet) $('#sClose').click(); };
-  $('#sClose').onclick = () => {
-    state.names.vo = $('#nVo').value.trim() || 'Vợ';
-    state.names.chong = $('#nChong').value.trim() || 'Chồng';
-    save(); closeForm(); render(true);
-  };
-  $('#sExport').onclick = () => {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob); a.download = `so-tiet-kiem-${iso(new Date())}.json`;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-  };
-  $('#sImport').onclick = () => $('#sFile').click();
-  $('#sFile').onchange = async (e) => {
-    try {
-      const s = JSON.parse(await e.target.files[0].text());
-      if (!Array.isArray(s.books)) throw 0;
-      if (!confirm(`Nhập ${s.books.length} sổ và thay thế dữ liệu hiện tại?`)) return;
-      state = { ...DEFAULTS(), ...s }; save(); closeForm(); render(); toast('Đã nhập dữ liệu');
-    } catch (err) { toast('File không hợp lệ'); }
-  };
-}
 
 function loadDemo() {
   const t = new Date();
@@ -795,7 +805,6 @@ document.getElementById('tabs').addEventListener('click', (e) => {
   tab = b.dataset.tab; render();
 });
 document.getElementById('fab').addEventListener('click', () => openForm(null));
-document.getElementById('navSettings').addEventListener('click', openSettings);
 view.addEventListener('click', (e) => {
   const t = e.target;
   const renew = t.closest('[data-renew]');
@@ -819,6 +828,7 @@ view.addEventListener('click', (e) => {
   const mo = t.closest('[data-month]'); if (mo) return openMonth(mo.dataset.month);
   if (t.closest('[data-bell]')) return openBell();
   if (t.closest('#btnCustom')) return openCustomize();
+  const st = t.closest('[data-set]'); if (st) return openSetting(st.dataset.set);
 });
 
 // Cập nhật lại khi qua ngày mới / mở lại app

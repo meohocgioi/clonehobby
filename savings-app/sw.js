@@ -1,5 +1,5 @@
-const CACHE = 'sotietkiem-v5';
-const ASSETS = ['./', 'index.html', 'style.css', 'app.js', 'banks.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
+const CACHE = 'sotietkiem-v6';
+const ASSETS = ['./', 'index.html', 'style.css', 'app.js', 'banks.js', 'settings.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
