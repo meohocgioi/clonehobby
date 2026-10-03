@@ -123,7 +123,7 @@ function bankColor(name) {
 }
 function logoHTML(name) {
   const i = bankInfo(name);
-  if (i && i.logo) return `<div class="logo has"><img src="${i.logo}" alt="${esc(name)}" loading="lazy"></div>`;
+  if (i && i.logo) return `<div class="logo has${i.t ? ' tile' : ''}"><img src="${i.logo}" alt="${esc(name)}" loading="lazy"></div>`;
   return `<div class="logo" style="background:${bankColor(name)}">${esc(initials(name))}</div>`;
 }
 function initials(name) {
