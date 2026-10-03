@@ -464,6 +464,7 @@ function accruedHTML(list) {
   </div>`;
 }
 
+let expOwner = null; // ô Vợ/Chồng đang mở rộng trong card lãi theo tháng
 let selBar = 0; // tháng đang chọn trên biểu đồ "Lãi sinh ra mỗi tháng" (0 = tháng này)
 function barsHTML(list) {
   if (!list.length) return '';
@@ -479,15 +480,23 @@ function barsHTML(list) {
   const bars = items.map((x, i) =>
     `<button type="button" class="bar ${i === 0 ? 'now' : ''} ${i === selBar ? 'sel' : ''}" data-mbar="${i}" aria-label="Tháng ${x.m}/${x.y}"><div class="col" style="height:${Math.max(4, x.v / max * 100)}%;animation-delay:${i * 60}ms"></div><small>T${x.m}</small></button>`).join('');
   const s = items[selBar];
-  const detail = s.parts.length ? s.parts.map(({ b, v }) => `<div class="mrow">${logoHTML(b.bank)}<div class="mt"><b>${esc(b.bank)} · ${esc(ownerName(b.owner))}</b><span>${short(b.principal)} · ${pct(b.rate)}/năm</span></div><b class="gain">${vnd(v)}</b></div>`).join('')
-    : '<p class="muted" style="margin:8px 0 0">Không có sổ nào sinh lãi trong tháng này.</p>';
+  const owners = ['vo', 'chong'].filter((o) => list.some((b) => b.owner === o));
+  if (expOwner && !owners.includes(expOwner)) expOwner = null;
+  const box = (o) => {
+    const parts = s.parts.filter((x) => x.b.owner === o), tot = parts.reduce((t, x) => t + x.v, 0);
+    const rows = parts.length ? parts.map(({ b, v }) => `<div class="mrow">${logoHTML(b.bank)}<div class="mt"><b>${esc(b.bank)}</b><span>${short(b.principal)} · ${pct(b.rate)}/năm</span></div><b class="gain">${vnd(v)}</b></div>`).join('')
+      : '<p class="muted" style="margin:6px 0 0">Không có sổ nào sinh lãi trong tháng này.</p>';
+    return `<div class="obx ${o} ${expOwner === o ? 'open' : ''}">
+      <button type="button" class="obx-h" data-ob="${o}" aria-expanded="${expOwner === o}"><span class="on">${esc(ownerName(o))}</span><b>${vnd(tot)}</b>${ICON.down}</button>
+      <div class="obx-b"><div>${rows}</div></div></div>`;
+  };
   return `
   <div class="card">
     <div class="ct">Lãi sinh ra mỗi tháng</div>
     <div class="bars">${bars}</div>
     <div class="bar-sum"><span>Tháng ${s.m}/${s.y}${selBar === 0 ? ' (tháng này)' : ''}</span><b>${vnd(s.v)}</b></div>
-    <div class="bar-det">${detail}</div>
-    <div class="bar-note">Bấm vào từng tháng để xem chi tiết. Chưa tính tái tục các sổ đến hạn.</div>
+    <div class="ob" data-exp="${expOwner || ''}" data-n="${owners.length}">${owners.map(box).join('')}</div>
+    <div class="bar-note">Bấm vào từng tháng, rồi bấm Vợ hoặc Chồng để xem chi tiết từng sổ.</div>
   </div>`;
 }
 
@@ -848,6 +857,13 @@ view.addEventListener('click', (e) => {
   if (t.closest('[data-add]')) return openForm(null);
   if (t.closest('#btnDemo')) return loadDemo();
   const mb = t.closest('[data-mbar]'); if (mb) { selBar = +mb.dataset.mbar; document.getElementById('secMonthly').innerHTML = barsHTML(ctx.list); return; }
+  const ob = t.closest('[data-ob]');
+  if (ob) {
+    expOwner = expOwner === ob.dataset.ob ? null : ob.dataset.ob;
+    const wrap = ob.closest('.ob'); wrap.dataset.exp = expOwner || '';
+    wrap.querySelectorAll('.obx').forEach((x) => { const on = x.classList.contains(expOwner); x.classList.toggle('open', on); x.querySelector('.obx-h').setAttribute('aria-expanded', on); });
+    return;
+  }
   const pick = t.closest('[data-pick]'); if (pick) { selMonth = pick.dataset.pick; return refreshFlow(); }
   const mode = t.closest('[data-mode]'); if (mode) { flowMode = mode.dataset.mode; return refreshFlow(); }
   const mo = t.closest('[data-month]'); if (mo) return openMonth(mo.dataset.month);

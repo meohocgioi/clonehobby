@@ -484,3 +484,25 @@ textarea { resize: vertical; min-height: 120px; }
 .bar-sum b { font-size: 20px; color: var(--green); font-variant-numeric: tabular-nums; }
 .bar-det .mrow:last-child { border-bottom: 0; }
 .bars { margin-top: 14px; }
+
+/* ---------- Vợ | Chồng: ô nhỏ nở rộng ---------- */
+.ob { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; transition: grid-template-columns .5s cubic-bezier(.3, .8, .3, 1), gap .5s; }
+.ob[data-n="1"] { grid-template-columns: 1fr; }
+.ob[data-exp="vo"] { grid-template-columns: 1fr 0fr; gap: 0; }
+.ob[data-exp="chong"] { grid-template-columns: 0fr 1fr; gap: 0; }
+.obx { min-width: 0; overflow: hidden; border-radius: 18px; transition: opacity .3s, background .3s; }
+.obx.vo { background: rgba(244, 114, 182, .16); }
+.obx.chong { background: rgba(96, 165, 250, .16); }
+.ob[data-exp="vo"] .obx.chong, .ob[data-exp="chong"] .obx.vo { opacity: 0; pointer-events: none; }
+.obx-h { width: 100%; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 12px 14px; text-align: left; align-items: center; }
+.obx-h .on { font-size: 13px; font-weight: 700; color: var(--mut); text-transform: uppercase; letter-spacing: .4px; }
+.obx.vo .on { color: var(--vo); }
+.obx.chong .on { color: var(--chong); }
+.obx-h b { grid-column: 1; font-size: 18px; color: var(--green); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.obx-h .chev { grid-column: 2; grid-row: 1 / span 2; width: 18px; color: var(--mut); transition: transform .35s; }
+.obx.open .obx-h .chev { transform: rotate(180deg); }
+.obx-b { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .5s cubic-bezier(.3, .8, .3, 1); }
+.obx.open .obx-b { grid-template-rows: 1fr; }
+.obx-b > div { overflow: hidden; padding: 0 14px; }
+.obx.open .obx-b > div { padding-bottom: 8px; }
+.obx-b .mrow:last-child { border-bottom: 0; }
