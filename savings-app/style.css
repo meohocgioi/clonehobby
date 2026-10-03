@@ -474,3 +474,13 @@ textarea { resize: vertical; min-height: 120px; }
 .seg3.flat { background: var(--ov); }
 .seg3.flat button { color: var(--mut); }
 .seg3.flat button.on { background: var(--card); color: var(--txt); box-shadow: var(--shadow); }
+
+/* ---------- lãi sinh ra mỗi tháng: chọn từng tháng ---------- */
+.bar { padding: 0; cursor: pointer; }
+.bars .bar:not(.sel) .col { opacity: .45; }
+.bar.sel small { color: var(--txt); font-weight: 700; }
+.bar-sum { display: flex; justify-content: space-between; align-items: baseline; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--ov2); }
+.bar-sum span { color: var(--mut); font-size: 14px; }
+.bar-sum b { font-size: 20px; color: var(--green); font-variant-numeric: tabular-nums; }
+.bar-det .mrow:last-child { border-bottom: 0; }
+.bars { margin-top: 14px; }
