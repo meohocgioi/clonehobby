@@ -527,3 +527,10 @@ textarea { resize: vertical; min-height: 120px; }
 .lgd { display: inline-flex; align-items: center; gap: 6px; color: var(--txt); font-weight: 600; }
 .lg-i { margin-left: 0; }
 .note .nt { margin-left: auto; font-weight: 400; color: var(--mut); }
+
+/* cột dòng tiền: bo góc đối xứng, mọc bằng chiều cao */
+.fb { width: 62%; max-width: 44px; gap: 2px; border-radius: 0; overflow: visible; background: none; animation: none; clip-path: none; transition: height .8s cubic-bezier(.2, .9, .2, 1), opacity .25s; }
+.fb i { border-radius: 0; min-height: 4px; }
+.fb i:first-child { border-radius: 9px 9px 0 0; }
+.fb i:last-child { border-radius: 0 0 3px 3px; }
+.fb i:only-child { border-radius: 9px 9px 3px 3px; }

@@ -284,6 +284,7 @@ function render(keep = false) {
   view.innerHTML = tab === 'settings' ? renderSettings() : ctx.list.length ? (tab === 'books' ? renderOwner(scope) : renderAll()) : renderEmpty(scope);
   view.className = keep ? '' : 'fade-in';
   runCounters(view);
+  growBars(view);
   requestAnimationFrame(() => requestAnimationFrame(animateDonut));
   window.scrollTo(0, keep ? y : 0);
 }
@@ -370,7 +371,7 @@ function flowInner(fd) {
       : '<i class="si" style="flex:1"></i>';
     return `<button class="fcol ${e.k === selMonth ? 'on' : ''}" data-pick="${e.k}" aria-label="Tháng ${e.m}/${e.y}">
       <span class="fv" style="bottom:calc(${h}% + 4px)">${axisLabel(val(e))}</span>
-      <div class="fbw"><div class="fb" style="height:${h}%;animation-delay:${i * 80}ms">${inner}</div></div></button>`;
+      <div class="fbw"><div class="fb" style="height:0;transition-delay:${i * 70}ms" data-h="${h}%">${inner}</div></div></button>`;
   }).join('');
   const months = fd.map((e) => `<span class="${e.k === selMonth ? 'on' : ''}">T${e.m}</span>`).join('');
   const years = [];
@@ -390,11 +391,15 @@ function flowInner(fd) {
   </div>`;
 }
 
+// Cột "mọc" lên bằng cách đổi chiều cao (giữ nguyên góc bo)
+function growBars(root) {
+  requestAnimationFrame(() => requestAnimationFrame(() => root.querySelectorAll('.fb[data-h]').forEach((el) => { el.style.height = el.dataset.h; })));
+}
 function refreshFlow() {
   const fd = flowData(ctx.list);
   const m = document.getElementById('secMonth'), f = document.getElementById('secFlow');
   if (m) { m.innerHTML = monthInner(fd); runCounters(m); }
-  if (f) f.innerHTML = flowInner(fd);
+  if (f) { f.innerHTML = flowInner(fd); growBars(f); }
 }
 
 /* ---- theo ngân hàng / chủ sổ / nhãn ---- */
