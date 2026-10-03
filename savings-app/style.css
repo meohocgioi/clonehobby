@@ -574,3 +574,7 @@ h1, h2, h3, .ct, .top-title, .sec-title { letter-spacing: -.2px; }
 .due-h .amt.num-m { font-size: 24px; }
 .book .p.num-m { font-size: 20px; }
 .bank-h .amt .num-m .u { display: inline; font-size: .62em; font-weight: 500; color: inherit; opacity: .62; }
+/* danh sách ngân hàng: "tỷ ₫ / triệu ₫" to hơn cho dễ đọc */
+.num-m .u { font-size: .7em; }
+.bank-h .amt .num-m { font-size: 18px; }
+.bank-h .amt .num-m .u { font-size: 14px; opacity: .72; margin-left: .25em; }
