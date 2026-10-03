@@ -293,7 +293,7 @@ main { padding: calc(var(--sat) + 18px) 16px calc(var(--sab) + 120px); max-width
 /* ---------- thanh điều hướng ---------- */
 .tabs {
   position: fixed; left: 12px; right: 12px; bottom: calc(var(--sab) + 10px); max-width: 536px; margin: 0 auto; z-index: 20;
-  display: grid; grid-template-columns: 1fr 1fr 70px 1fr 1fr; align-items: center; padding: 6px;
+  display: grid; grid-template-columns: 1fr 1fr 70px 1fr; align-items: center; padding: 6px;
   border-radius: 26px; background: var(--nav); border: 1px solid var(--card-b);
   backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
 }
@@ -466,3 +466,11 @@ textarea { resize: vertical; min-height: 120px; }
 .pad button { width: 74px; height: 74px; border-radius: 50%; background: var(--ov); font-size: 28px; font-weight: 500; }
 .pad button:active { background: var(--ov2); }
 .pad .aux { background: none; font-size: 17px; color: var(--mut); }
+
+/* ---------- chuyển Tất cả / Sổ Vợ / Sổ Chồng ---------- */
+.seg3 { display: flex; gap: 4px; padding: 4px; margin-bottom: 16px; border-radius: 14px; background: rgba(0, 0, 0, .22); }
+.seg3 button { flex: 1; padding: 8px 4px; border-radius: 10px; font-size: 14px; font-weight: 700; color: rgba(255, 255, 255, .8); transition: background .25s, color .25s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seg3 button.on { background: #fff; color: #0f172a; }
+.seg3.flat { background: var(--ov); }
+.seg3.flat button { color: var(--mut); }
+.seg3.flat button.on { background: var(--card); color: var(--txt); box-shadow: var(--shadow); }

@@ -32,6 +32,7 @@ function applyTheme() {
 }
 applyTheme();
 let tab = 'all';
+let bookScope = 'all'; // tab Sổ: 'all' | 'vo' | 'chong'
 const openBanks = new Set();
 
 function load() {
@@ -265,10 +266,10 @@ function render(keep = false) {
   const y = window.scrollY;
   document.querySelectorAll('#tabs [data-tab]').forEach((b) => {
     b.classList.toggle('on', b.dataset.tab === tab);
-    if (b.dataset.tab === 'vo' || b.dataset.tab === 'chong') b.querySelector('.nm').textContent = ownerName(b.dataset.tab);
   });
-  ctx = { list: scoped(tab), scope: tab };
-  view.innerHTML = tab === 'settings' ? renderSettings() : ctx.list.length ? (tab === 'all' ? renderAll() : renderOwner(tab)) : renderEmpty(tab);
+  const scope = tab === 'books' ? bookScope : tab;
+  ctx = { list: scoped(scope), scope };
+  view.innerHTML = tab === 'settings' ? renderSettings() : ctx.list.length ? (tab === 'books' ? renderOwner(scope) : renderAll()) : renderEmpty(scope);
   view.className = keep ? '' : 'fade-in';
   runCounters(view);
   requestAnimationFrame(() => requestAnimationFrame(animateDonut));
@@ -276,17 +277,20 @@ function render(keep = false) {
 }
 
 function renderEmpty(o) {
-  const title = o === 'all' ? 'Tổng quan' : 'Sổ ' + ownerName(o);
-  return `<div class="head"><div><h1>${esc(title)}</h1><small>${fmtDate(new Date())}</small></div><div class="dot">💰</div></div>${emptyHTML(o === 'all' ? '' : o)}`;
+  const title = tab === 'books' ? (o === 'all' ? 'Sổ tiết kiệm' : 'Sổ ' + ownerName(o)) : 'Tổng quan';
+  return `${tab === 'books' ? `<div class="seg3 flat">${segButtons()}</div>` : ''}<div class="head"><div><h1>${esc(title)}</h1><small>${fmtDate(new Date())}</small></div><div class="dot">💰</div></div>${emptyHTML(o === 'all' ? '' : o)}`;
 }
 
 /* ---- banner ---- */
-function topHTML(list, scope, title) {
+const segButtons = () => [['all', 'Tất cả'], ['vo', 'Sổ ' + ownerName('vo')], ['chong', 'Sổ ' + ownerName('chong')]]
+  .map(([v, l]) => `<button type="button" data-seg="${v}" class="${bookScope === v ? 'on' : ''}">${esc(l)}</button>`).join('');
+function topHTML(list, scope, title, seg) {
   const s = stats(list);
   const n = alerts(list).length;
   const label = scope === 'all' ? 'Tổng tiền đang gửi' : `Tổng tiền đang gửi · ${esc(ownerName(scope))}`;
   return `
   <section class="top ${scope}">
+    ${seg ? `<div class="seg3">${segButtons()}</div>` : ''}
     <div class="top-row">
       <div><div class="lbl">${label}</div><div class="big">${bigWrap(`<span data-count="${s.principal}">0</span>`)}</div></div>
       <button class="bell" data-bell aria-label="Sổ đến hạn">${ICON.bell}${n ? `<i>${n}</i>` : ''}</button>
@@ -510,7 +514,7 @@ function renderOwner(o) {
     </div>`;
   }).join('');
   const due = shown('due') ? dueHTML(list, o, false) : '';
-  return topHTML(list, o, 'Ngân hàng đang gửi') + sec(acc) + sec(due) + dashSections(list, o);
+  return topHTML(list, o, 'Ngân hàng đang gửi', true) + sec(acc) + sec(due) + dashSections(list, o);
 }
 
 function bookHTML(b) {
@@ -525,7 +529,7 @@ function bookHTML(b) {
   return `
   <div class="book" data-detail="${b.id}" role="button">
     <div class="r1"><span class="p">${vnd(b.principal)}</span><span class="rate">${pct(b.rate)}/năm</span></div>
-    <div class="meta">${termTxt} · gửi ${fmtDate(c.start)}${b.note ? ' · ' + esc(b.note) : ''}</div>
+    <div class="meta">${tab === 'books' && bookScope === 'all' ? `<span class="own ${b.owner}">${esc(ownerName(b.owner))}</span> · ` : ''}${termTxt} · gửi ${fmtDate(c.start)}${b.note ? ' · ' + esc(b.note) : ''}</div>
     <div class="grid">
       <div><span>Lãi mỗi ngày</span><b>${vnd(c.daily)}</b></div>
       <div><span>Lãi mỗi tháng</span><b>${vnd(c.monthly)}</b></div>
@@ -662,7 +666,7 @@ const sheet = document.getElementById('sheet');
 function openForm(id, defOwner, back) {
   sheet.className = 'sheet';
   const b = id ? state.books.find((x) => x.id === id) : null;
-  const d = b || { owner: defOwner || (tab !== 'all' ? tab : 'vo'), bank: '', principal: '', rate: '', term: 12, start: iso(new Date()), note: '' };
+  const d = b || { owner: defOwner || (tab === 'books' && bookScope !== 'all' ? bookScope : 'vo'), bank: '', principal: '', rate: '', term: 12, start: iso(new Date()), note: '' };
   sheet.innerHTML = `
   <div class="panel" role="dialog">
     <h2>${b ? 'Sửa sổ tiết kiệm' : 'Thêm sổ tiết kiệm'}</h2>
@@ -746,7 +750,7 @@ function openForm(id, defOwner, back) {
     if (!bankInfo(bank) && !state.customBanks.includes(bank)) state.customBanks.push(bank);
     save(); closeForm();
     openBanks.add(rec.owner + '|' + rec.bank);
-    if (tab !== 'all') tab = rec.owner;
+    if (tab === 'books' && bookScope !== 'all') bookScope = rec.owner;
     render(true); toast('Đã lưu ✓');
     if (back && b) openDetail(rec.id);
   };
@@ -820,7 +824,8 @@ view.addEventListener('click', (e) => {
     return;
   }
   const ed = t.closest('[data-detail]'); if (ed) return openDetail(ed.dataset.detail);
-  const go = t.closest('[data-go]'); if (go) { tab = go.dataset.go; return render(); }
+  const go = t.closest('[data-go]'); if (go) { tab = 'books'; bookScope = go.dataset.go; return render(); }
+  const seg = t.closest('[data-seg]'); if (seg) { bookScope = seg.dataset.seg; return render(true); }
   if (t.closest('[data-add]')) return openForm(null);
   if (t.closest('#btnDemo')) return loadDemo();
   const pick = t.closest('[data-pick]'); if (pick) { selMonth = pick.dataset.pick; return refreshFlow(); }
