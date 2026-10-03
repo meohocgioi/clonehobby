@@ -2,13 +2,10 @@
 
 /* =====================  Dữ liệu & lưu trữ  ===================== */
 const KEY = 'sotietkiem.v1';
-const BANKS = {
-  'Vietcombank': '#0a7d3b', 'VietinBank': '#1d4ed8', 'BIDV': '#0e7490', 'Agribank': '#b91c1c',
-  'Techcombank': '#dc2626', 'MB Bank': '#4338ca', 'ACB': '#2563eb', 'VPBank': '#16a34a',
-  'Sacombank': '#0369a1', 'TPBank': '#7c3aed', 'HDBank': '#e11d48', 'VIB': '#0891b2',
-  'SHB': '#ea580c', 'OCB': '#15803d', 'MSB': '#c2410c', 'SeABank': '#be185d',
-  'LPBank': '#ca8a04', 'Eximbank': '#1e40af', 'Nam A Bank': '#059669', 'Khác…': '#64748b',
-};
+const normName = (s) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]/g, '');
+const BANK_INDEX = new Map();
+BANK_LIST.forEach((b) => [b.n, ...b.a].forEach((k) => BANK_INDEX.set(normName(k), b)));
+const bankInfo = (name) => BANK_INDEX.get(normName(name)) || null;
 const PALETTE = ['#34d399', '#60a5fa', '#f472b6', '#fbbf24', '#a78bfa', '#fb923c', '#22d3ee', '#f87171'];
 
 let state = load();
@@ -94,9 +91,13 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 const ownerName = (o) => state.names[o];
 
 function bankColor(name) {
-  if (BANKS[name]) return BANKS[name];
   let h = 0; for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 360;
   return `hsl(${h} 55% 42%)`;
+}
+function logoHTML(name) {
+  const i = bankInfo(name);
+  if (i && i.logo) return `<div class="logo has"><img src="${i.logo}" alt="${esc(name)}" loading="lazy"></div>`;
+  return `<div class="logo" style="background:${bankColor(name)}">${esc(initials(name))}</div>`;
 }
 function initials(name) {
   const w = name.trim().split(/\s+/);
@@ -208,7 +209,7 @@ function upcomingHTML(list) {
   if (!up.length) return '';
   return `<section class="card"><h3>Sắp đến hạn</h3>${up.map(({ b, c }) => `
     <div style="display:flex;align-items:center;gap:12px;padding:6px 0">
-      <div class="logo" style="background:${bankColor(b.bank)}">${esc(initials(b.bank))}</div>
+      ${logoHTML(b.bank)}
       <div style="flex:1;min-width:0"><b>${esc(b.bank)}</b> · ${esc(ownerName(b.owner))}<div class="meta" style="font-size:12px;color:var(--mut)">${vnd(b.principal)} — ${fmtDate(c.mat)}</div></div>
       <span class="badge ${c.daysLeft <= 14 ? 'soon' : ''}">${c.daysLeft} ngày</span>
     </div>`).join('')}</section>`;
@@ -250,7 +251,7 @@ function renderOwner(o) {
     return `
     <div class="bank ${openBanks.has(key) ? 'open' : ''}" data-key="${esc(key)}">
       <button class="bank-h" data-toggle>
-        <div class="logo" style="background:${bankColor(name)}">${esc(initials(name))}</div>
+        ${logoHTML(name)}
         <div class="mid"><div class="nm">${esc(name)}</div><div class="sub">${arr.length} sổ</div></div>
         <div class="amt">${vnd(t.principal)}<small>+${vnd(t.daily)}/ngày</small></div>
         <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
@@ -313,8 +314,7 @@ const sheet = document.getElementById('sheet');
 
 function openForm(id, defOwner) {
   const b = id ? state.books.find((x) => x.id === id) : null;
-  const d = b || { owner: defOwner || (tab !== 'all' ? tab : 'vo'), bank: 'Vietcombank', principal: '', rate: '', term: 12, start: iso(new Date()), note: '' };
-  const isCustom = !BANKS[d.bank] || d.bank === 'Khác…';
+  const d = b || { owner: defOwner || (tab !== 'all' ? tab : 'vo'), bank: '', principal: '', rate: '', term: 12, start: iso(new Date()), note: '' };
   sheet.innerHTML = `
   <div class="panel" role="dialog">
     <h2>${b ? 'Sửa sổ tiết kiệm' : 'Thêm sổ tiết kiệm'}</h2>
@@ -323,8 +323,7 @@ function openForm(id, defOwner) {
       ${['vo', 'chong'].map((o) => `<button type="button" data-v="${o}" class="${d.owner === o ? 'on' : ''}">${o === 'vo' ? '♀' : '♂'} ${esc(ownerName(o))}</button>`).join('')}
     </div>
     <label>Ngân hàng</label>
-    <select id="fBank">${Object.keys(BANKS).map((k) => `<option ${(isCustom ? 'Khác…' : d.bank) === k ? 'selected' : ''}>${k}</option>`).join('')}</select>
-    <input id="fBankCustom" placeholder="Tên ngân hàng" style="margin-top:8px;${isCustom ? '' : 'display:none'}" value="${isCustom && d.bank !== 'Khác…' ? esc(d.bank) : ''}">
+    <button type="button" class="pickbtn" id="fBank"></button>
     <label>Tiền gốc (₫)</label>
     <input id="fPrincipal" inputmode="numeric" placeholder="vd: 500.000.000" value="${d.principal ? money(d.principal) : ''}">
     <div class="row2">
@@ -343,7 +342,7 @@ function openForm(id, defOwner) {
     </div>
   </div>`;
   sheet.hidden = false;
-  let owner = d.owner;
+  let owner = d.owner, bank = d.bank;
   const $ = (s) => sheet.querySelector(s);
 
   const read = () => ({
@@ -367,7 +366,13 @@ function openForm(id, defOwner) {
     $('#fOwner').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === bt));
     preview();
   });
-  $('#fBank').addEventListener('change', (e) => { $('#fBankCustom').style.display = e.target.value === 'Khác…' ? '' : 'none'; });
+  const showBank = () => {
+    $('#fBank').innerHTML = bank
+      ? `${logoHTML(bank)}<span class="pn">${esc(bank)}</span><span class="pc">Đổi ›</span>`
+      : '<span class="pn" style="color:var(--mut)">Chọn ngân hàng…</span><span class="pc">›</span>';
+  };
+  showBank();
+  $('#fBank').onclick = () => openBankPicker(bank, (v) => { bank = v; showBank(); });
   $('#fPrincipal').addEventListener('input', (e) => {
     const n = e.target.value.replace(/\D/g, '');
     e.target.value = n ? nf.format(parseInt(n, 10)) : '';
@@ -381,9 +386,7 @@ function openForm(id, defOwner) {
   };
   $('#fSave').onclick = () => {
     const v = read();
-    let bank = $('#fBank').value;
-    if (bank === 'Khác…') bank = $('#fBankCustom').value.trim();
-    if (!bank) return toast('Nhập tên ngân hàng');
+    if (!bank) return toast('Chọn ngân hàng');
     if (v.principal <= 0) return toast('Nhập tiền gốc');
     if (v.rate <= 0) return toast('Nhập lãi suất');
     if (!v.start) return toast('Chọn ngày gửi');
@@ -395,6 +398,30 @@ function openForm(id, defOwner) {
     render(); toast('Đã lưu ✓');
   };
 }
+function openBankPicker(current, onPick) {
+  const pk = document.createElement('div');
+  pk.className = 'sheet pick';
+  pk.innerHTML = `<div class="panel"><div class="pk-head"><input id="pkQ" placeholder="Tìm ngân hàng (vd: vcb, techcom…)" autocomplete="off"><button type="button" class="btn ghost" id="pkX">Đóng</button></div><div id="pkList"></div></div>`;
+  sheet.appendChild(pk);
+  const list = pk.querySelector('#pkList'), q = pk.querySelector('#pkQ');
+  const row = (b) => `<button type="button" class="pkrow ${b.n === current ? 'on' : ''}" data-n="${esc(b.n)}">${logoHTML(b.n)}<span class="pn">${esc(b.n)}${b.f ? `<small>${esc(b.f)}</small>` : ''}</span></button>`;
+  const draw = () => {
+    const k = normName(q.value);
+    const hit = BANK_LIST.filter((b) => !k || normName(b.n + b.f + b.a.join('')).includes(k));
+    let html = '', g = '';
+    hit.forEach((b) => { if (b.g !== g) { g = b.g; html += `<div class="pkgrp">${esc(g)}</div>`; } html += row(b); });
+    const raw = q.value.trim();
+    if (raw && !BANK_LIST.some((b) => normName(b.n) === k)) html += `<button type="button" class="pkrow" data-n="${esc(raw)}"><div class="logo" style="background:${bankColor(raw)}">${esc(initials(raw))}</div><span class="pn">Dùng tên “${esc(raw)}”<small>Ngân hàng / tổ chức khác</small></span></button>`;
+    list.innerHTML = html || '<div class="empty">Không tìm thấy</div>';
+  };
+  const close = () => pk.remove();
+  q.addEventListener('input', draw);
+  pk.querySelector('#pkX').onclick = close;
+  pk.onclick = (e) => { if (e.target === pk) close(); };
+  list.onclick = (e) => { const r = e.target.closest('.pkrow'); if (r) { onPick(r.dataset.n); close(); } };
+  draw();
+}
+
 function closeForm() { sheet.hidden = true; sheet.innerHTML = ''; }
 
 /* =====================  Cài đặt / sao lưu  ===================== */
@@ -444,7 +471,7 @@ function loadDemo() {
   state.books = [
     { id: uid(), owner: 'vo', bank: 'Vietcombank', principal: 300000000, rate: 4.7, term: 12, start: ago(4), note: 'Sổ dự phòng' },
     { id: uid(), owner: 'vo', bank: 'Techcombank', principal: 500000000, rate: 5.6, term: 13, start: ago(2), note: '' },
-    { id: uid(), owner: 'vo', bank: 'MB Bank', principal: 150000000, rate: 5.2, term: 6, start: ago(6, 3), note: 'Đã đáo hạn' },
+    { id: uid(), owner: 'vo', bank: 'MBBank', principal: 150000000, rate: 5.2, term: 6, start: ago(6, 3), note: 'Đã đáo hạn' },
     { id: uid(), owner: 'chong', bank: 'BIDV', principal: 700000000, rate: 5.0, term: 12, start: ago(7), note: 'Mua nhà' },
     { id: uid(), owner: 'chong', bank: 'ACB', principal: 250000000, rate: 5.4, term: 9, start: ago(1), note: '' },
     { id: uid(), owner: 'chong', bank: 'ACB', principal: 120000000, rate: 4.9, term: 6, start: ago(3), note: 'Quỹ học phí' },

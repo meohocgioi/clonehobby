@@ -110,7 +110,7 @@ main { padding: calc(var(--sat) + 18px) 16px calc(var(--sab) + 110px); max-width
 /* ---------- banks accordion ---------- */
 .bank { border-radius: 20px; background: var(--card); border: 1px solid var(--card-b); margin-bottom: 10px; overflow: hidden; }
 .bank-h { width: 100%; display: flex; align-items: center; gap: 12px; padding: 14px; text-align: left; }
-.logo { width: 42px; height: 42px; border-radius: 13px; display: grid; place-items: center; font-weight: 800; font-size: 14px; color: #fff; flex: none; box-shadow: 0 4px 14px rgba(0, 0, 0, .3); }
+.logo { width: 56px; height: 42px; border-radius: 12px; display: grid; place-items: center; font-weight: 800; font-size: 14px; color: #fff; flex: none; box-shadow: 0 4px 14px rgba(0, 0, 0, .3); }
 .bank-h .mid { flex: 1; min-width: 0; }
 .bank-h .nm { font-weight: 700; }
 .bank-h .sub { font-size: 12px; color: var(--mut); }
@@ -200,3 +200,19 @@ main { padding: calc(var(--sat) + 18px) 16px calc(var(--sab) + 110px); max-width
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }
+
+/* ---------- logo & bank picker ---------- */
+.logo.has { background: #fff; padding: 5px 6px; }
+.logo img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.pickbtn { width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 14px; border: 1px solid var(--card-b); background: rgba(255, 255, 255, .06); text-align: left; min-height: 56px; }
+.pn { flex: 1; min-width: 0; font-weight: 700; }
+.pn small { display: block; font-weight: 400; font-size: 12px; color: var(--mut); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc { color: var(--green); font-size: 13px; font-weight: 700; }
+.sheet.pick { z-index: 60; background: rgba(0, 0, 0, .35); }
+.sheet.pick .panel { height: 88vh; display: flex; flex-direction: column; padding-bottom: 0; }
+.pk-head { display: flex; gap: 8px; margin-bottom: 8px; }
+.pk-head .btn { margin: 0; padding: 10px 14px; }
+#pkList { overflow-y: auto; flex: 1; padding-bottom: calc(var(--sab) + 20px); }
+.pkgrp { margin: 14px 2px 6px; font-size: 12px; color: var(--mut); text-transform: uppercase; letter-spacing: .4px; font-weight: 600; }
+.pkrow { width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 14px; text-align: left; }
+.pkrow:active, .pkrow.on { background: rgba(52, 211, 153, .15); }
