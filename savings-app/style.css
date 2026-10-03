@@ -238,8 +238,8 @@ main { padding: calc(var(--sat) + 18px) 16px calc(var(--sab) + 120px); max-width
 .fbw { position: absolute; inset: 0; display: flex; justify-content: center; align-items: flex-end; }
 .fb { width: 70%; max-width: 46px; display: flex; flex-direction: column; border-radius: 9px 9px 2px 2px; overflow: hidden; transform-origin: bottom; animation: grow .9s cubic-bezier(.2, .9, .2, 1) both; transition: opacity .25s; }
 .fb i { display: block; min-height: 3px; }
-.fb .sp { background: linear-gradient(180deg, #b79cff, #8b5cf6); }
-.fb .si { background: linear-gradient(180deg, #6ee7b7, #10b981); }
+.fb .fp { background: linear-gradient(180deg, #b79cff, #8b5cf6); }
+.fb .fi { background: linear-gradient(180deg, #6ee7b7, #10b981); }
 .fv { position: absolute; left: 50%; transform: translateX(-50%); font-size: 11px; font-weight: 600; white-space: nowrap; transition: opacity .25s; }
 .cols.multi .fcol:not(.on) .fb, .cols.multi .fcol:not(.on) .fv { opacity: .5; }
 .xx { grid-column: 2; display: grid; margin-top: 8px; row-gap: 4px; }
@@ -517,8 +517,8 @@ textarea { resize: vertical; min-height: 120px; }
 .gl:first-child { border-top-style: solid; }
 .fb { width: 66%; max-width: 44px; gap: 2px; border-radius: 6px 6px 2px 2px; overflow: hidden; background: transparent; }
 .fb i { border-radius: 0; min-height: 4px; }
-.fb .sp { background: linear-gradient(180deg, #a78bfa, #7c3aed); }
-.fb .si { background: linear-gradient(180deg, #6ee7b7, #10b981); }
+.fb .fp { background: linear-gradient(180deg, #a78bfa, #7c3aed); }
+.fb .fi { background: linear-gradient(180deg, #6ee7b7, #10b981); }
 .fv { font-size: 11px; color: var(--mut); font-weight: 600; }
 .fcol.on .fv { color: var(--txt); font-weight: 800; }
 .cols.multi .fcol:not(.on) .fb { opacity: .55; }
@@ -534,3 +534,7 @@ textarea { resize: vertical; min-height: 120px; }
 .fb i:first-child { border-radius: 9px 9px 0 0; }
 .fb i:last-child { border-radius: 0 0 3px 3px; }
 .fb i:only-child { border-radius: 9px 9px 3px 3px; }
+
+/* cột rất nhỏ: đủ chỗ cho cả hai lớp màu, không lòi xuống dưới vạch 0 */
+.fb { min-height: 4px; }
+.fb.two { min-height: 10px; }

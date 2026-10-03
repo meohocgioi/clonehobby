@@ -367,11 +367,11 @@ function flowInner(fd) {
   const cols = fd.map((e, i) => {
     const h = Math.max(2, val(e) / top * 100);
     const inner = flowMode === 'all'
-      ? `<i class="si" style="flex:${e.interest}"></i><i class="sp" style="flex:${e.principal}"></i>`
-      : '<i class="si" style="flex:1"></i>';
+      ? `<i class="fseg fi" style="flex:${e.interest}"></i><i class="fseg fp" style="flex:${e.principal}"></i>`
+      : '<i class="fseg fi" style="flex:1"></i>';
     return `<button class="fcol ${e.k === selMonth ? 'on' : ''}" data-pick="${e.k}" aria-label="Tháng ${e.m}/${e.y}">
-      <span class="fv" style="bottom:calc(${h}% + 4px)">${axisLabel(val(e))}</span>
-      <div class="fbw"><div class="fb" style="height:0;transition-delay:${i * 70}ms" data-h="${h}%">${inner}</div></div></button>`;
+      <span class="fv" style="bottom:max(calc(${h}% + 6px), ${flowMode === 'all' ? 16 : 10}px)">${axisLabel(val(e))}</span>
+      <div class="fbw"><div class="fb${flowMode === 'all' ? ' two' : ''}" style="height:0;transition-delay:${i * 70}ms" data-h="${h}%">${inner}</div></div></button>`;
   }).join('');
   const months = fd.map((e) => `<span class="${e.k === selMonth ? 'on' : ''}">T${e.m}</span>`).join('');
   const years = [];
