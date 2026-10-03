@@ -110,7 +110,14 @@ function withCur(s) {
   const sp = F.space ? '\u00a0' : '';
   return F.pos === 'before' ? F.sym + sp + s : s + sp + F.sym;
 }
-const vnd = (n) => withCur(money(n));
+// Chế độ "Rút gọn": từ 1 triệu trở lên đọc thành chữ (1,5 triệu, 2 tỷ); dưới 1 triệu giữ số đầy đủ
+const shortM = (n) => {
+  const a = Math.abs(n);
+  if (a >= 1e9) return dec(n / 1e9, 2) + ' tỷ';
+  if (a >= 1e6) return dec(n / 1e6, 2) + ' triệu';
+  return money(n);
+};
+const vnd = (n) => withCur(F.display === 'full' ? money(n) : shortM(n));
 function dec(v, max) {
   const t = Math.abs(v).toFixed(max).replace(/\.?0+$/, ''), [i, f] = t.split('.');
   return (v < 0 ? '-' : '') + group(+i) + (f ? decSep() + f : '');

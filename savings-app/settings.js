@@ -102,7 +102,7 @@ function pageFormat() {
     pos: { title: 'Vị trí ký hiệu', list: [{ v: 'after', label: 'Sau số tiền' }, { v: 'before', label: 'Trước số tiền' }], show: (v) => (v === 'after' ? 'Sau số tiền' : 'Trước số tiền') },
     space: { title: 'Khoảng cách', list: [{ v: 'true', label: 'Có' }, { v: 'false', label: 'Không' }], show: (v) => (v ? 'Có' : 'Không') },
     sep: { title: 'Dấu phân cách', list: [{ v: 'dot', label: '1.000.000' }, { v: 'comma', label: '1,000,000' }, { v: 'space', label: '1 000 000' }, { v: 'none', label: '1000000' }], show: (v) => ({ dot: '1.000.000', comma: '1,000,000', space: '1 000 000', none: '1000000' })[v] },
-    display: { title: 'Hiển thị số tiền', list: [{ v: 'short', label: 'Rút gọn', sub: '1,25 tỷ' }, { v: 'full', label: 'Đầy đủ', sub: '1.250.000.000' }], show: (v) => (v === 'short' ? 'Rút gọn' : 'Đầy đủ') },
+    display: { title: 'Hiển thị số tiền', list: [{ v: 'short', label: 'Rút gọn', sub: '1,5 triệu · 1,25 tỷ' }, { v: 'full', label: 'Đầy đủ', sub: '1.500.000 · 1.250.000.000' }], show: (v) => (v === 'short' ? 'Rút gọn' : 'Đầy đủ') },
     neg: { title: 'Số âm', list: [{ v: 'minus', label: 'Dấu trừ (-)' }, { v: 'paren', label: 'Ngoặc (1.000)' }], show: (v) => (v === 'minus' ? 'Dấu trừ (-)' : 'Ngoặc (1.000)') },
   };
   const icons = { sym: 'cash', pos: 'cash', space: 'cash', sep: 'cash', display: 'cash', neg: 'cash' };
