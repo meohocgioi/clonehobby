@@ -487,7 +487,7 @@ function barsHTML(list) {
     const rows = parts.length ? parts.map(({ b, v }) => `<div class="mrow">${logoHTML(b.bank)}<div class="mt"><b>${esc(b.bank)}</b><span>${short(b.principal)} · ${pct(b.rate)}/năm</span></div><b class="gain">${vnd(v)}</b></div>`).join('')
       : '<p class="muted" style="margin:6px 0 0">Không có sổ nào sinh lãi trong tháng này.</p>';
     return `<div class="obx ${o} ${expOwner === o ? 'open' : ''}">
-      <button type="button" class="obx-h" data-ob="${o}" aria-expanded="${expOwner === o}"><span class="on">${esc(ownerName(o))}</span><b>${vnd(tot)}</b>${ICON.down}</button>
+      <button type="button" class="obx-h" data-ob="${o}" aria-expanded="${expOwner === o}"><span class="on">Sổ ${esc(ownerName(o))}</span><b>${vnd(tot)}</b>${ICON.down}</button>
       <div class="obx-b"><div>${rows}</div></div></div>`;
   };
   return `
@@ -496,7 +496,6 @@ function barsHTML(list) {
     <div class="bars">${bars}</div>
     <div class="bar-sum"><span>Tháng ${s.m}/${s.y}${selBar === 0 ? ' (tháng này)' : ''}</span><b>${vnd(s.v)}</b></div>
     <div class="ob" data-exp="${expOwner || ''}" data-n="${owners.length}">${owners.map(box).join('')}</div>
-    <div class="bar-note">Bấm vào từng tháng, rồi bấm Vợ hoặc Chồng để xem chi tiết từng sổ.</div>
   </div>`;
 }
 

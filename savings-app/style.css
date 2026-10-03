@@ -506,3 +506,6 @@ textarea { resize: vertical; min-height: 120px; }
 .obx-b > div { overflow: hidden; padding: 0 14px; }
 .obx.open .obx-b > div { padding-bottom: 8px; }
 .obx-b .mrow:last-child { border-bottom: 0; }
+
+.obx-h .on { font-size: 16px; font-weight: 600; text-transform: none; letter-spacing: 0; }
+.ob { margin-bottom: 2px; }
