@@ -108,3 +108,9 @@ A "Check date" looks at the website and lists posts; it never posts by itself. B
 (last 3 days) that was never posted**, even if a date check saw it first. To keep one recent post out of the channel click
 **don't auto-post** under its button in the date list (you can still press **Post** yourself). Posts older than 3 days that you only
 browsed are never posted behind your back.
+
+## Posts that go live hours after they were created
+The website reserves a post's number when an editor starts it and may publish it many hours later; its own lists are rebuilt only once
+a day. So the watcher keeps asking about every recent number that does not exist yet: after 5, 15 and 30 minutes, then once an hour,
+until the website's daily list covers it. A late post is therefore posted within about an hour of going live (within minutes if it is
+on the homepage list). **Check website now** asks about all of them immediately.

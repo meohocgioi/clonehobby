@@ -833,3 +833,66 @@ def test_manual_check_and_first_poll_after_update_still_probe(env):
     db.kv_set("sitemap_max_id", "")                           # as if this version had just been installed
     assert e.discover() >= 1
     assert db.get(115041)["status"] == "pending"
+
+
+def _miss_state(db, pids, count, ago):
+    db.kv_set("probe_misses", json.dumps({str(p): [count, time.time() - ago] for p in pids}))
+
+
+def test_post_published_hours_after_its_number_was_reserved_is_still_found(env):
+    """The end-of-day case: 115543-115550 did not exist when first asked about (the old code gave up after ~3 h)."""
+    e, f, tg, db = env
+    today = _today(e)
+    _sitemap_stale_setup(e, f, today)
+    add_posts(f, {115040: (today, "Toy"), 115043: (today, "Movie news A"), 115044: (today, "Movie news B")})
+    f.hidden |= {115040, 115043, 115044}; f.listing = [115040]
+    hidden = {115043, 115044}
+    live = {p: f.posts.pop(p) for p in hidden}                # not published yet
+    e.discover(manual=True)
+    assert db.get(115043) is None
+    # many rounds later (far beyond the old give-up point) they are published
+    _miss_state(db, range(115035, 115062), count=9, ago=3700)
+    f.posts.update(live)
+    n = e.discover()                                          # an ordinary automatic poll
+    assert n == 2 and db.get(115043)["status"] == "pending" and db.get(115044)["status"] == "pending"
+
+
+def test_old_misses_are_asked_hourly_not_every_poll(env):
+    e, f, tg, db = env
+    today = _today(e)
+    _sitemap_stale_setup(e, f, today)
+    add_posts(f, {115040: (today, "Toy")}); f.hidden.add(115040); f.listing = [115040]
+    e.discover(manual=True)
+    _miss_state(db, range(115035, 115062), count=9, ago=1200)   # asked 20 min ago, already many times
+    f.article_requests.clear(); e.discover(manual=True)
+    assert not (set(f.article_requests) & set(range(115035, 115040)))
+    _miss_state(db, range(115035, 115062), count=9, ago=3700)   # asked over an hour ago
+    f.article_requests.clear(); e.discover(manual=True)
+    assert set(f.article_requests) & set(range(115035, 115040))
+
+
+def test_misses_below_the_rebuilt_sitemap_are_forgotten(env):
+    e, f, tg, db = env
+    today = _today(e)
+    _sitemap_stale_setup(e, f, today)
+    add_posts(f, {115040: (today, "Toy")}); f.hidden.add(115040); f.listing = [115040]
+    _miss_state(db, [100, 115036, 115500], count=3, ago=100)
+    e.discover(manual=True)
+    keys = set(db.kv_json("probe_misses"))
+    assert "100" not in keys and "115036" in keys             # numbers the daily list now covers are dropped
+
+
+def test_date_check_retries_gap_numbers_after_half_an_hour(env):
+    e, f, tg, db = env
+    seed_site(f, {115018: "2026-10-02", 115034: "2026-10-02", 115070: "2026-10-02"})
+    f.hidden |= {115070}; f.listing = [115070]
+    e.plan_date("2026-10-02", margin=2)
+    first = db.kv_json("gap_missing")
+    assert isinstance(first, dict) and first
+    late = {k: time.time() - 4000 for k in first}
+    db.kv_set("gap_missing", json.dumps(late))
+    add_posts(f, {115050: ("2026-10-02", "Published late")}); f.hidden.add(115050)
+    plan = e.plan_date("2026-10-02", margin=2)
+    assert 115050 in [p["id"] for p in plan["posts"]]
+    db.kv_set("gap_missing", json.dumps(["115036", "115037"]))   # the older list format is still understood
+    e.plan_date("2026-10-02", margin=2)

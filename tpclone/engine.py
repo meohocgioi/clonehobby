@@ -173,7 +173,7 @@ class Engine:
         probed: list[tuple] = []
         meta: dict[int, tuple] = {}
         if sitemap_max:
-            probed, meta = self._probe_recent(known, {e[0] for e in all_entries}, sitemap_max, 60 if manual else 12)
+            probed, meta = self._probe_recent(known, {e[0] for e in all_entries}, sitemap_max, 60 if manual else 20)
             new = new + probed
         self.db.kv_set("probe_info", json.dumps({"found": len(probed), "ts": time.time()}))
         if new:
@@ -196,7 +196,8 @@ class Engine:
         return queued, total
 
     LOOKAHEAD = 20                      # post numbers probed beyond the newest one known
-    MISS_BACKOFF = (300, 900, 3600, 7200)   # seconds before a post number that did not exist is asked about again
+    MISS_BACKOFF = (300, 900, 1800, 3600)   # seconds before a number that did not exist is asked again; then hourly
+                                            # until the website's daily list covers it (posts can be published hours late)
 
     def _probe_recent(self, known: set[int], seen_now: set[int], sitemap_max: int, cap: int):
         """-> ([(post_id, url, None)], {post_id: (title, date)}).
@@ -204,7 +205,8 @@ class Engine:
         The sitemap is rebuilt once a day and the homepage list shows toy news only, so a post of another section
         (ACG, J-Movies, ...) can be live for hours without being listed anywhere. Post numbers grow with time, so ask
         for the numbers above the sitemap that nobody has accounted for. Numbers that do not exist are remembered and
-        asked again after 5 min, 15 min, 1 h, 2 h, then left to the next sitemap rebuild."""
+        asked again after 5 min, 15 min, 30 min, then every hour until the sitemap rebuild covers them: a post whose number was
+        reserved early can be published many hours later."""
         top = max(seen_now | {sitemap_max, max(known) if known else 0})
         hi = top + self.LOOKAHEAD
         lo = max(sitemap_max + 1, hi - 400)
@@ -218,7 +220,7 @@ class Engine:
             if pid in known or pid in seen_now:
                 continue
             m = misses.get(str(pid))
-            if m and (m[0] > len(self.MISS_BACKOFF) or now - m[1] < self.MISS_BACKOFF[m[0] - 1]):
+            if m and now - m[1] < self.MISS_BACKOFF[min(m[0], len(self.MISS_BACKOFF)) - 1]:
                 continue
             due.append(pid)
         found, meta, errors = [], {}, 0
@@ -245,7 +247,8 @@ class Engine:
                 continue
             found.append((pid, self.post_url(pid), None))
             meta[pid] = (art.title, art.post_date)
-        self.db.kv_set("probe_misses", json.dumps(dict(sorted(misses.items())[-3000:])))
+        misses = {k: v for k, v in misses.items() if int(k) > sitemap_max}      # the daily list covers the rest
+        self.db.kv_set("probe_misses", json.dumps(dict(sorted(misses.items(), key=lambda kv: int(kv[0]))[-3000:])))
         if found:
             self.db.log("info", f"found {len(found)} post(s) newer than the sitemap by probing: "
                                 + ", ".join(str(f[0]) for f in found[:10]))
@@ -703,21 +706,24 @@ class Engine:
         if listing and max(i["id"] for i in listing) > sitemap_max:
             listed = {i["id"] for i in listing}
             gap = [p for p in range(sitemap_max + 1, max(listed) + 1) if p not in listed][-self.GAP_LIMIT:]
-            missing = set(self.db.kv_json("gap_missing", []))
+            raw = self.db.kv_json("gap_missing", {})
+            missing = {int(k): v for k, v in raw.items()} if isinstance(raw, dict) else {int(k): 0 for k in raw}
+            now = time.time()
             for k, pid in enumerate(gap):
-                if pid in missing:
+                if pid in missing and now - missing[pid] < 1800:
                     continue
                 try:
                     d, t = self._meta_for(pid)
                 except FetchError:
                     continue
                 if d is None and t is None:
-                    missing.add(pid)
+                    missing[pid] = now
                 elif d == date:
+                    missing.pop(pid, None)
                     found[pid] = t
                 if k % 10 == 0:
                     say(f"checking posts newer than the sitemap {k}/{len(gap)} ({len(found)} posts on {date})")
-            self.db.kv_set("gap_missing", json.dumps(sorted(missing)[-5000:]))
+            self.db.kv_set("gap_missing", json.dumps({str(k): v for k, v in sorted(missing.items())[-5000:]}))
         for r in self.db.by_date(date):
             found.setdefault(r["post_id"], r.get("title"))
 
