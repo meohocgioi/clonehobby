@@ -114,3 +114,9 @@ The website reserves a post's number when an editor starts it and may publish it
 a day. So the watcher keeps asking about every recent number that does not exist yet: after 5, 15 and 30 minutes, then once an hour,
 until the website's daily list covers it. A late post is therefore posted within about an hour of going live (within minutes if it is
 on the homepage list). **Check website now** asks about all of them immediately.
+
+## "Uncertain" posts settle themselves
+If the connection drops while a post is being sent, nobody knows whether it arrived. The app waits a couple of minutes, then looks at the
+message numbers in your channel right after the last one it knew about: a message of its own that it does not know yet **is** that post
+(it gets marked as posted), and no such message up to the end of the channel means the post **never arrived** (it is sent again, once).
+If anything is unclear - for example two unknown messages for one uncertain post - the post stays under "Needs your attention" for you to decide.

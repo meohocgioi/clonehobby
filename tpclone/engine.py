@@ -418,10 +418,10 @@ class Engine:
             self.db.log("warn", f"post {pid}: {e} ({st})")
             return st
         except UncertainDelivery as e:
-            self.db.mark_uncertain(pid, str(e))
+            self.db.mark_uncertain(pid, str(e), anchor=self.db.max_message_id())
             self.pacer.push_back(300)
-            self.db.log("error", f"post {pid}: delivery UNCERTAIN ({e}). Check the channel, then mark it posted/pending "
-                                 f"in the dashboard.")
+            self.db.log("warn", f"post {pid}: delivery UNCONFIRMED ({e}). The app will look at your channel in a few "
+                                f"minutes and fix this by itself (re-send only if it proves the post never arrived).")
             return "uncertain"
         except TelegramError as e:
             if e.code in FATAL_CODES or (e.code == 400 and "chat not found" in str(e).lower()):
@@ -503,6 +503,83 @@ class Engine:
                 raise
             finally:
                 self._probe_last = time.time()
+
+    def _probe_status(self, mid) -> str | None:
+        """Like _probe but with the richer answer; None = Telegram asked us to slow down (nothing learnt)."""
+        with self._probe_lock:
+            if time.time() < self.bg_pause_until:
+                return None
+            wait = self._probe_last + self.probe_gap - time.time()
+            if wait > 0:
+                time.sleep(wait)
+            try:
+                return self.tg.message_status(mid)
+            except TelegramError as e:
+                if e.code == 429:
+                    self.bg_pause_until = time.time() + float(e.retry_after or 60) + 2
+                    return None
+                raise
+            finally:
+                self._probe_last = time.time()
+
+    UNCERTAIN_WAIT = 120        # seconds to let a possibly-delivered message settle before looking for it
+    UNCERTAIN_RETRY = 600       # seconds between two attempts to settle the same uncertain post
+    UNCERTAIN_SCAN_CAP = 40     # most message numbers asked about in one resolution round
+
+    def resolve_uncertain_step(self) -> bool:
+        """Settle posts whose delivery was unconfirmed (timeout / server error after the request left).
+
+        If a send succeeded it got the next free message number of the channel, so look at the numbers after the
+        highest one we knew when the send was attempted:
+          * a message that the bot can edit and that our ledger does not know  -> that is the post: mark it posted;
+          * none such, up to the end of the channel                            -> it never arrived: send it again.
+        Anything doubtful (flood control, unreadable answers, more or fewer candidates than uncertain posts) leaves
+        the post 'uncertain' for you. Returns True if Telegram was asked."""
+        if self.tg is None or self.s.dry_run or not self.probe_trusted() or time.time() < self.bg_pause_until:
+            return False
+        now = time.time()
+        rows = [r for r in self.db.delivery_uncertain()
+                if now - (r["uncertain_at"] or now) >= self.UNCERTAIN_WAIT]
+        if not rows or any(now - (r["uncertain_tried"] or 0) < self.UNCERTAIN_RETRY for r in rows):
+            return False
+        for r in rows:
+            self.db.touch_uncertain_tried(r["post_id"])
+        anchor = min(r["uncertain_anchor"] or 0 for r in rows)
+        known = self.db.known_message_ids(anchor)
+        max_known = max([anchor] + list(known))
+        candidates: list[int] = []
+        mid, asked, reached_end = anchor + 1, 0, False
+        while asked < self.UNCERTAIN_SCAN_CAP:
+            if mid in known:
+                mid += 1
+                continue
+            st = self._probe_status(mid)
+            asked += 1
+            if st is None or st == "unknown":
+                self.db.log("info", "uncertain posts: Telegram gave no clear answer; will look again later")
+                return True
+            if st == "mine":
+                candidates.append(mid)
+            elif st == "missing" and mid > max_known:
+                reached_end = True
+                break
+            mid += 1
+        if not reached_end:
+            self.db.log("info", "uncertain posts: could not reach the end of the channel; will look again later")
+            return True
+        if not candidates:                                  # nothing of ours is there: the posts never arrived
+            for r in rows:
+                st = self.db.mark_retry(r["post_id"], "delivery was unconfirmed and proved not to have arrived", 30)
+                self.db.log("info", f"post {r['post_id']}: proved NOT delivered -> sending it again ({st})")
+            return True
+        if len(candidates) == len(rows):                    # exactly one unknown message of ours per uncertain post
+            for r, m in zip(rows, candidates):
+                self.db.mark_posted(r["post_id"], m)
+                self.db.log("info", f"post {r['post_id']}: found in the channel as message {m} -> marked as posted")
+            return True
+        self.db.log("warn", f"uncertain posts: found {len(candidates)} unknown message(s) for {len(rows)} uncertain "
+                            f"post(s) - not sure which is which, please look at the channel")
+        return True
 
     def _calibrate_probe(self, mid) -> None:
         """Right after a send we KNOW the message exists: use it to prove that the 'was it deleted?' probe is honest.
@@ -874,7 +951,7 @@ class Worker:
                 if row is None:
                     did = False
                     try:
-                        did = e.background_verify_step()
+                        did = e.resolve_uncertain_step() or e.background_verify_step()
                     except Exception as ex:   # noqa: BLE001
                         log.info("background check failed: %s", ex)
                     self._stop.wait(6 if did else 5)      # ~10 questions a minute at most

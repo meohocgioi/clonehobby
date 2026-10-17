@@ -101,28 +101,36 @@ class Telegram:
             data["disable_notification"] = "true"
         return self.call("sendRichMessage", data, files)
 
-    def message_exists(self, message_id: int) -> bool | None:
-        """Does this channel message still exist?  True / False / None (could not tell).
+    def message_status(self, message_id: int) -> str:
+        """'mine' (exists and the bot can edit it), 'missing' (deleted / never existed), 'other' (exists but the bot
+        cannot edit it, e.g. posted by a person) or 'unknown' (could not tell). Raises TelegramError on flood control.
 
-        The Bot API cannot list or fetch channel messages, but editing the reply markup of our own message answers
-        "message is not modified" when it exists and "message to edit not found" when it was deleted.
-        """
+        The Bot API cannot list or fetch channel messages, but editing the reply markup of a message answers
+        "message is not modified" when it exists and "message to edit not found" when it does not."""
         try:
             self.call("editMessageReplyMarkup", {"chat_id": self.chat_id, "message_id": message_id},
                       max_429_retries=0)       # never sleep here: the caller decides how to back off
-            return True
+            return "mine"
         except UncertainDelivery:
-            return None
+            return "unknown"
         except TelegramError as e:
-            if e.code == 429:                  # "slow down": tell the caller (None would hide it)
+            if e.code == 429:                  # "slow down": tell the caller (an answer would hide it)
                 raise
             low = str(e).lower()
             if "message is not modified" in low:
-                return True
+                return "mine"
             if any(h in low for h in ("message to edit not found", "message_id_invalid", "message not found",
                                       "message to be edited not found")):
-                return False
-            return None
+                return "missing"
+            if any(h in low for h in ("can't be edited", "cant be edited", "not enough rights", "message_author_required",
+                                      "can't edit", "not accessible")):
+                return "other"
+            return "unknown"
+
+    def message_exists(self, message_id: int) -> bool | None:
+        """Does this channel message still exist?  True / False / None (could not tell)."""
+        st = self.message_status(message_id)
+        return True if st == "mine" else False if st == "missing" else None
 
     def check(self) -> dict:
         """Validate token + that the bot may post in the channel. Raises TelegramError with a readable reason."""

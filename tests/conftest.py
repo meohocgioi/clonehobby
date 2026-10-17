@@ -31,26 +31,56 @@ def make_article(pid=1, n_images=3, cover=True, title="A Title", **kw) -> Articl
 
 
 class FakeTG:
+    """A channel with sequential message numbers. Messages can be delivered although the answer is lost."""
+
     def __init__(self):
         self.sent = []
         self.fail_with = None
+        self.deliver_then_fail = False      # the message reaches the channel, but the caller gets an error
         self.deleted: set[int] = set()
-        self.probes: list[int] = []        # every existence question asked
         self.unknown: set[int] = set()
+        self.probes: list[int] = []        # every existence question asked
+        self.next_id = 1001
+        self.existing: set[int] = set()    # messages the bot can edit (its own)
+        self.human: set[int] = set()       # messages posted by people: exist, but the bot cannot edit them
+        self.flood: bool = False
+
+    def human_post(self, n=1):
+        for _ in range(n):
+            self.human.add(self.next_id); self.next_id += 1
 
     def send_rich(self, html, media=None, files=None, **kw):
-        if self.fail_with:
+        if self.fail_with and not self.deliver_then_fail:
             e, self.fail_with = self.fail_with, None
             raise e
+        mid = self.next_id
+        self.next_id += 1
+        self.existing.add(mid)
         self.sent.append({"html": html, "media": media, "files": files, "kw": kw})
-        return {"message_id": 1000 + len(self.sent)}
-
+        if self.fail_with and self.deliver_then_fail:
+            e, self.fail_with = self.fail_with, None
+            self.deliver_then_fail = False
+            raise e
+        return {"message_id": mid}
 
     def message_exists(self, message_id):
         self.probes.append(message_id)
         if message_id in self.unknown:
             return None
         return message_id not in self.deleted
+
+    def message_status(self, message_id):
+        from tpclone.telegram import TelegramError
+        self.probes.append(message_id)
+        if self.flood:
+            raise TelegramError("Too Many Requests", 429, 30)
+        if message_id in self.unknown:
+            return "unknown"
+        if message_id in self.deleted:
+            return "missing"
+        if message_id in self.human:
+            return "other"
+        return "mine" if message_id in self.existing else "missing"
 
 
 class FakeClient:

@@ -60,6 +60,11 @@ class DB:
                 self.conn.execute("PRAGMA journal_mode=WAL")
             self.conn.execute("PRAGMA synchronous=FULL")  # a crash must not forget a published post
             self.conn.executescript(SCHEMA)
+            for col in ("uncertain_anchor INTEGER", "uncertain_at REAL", "uncertain_tried REAL"):
+                try:   # ledgers created before the automatic resolution of uncertain deliveries
+                    self.conn.execute(f"ALTER TABLE posts ADD COLUMN {col}")
+                except sqlite3.OperationalError:
+                    pass
             try:   # ledgers created before 'verified_at' existed
                 self.conn.execute("ALTER TABLE sent_messages ADD COLUMN verified_at REAL")
             except sqlite3.OperationalError:
@@ -280,8 +285,27 @@ class DB:
             self.conn.commit()
             return status
 
-    def mark_uncertain(self, post_id: int, error: str) -> None:
-        self._x("UPDATE posts SET status='uncertain', last_error=? WHERE post_id=?", (error[:500], post_id))
+    def mark_uncertain(self, post_id: int, error: str, anchor: int | None = None) -> None:
+        """anchor = highest channel message number we knew when the send was attempted. Only set for 'did it arrive?'
+        cases; the app then resolves them by itself by looking at the numbers after it."""
+        self._x("UPDATE posts SET status='uncertain', last_error=?, uncertain_anchor=?, "
+                "uncertain_at=?, uncertain_tried=NULL WHERE post_id=?",
+                (error[:500], anchor, time.time() if anchor is not None else None, post_id))
+
+    def max_message_id(self) -> int:
+        r = self._q("SELECT MAX(message_id) m FROM sent_messages")
+        return int(r[0]["m"] or 0)
+
+    def known_message_ids(self, above: int = 0) -> set[int]:
+        return {r["message_id"] for r in self._q("SELECT message_id FROM sent_messages WHERE message_id>?", (above,))}
+
+    def delivery_uncertain(self) -> list[dict]:
+        """Posts whose send may or may not have arrived (oldest first)."""
+        return [dict(r) for r in self._q("SELECT * FROM posts WHERE status='uncertain' AND uncertain_anchor IS NOT NULL "
+                                         "ORDER BY uncertain_at, post_id")]
+
+    def touch_uncertain_tried(self, post_id: int) -> None:
+        self._x("UPDATE posts SET uncertain_tried=? WHERE post_id=?", (time.time(), post_id))
 
     def resolve_uncertain_stale(self) -> int:
         """Called at startup: a 'sending' row means the process died mid-request."""

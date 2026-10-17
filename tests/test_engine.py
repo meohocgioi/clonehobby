@@ -896,3 +896,145 @@ def test_date_check_retries_gap_numbers_after_half_an_hour(env):
     assert 115050 in [p["id"] for p in plan["posts"]]
     db.kv_set("gap_missing", json.dumps(["115036", "115037"]))   # the older list format is still understood
     e.plan_date("2026-10-02", margin=2)
+
+
+# ---------------------------------------------------------------- uncertain deliveries resolve themselves
+from tpclone.telegram import UncertainDelivery  # noqa: E402
+
+
+def _age_uncertain(db, seconds=600):
+    db._x("UPDATE posts SET uncertain_at = uncertain_at - ?, uncertain_tried = NULL WHERE status='uncertain'", (seconds,))
+
+
+def _uncertain_setup(env, delivered: bool, human_between=0):
+    e, f, tg, db = env
+    seed_site(f, {1: "2026-10-17", 2: "2026-10-17"})
+    e.post_now(1)                                             # message 1001, the 'anchor'
+    tg.human_post(human_between)
+    tg.fail_with = UncertainDelivery("ReadTimeout")
+    tg.deliver_then_fail = delivered
+    r = e.post_now(2)
+    assert r["status"] == "uncertain" and db.get(2)["uncertain_anchor"] == 1001
+    return e, f, tg, db
+
+
+def test_uncertain_that_did_arrive_is_marked_posted_with_its_message_number(env):
+    e, f, tg, db = _uncertain_setup(env, delivered=True)
+    assert e.resolve_uncertain_step() is False               # too early: let the message settle first
+    _age_uncertain(db)
+    assert e.resolve_uncertain_step() is True
+    assert db.get(2)["status"] == "posted" and db.live_messages(2) == [1002]
+    assert len(tg.sent) == 2                                  # nothing was sent again
+
+
+def test_uncertain_that_never_arrived_is_sent_again_exactly_once(env):
+    e, f, tg, db = _uncertain_setup(env, delivered=False)
+    _age_uncertain(db)
+    assert e.resolve_uncertain_step() is True
+    assert db.get(2)["status"] == "pending" and db.get(2)["attempts"] == 1
+    db._x("UPDATE posts SET not_before=0 WHERE post_id=2")
+    e.process(db.next_pending())
+    assert db.get(2)["status"] == "posted" and len(tg.sent) == 2      # post 1 + one successful send of post 2
+
+
+def test_posts_by_people_in_between_are_not_mistaken_for_ours(env):
+    e, f, tg, db = _uncertain_setup(env, delivered=True, human_between=2)
+    _age_uncertain(db)
+    e.resolve_uncertain_step()
+    assert db.get(2)["status"] == "posted" and db.live_messages(2) == [1004]    # skipped the two human messages
+
+
+def test_not_delivered_even_when_people_posted_meanwhile(env):
+    e, f, tg, db = _uncertain_setup(env, delivered=False, human_between=1)
+    _age_uncertain(db)
+    e.resolve_uncertain_step()
+    assert db.get(2)["status"] == "pending"                   # a human message is not ours -> still proven absent
+
+
+def test_delivery_found_in_a_hole_between_later_posts(env):
+    """After the uncertain send the worker kept posting: the lost message sits between known ones."""
+    e, f, tg, db = env
+    seed_site(f, {1: "2026-10-17", 2: "2026-10-17", 3: "2026-10-17"})
+    e.post_now(1)
+    tg.fail_with = UncertainDelivery("5xx"); tg.deliver_then_fail = True
+    e.post_now(2)                                             # arrives as 1002, answer lost
+    e.post_now(3)                                             # 1003, normal
+    _age_uncertain(db)
+    e.resolve_uncertain_step()
+    assert db.get(2)["status"] == "posted" and db.live_messages(2) == [1002] and db.live_messages(3) == [1003]
+
+
+def test_ambiguous_cases_stay_with_the_user(env):
+    e, f, tg, db = _uncertain_setup(env, delivered=True)
+    tg.existing.add(tg.next_id); tg.next_id += 1              # an unknown bot message (e.g. another app instance)
+    _age_uncertain(db)
+    e.resolve_uncertain_step()
+    assert db.get(2)["status"] == "uncertain"                 # two unknown messages for one uncertain post: not sure
+
+
+def test_resolution_waits_and_backs_off(env):
+    e, f, tg, db = _uncertain_setup(env, delivered=True)
+    _age_uncertain(db)
+    tg.flood = True
+    assert e.resolve_uncertain_step() is True or e.bg_pause_until > time.time()
+    assert db.get(2)["status"] == "uncertain"                 # flood control: nothing decided
+    assert e.resolve_uncertain_step() is False                # and no more questions while paused
+    tg.flood = False; e.bg_pause_until = 0
+    assert e.resolve_uncertain_step() is False                # asked a moment ago: wait the retry interval
+    db._x("UPDATE posts SET uncertain_tried = uncertain_tried - 700")
+    assert e.resolve_uncertain_step() is True and db.get(2)["status"] == "posted"
+
+
+def test_unreadable_answers_never_cause_a_resend(env):
+    e, f, tg, db = _uncertain_setup(env, delivered=True)
+    _age_uncertain(db)
+    tg.unknown.add(1002)                                      # Telegram can't tell us about the one that matters
+    e.resolve_uncertain_step()
+    assert db.get(2)["status"] == "uncertain" and len(tg.sent) == 2
+
+
+def test_untrusted_probe_never_resolves(env):
+    e, f, tg, db = _uncertain_setup(env, delivered=False)
+    _age_uncertain(db)
+    db.kv_set("probe_ok", "0")
+    assert e.resolve_uncertain_step() is False and db.get(2)["status"] == "uncertain"
+
+
+def test_test_posts_are_never_mistaken_for_an_uncertain_post(env):
+    e, f, tg, db = env
+    seed_site(f, {1: "2026-10-17", 2: "2026-10-17"})
+    e.post_now(1)
+    res = tg.send_rich("<h6>style sample</h6>")               # a sample / test post made by the dashboard
+    db.add_message(0, res["message_id"])
+    tg.fail_with = UncertainDelivery("timeout"); tg.deliver_then_fail = False
+    e.post_now(2)
+    _age_uncertain(db)
+    e.resolve_uncertain_step()
+    assert db.get(2)["status"] == "pending"                   # the sample (1002) is known to be ours, not the lost post
+
+
+def test_guard_uncertain_posts_are_not_touched_by_the_resolver(env):
+    """'an earlier copy may still be in the channel' (no anchor) is a different case: the user decides."""
+    e, f, tg, db = env
+    seed_site(f, {5: "2026-10-17"})
+    e.post_now(5)
+    mid = db.live_messages(5)[0]
+    tg.unknown.add(mid); db.reset_status(5, "pending")
+    assert e.process(db.get(5)) == "uncertain" and db.get(5)["uncertain_anchor"] is None
+    _age_uncertain(db)
+    assert e.resolve_uncertain_step() is False
+
+
+def test_worker_resolves_uncertain_posts_when_idle(env):
+    e, f, tg, db = _uncertain_setup(env, delivered=True)
+    e.UNCERTAIN_WAIT = 0
+    e.pacer.delay = 0
+    e.s.poll_interval_seconds = 3600
+    w = Worker(e)
+    w.start()
+    for _ in range(120):
+        if db.get(2)["status"] == "posted":
+            break
+        time.sleep(0.1)
+    w.stop(wait=True)
+    assert db.get(2)["status"] == "posted" and len(tg.sent) == 2

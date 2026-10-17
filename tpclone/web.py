@@ -225,6 +225,7 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
                         try:
                             res = engine.tg.send_rich(html)
                             engine._calibrate_probe(res.get("message_id"))
+                            engine.db.add_message(0, res["message_id"])
                             results[key] = "sent"
                         except Exception as e:  # noqa: BLE001
                             results[key] = f"Telegram refused it: {e}"
@@ -238,6 +239,7 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
                         try:
                             res = engine.tg.send_rich(html)
                             engine._calibrate_probe(res.get("message_id"))
+                            engine.db.add_message(0, res["message_id"])
                             results[f"spacing: {mode}"] = "sent"
                         except Exception as e:  # noqa: BLE001
                             results[f"spacing: {mode}"] = f"Telegram refused it: {e}"
@@ -250,6 +252,7 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
                         res = engine.tg.send_rich("<h6>Test post</h6><details><summary>Show More</summary>"
                                                   "<p><i>If you can open this, rich messages work in your channel.</i></p></details>")
                         engine._calibrate_probe(res.get("message_id"))   # also switches on deleted-post detection
+                        engine.db.add_message(0, res["message_id"])
                     except TelegramError as e:
                         return self._json({"error": str(e)}, 400)
                     return self._json({"ok": True})
