@@ -28,7 +28,7 @@ def mock_google(calls=None, status=200):
 
 
 def translator(tmp_path, **kw):
-    t = Translator(DB(":memory:"), glossary_file=tmp_path / "g.json", client=mock_google(kw.pop("calls", None), kw.pop("status", 200)),
+    t = Translator(DB(":memory:"), glossary_file=tmp_path / "g.json", client=mock_google(kw.pop("calls", None), kw.pop("status", 200)), endpoint="https://mock.test/t",
                    sleep=lambda s: None, **kw)
     return t
 
@@ -217,3 +217,23 @@ def test_old_product_can_be_previewed_and_posted(tmp_path):
     art = e.fetch_article(key)
     assert art.title.startswith("EN(") and art.scheduled == "Scheduled Release: Apr 2027"
     assert e.post_now(137248)["status"] == "posted" and len(tg.sent) == 1
+
+
+def test_translator_falls_back_to_next_service(tmp_path):
+    seen = []
+
+    def handler(req: httpx.Request):
+        seen.append(req.url.host)
+        if req.url.host == "clients5.google.com":
+            return httpx.Response(429, text="no")
+        if req.url.host == "translate.googleapis.com":
+            return httpx.Response(200, json=[[["plush doll", "x", None, None, 1]]])
+        return httpx.Response(500)
+    t = Translator(DB(":memory:"), glossary_file=tmp_path / "g.json", client=httpx.Client(transport=httpx.MockTransport(handler)),
+                   sleep=lambda s: None)
+    assert t.translate("毛绒布偶") == "plush doll" and seen[:2] == ["clients5.google.com", "translate.googleapis.com"]
+    assert t.blocked_until == 0
+    # the Chrome-dictionary answer format
+    t2 = Translator(DB(":memory:"), glossary_file=tmp_path / "g2.json", sleep=lambda s: None,
+                    client=httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json=["plush doll"]))))
+    assert t2.translate("毛绒布偶") == "plush doll"

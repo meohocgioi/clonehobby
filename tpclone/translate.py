@@ -117,26 +117,57 @@ class Translator:
             finally:
                 self._last = time.time()
 
+    UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+          "Chrome/124.0.0.0 Safari/537.36")
+
+    @staticmethod
+    def _parse_clients5(j) -> str:
+        # ["text"]  or  [["text", "zh-CN"]]
+        first = j[0]
+        out = first[0] if isinstance(first, list) else first
+        if not isinstance(out, str):
+            raise TypeError("unexpected answer")
+        return out
+
+    @staticmethod
+    def _parse_gtx(j) -> str:
+        return "".join(seg[0] for seg in j[0] if seg and seg[0])
+
     def _google_free(self, text: str, sl: str) -> str:
-        urls = [self.endpoint] if self.endpoint else ["https://translate.googleapis.com/translate_a/single",
-                                                      "https://translate.google.com/translate_a/single"]
-        last = ""
-        for url in urls:
+        """Free endpoints, tried in turn (each one rate-limits on its own): the Chrome-dictionary one, the classic
+        'gtx' one, and MyMemory as the last resort."""
+        gtx = {"client": "gtx", "sl": sl, "tl": "en", "dt": "t", "q": text}
+        tries = [(self.endpoint, gtx, self._parse_gtx)] if self.endpoint else [
+            ("https://clients5.google.com/translate_a/t",
+             {"client": "dict-chrome-ex", "sl": sl, "tl": "en", "q": text}, self._parse_clients5),
+            ("https://translate.googleapis.com/translate_a/single", gtx, self._parse_gtx),
+            ("https://translate.google.com/translate_a/single", gtx, self._parse_gtx)]
+        errors = []
+        for url, params, parse in tries:
             try:
-                r = self.client.get(url, params={"client": "gtx", "sl": sl, "tl": "en", "dt": "t", "q": text})
-            except httpx.HTTPError as e:
-                last = f"{type(e).__name__}: {e}"
-                continue
-            if r.status_code == 200:
-                try:
-                    return "".join(seg[0] for seg in r.json()[0] if seg and seg[0])
-                except (ValueError, IndexError, TypeError, KeyError) as e:
-                    last = f"unexpected answer: {e}"
+                r = self.client.get(url, params=params, headers={"User-Agent": self.UA})
+                if r.status_code != 200:
+                    errors.append(f"HTTP {r.status_code}")
                     continue
-            last = f"HTTP {r.status_code}"
-            if r.status_code == 429:
-                self.blocked_until = time.time() + 600
-        raise TranslateError(f"Google Translate: {last}")
+                out = parse(r.json())
+                if out:
+                    return out
+                errors.append("empty answer")
+            except (httpx.HTTPError, ValueError, IndexError, TypeError, KeyError) as e:
+                errors.append(f"{type(e).__name__}")
+        if not self.endpoint and len(text) <= 450:
+            try:
+                r = self.client.get("https://api.mymemory.translated.net/get",
+                                    params={"q": text, "langpair": f"{sl}|en"}, headers={"User-Agent": self.UA})
+                if r.status_code == 200:
+                    out = (r.json().get("responseData") or {}).get("translatedText") or ""
+                    if out and "MYMEMORY WARNING" not in out.upper():
+                        return out
+                errors.append(f"MyMemory HTTP {r.status_code}")
+            except (httpx.HTTPError, ValueError) as e:
+                errors.append(f"MyMemory {type(e).__name__}")
+        self.blocked_until = time.time() + 120      # every service said no: stop hammering for a couple of minutes
+        raise TranslateError("Google Translate: " + ", ".join(errors))
 
     def _google_cloud(self, text: str, sl: str) -> str:
         if not self.api_key:
