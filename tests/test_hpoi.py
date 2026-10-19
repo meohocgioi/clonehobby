@@ -267,7 +267,7 @@ def test_date_repost_from_seen_items(tmp_path):
         assert e.process(row) == "posted"
     assert e.plan_date(plan["date"])["state"] == "all_published"
     empty = e.plan_date("2001-01-01")
-    assert empty["state"] == "empty" and "No HPOI items found" in empty["message"]
+    assert empty["state"] == "empty" and "No HPOI items found" in empty["message"] and "Scanned 25 items on 3 page(s)" in empty["message"]
 
 
 def test_parse_last_time_and_scrolling_pages(tmp_path):

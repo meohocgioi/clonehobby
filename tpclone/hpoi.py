@@ -342,9 +342,14 @@ class HpoiEngine(Engine):
         for r in self.db.by_date(date):
             found.setdefault(r["post_id"], r.get("title"))
         rep = self._date_report(date, found, {}, say)
+        back = oldest(cards)
+        scanned = (f"Scanned {len(cards)} items on {pages} page(s), back to "
+                   f"{datetime.fromtimestamp(back, ZoneInfo(self.s.site_tz)).date() if back else '?'}"
+                   f"{' - stopped at the safety limit' if capped else ''}.")
         if rep["state"] == "empty":
-            rep["message"] = (f"No HPOI items found for {date} (looked through {len(cards)} items on {pages} page(s)"
-                              f"{'; stopped at the safety limit' if capped else ''}).")
+            rep["message"] = f"No HPOI items found for {date}."
+        rep["message"] += f" ({scanned})"
+        rep["scanned"] = {"items": len(cards), "pages": pages}
         return rep
 
     # ---- discovery ------------------------------------------------------------
