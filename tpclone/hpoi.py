@@ -15,6 +15,7 @@ import re
 import time
 import zlib
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -152,6 +153,33 @@ def scheduled_line(release: list[str]) -> str | None:
     return f"Scheduled Release: {text}"
 
 
+def published_at(age: str, now: float) -> float | None:
+    """'4小时前' / '25分钟前' / '2天前' / '刚刚' / '昨天' / '10-17' -> estimated Unix time of the news item."""
+    age = _clean(age)
+    if not age:
+        return None
+    if age in ("刚刚", "刚才"):
+        return now
+    m = re.match(r"(\d+)\s*(秒|分钟|分|小时|天|日|周|个月)前", age)
+    if m:
+        unit = {"秒": 1, "分钟": 60, "分": 60, "小时": 3600, "天": 86400, "日": 86400, "周": 604800, "个月": 2592000}[m.group(2)]
+        return now - int(m.group(1)) * unit
+    if age.startswith("昨天"):
+        return now - 86400
+    m = re.match(r"(?:(\d{4})[-/.])?(\d{1,2})[-/.](\d{1,2})", age)
+    if m:
+        from datetime import datetime as D
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("Asia/Shanghai")
+        nowd = D.fromtimestamp(now, tz)
+        try:
+            d = D(int(m.group(1) or nowd.year), int(m.group(2)), int(m.group(3)), 12, tzinfo=tz)
+        except ValueError:
+            return None
+        return d.timestamp() if d <= nowd else d.replace(year=d.year - 1).timestamp()
+    return None
+
+
 # ----------------------------------------------------------------------------- settings
 def derive_settings(main: Settings) -> Settings:
     """The HPOI engine's own view of the settings (shares the bot token, may use another channel)."""
@@ -179,6 +207,8 @@ class HpoiEngine(Engine):
         super().__init__(s, db, fetcher or Fetcher(s), tg)
         db._x("CREATE TABLE IF NOT EXISTS hpoi_items (key INTEGER PRIMARY KEY, hobby_id INTEGER NOT NULL, headline TEXT, "
               "name TEXT, category TEXT, kind TEXT, cover TEXT, seen_at REAL)")
+        for r in db._q("SELECT p.post_id, h.seen_at FROM posts p JOIN hpoi_items h ON h.key=p.post_id WHERE p.post_date IS NULL"):
+            db.set_meta(r["post_id"], None, datetime.fromtimestamp(r["seen_at"] or time.time(), ZoneInfo(self.s.site_tz)).date().isoformat())
         self.translator = Translator(db, main.translator, main.translate_api_key,
                                      glossary_file=main.data_dir / "hpoi_glossary.json")
 
@@ -253,6 +283,28 @@ class HpoiEngine(Engine):
                        "VALUES(?,?,?,?,?,?,?,?)",
                        (c["key"], c["id"], c["headline"], c["name"], c["category"], c["kind"], c["cover"], time.time()))
 
+    def _date_of(self, card: dict, now: float) -> str:
+        """Day (site time) the item was published: the card's age ('4 hours ago') counted back from now."""
+        ts = published_at(card.get("age", ""), now) or now
+        return datetime.fromtimestamp(ts, ZoneInfo(self.s.site_tz)).date().isoformat()
+
+    def plan_date(self, date: str, margin: int = 25, tail: int = 60, progress=None) -> dict:
+        """HPOI has no browsable archive without the /api/ area that robots.txt asks robots to leave alone, so a day can
+        only be rebuilt from the items this app has SEEN on the homepage list (its ~20 newest cards, read every poll)."""
+        say = progress or (lambda m: None)
+        say("reading the HPOI Latest Info list")
+        try:
+            self.discover(manual=True)
+        except Exception as e:  # noqa: BLE001
+            say(f"(could not refresh the list: {e})")
+        found = {r["post_id"]: r.get("title") for r in self.db.by_date(date)}
+        rep = self._date_report(date, found, {}, say)
+        if rep["state"] == "empty":
+            rep["message"] = (f"No HPOI items recorded for {date}. The app can only see the newest ~20 items of hpoi.net's "
+                              f"Latest Info list (about a day or two back) and remembers everything it has seen since it "
+                              f"started. Older days cannot be listed; paste a product link into the preview box to post one by hand.")
+        return rep
+
     # ---- discovery ------------------------------------------------------------
     def _discover(self, manual: bool = False) -> tuple[int, int]:
         t0 = time.time()
@@ -260,11 +312,13 @@ class HpoiEngine(Engine):
         self.db.kv_set("listing_info", json.dumps({"count": len(cards), "error": None, "ts": time.time()}))
         if not cards:
             raise FetchError("the HPOI homepage showed no 'Latest Info' cards (page layout changed?)")
+        now = time.time()
         self._remember(cards)
         self.db.kv_set("listing_max_id", max(c["id"] for c in cards))
         for c in cards:
             self.db.upsert_seen(c["key"], f"{BASE}hobby/{c['id']}", None, "known", "hpoi")
-            self.db.set_meta(c["key"], c["headline"], None)
+            self.db.set_meta(c["key"], c["headline"],
+                             (self.db.get(c["key"]) or {}).get("post_date") or self._date_of(c, now))   # first sighting decides the day
         first_run = self.db.kv_get("baseline_done") is None
         ordered = sorted(cards, key=lambda c: c["id"])                         # oldest first
         if first_run:

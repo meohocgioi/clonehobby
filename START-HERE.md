@@ -132,7 +132,7 @@ The same app can copy the newest items of **hpoi.net → 最新情报 (Latest In
 * Names the machine gets wrong can be fixed in `hpoi_glossary.json` in your data folder (it already holds the spellings
   you asked for, e.g. 伊地知星歌 → Ijichi Seika). Add lines like `"中文名": "English Name"`; they apply to the next post.
 * If Google Translate is busy, the post simply waits and retries – nothing is ever posted untranslated.
-* The first time you press Start, the items already on the list are marked “seen” (not posted); only later ones are posted.
+* **Repost by date** works for days the app has already seen (see below). The first time you press Start, the items already on the list are marked “seen” (not posted); only later ones are posted.
   The tab's list shows the latest items, each with a **Post** button for sending one by hand.
 * It is polite to the website: one page read every 10 minutes, at least 5 seconds between requests, never the `/api/` area.
   HPOI content is shared by its users – the credit link keeps the source visible.

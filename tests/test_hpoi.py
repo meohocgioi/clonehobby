@@ -237,3 +237,30 @@ def test_translator_falls_back_to_next_service(tmp_path):
     t2 = Translator(DB(":memory:"), glossary_file=tmp_path / "g2.json", sleep=lambda s: None,
                     client=httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json=["plush doll"]))))
     assert t2.translate("毛绒布偶") == "plush doll"
+
+
+def test_published_at_ages():
+    now = 1_800_000_000.0
+    assert hpoi.published_at("4小时前", now) == now - 4 * 3600
+    assert hpoi.published_at("25分钟前", now) == now - 25 * 60
+    assert hpoi.published_at("2天前", now) == now - 2 * 86400
+    assert hpoi.published_at("刚刚", now) == now and hpoi.published_at("", now) is None
+
+
+def test_date_repost_from_seen_items(tmp_path):
+    e, tg, _ = make(tmp_path)
+    e.discover()                                              # baseline: 5 cards, all 'skipped', dated by their age
+    rows = e.db.recent_posts(10)
+    assert all(r["status"] == "skipped" for r in rows)
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    today = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+    dates = {e.db.get(r["post_id"])["post_date"] for r in rows}
+    plan = e.plan_date(sorted(dates)[0])
+    assert plan["total"] >= 1 and plan["to_publish"] and plan["state"] == "none"
+    assert e.enqueue_date(plan["date"], plan["to_publish"]) == len(plan["to_publish"])
+    while (row := e.db.next_pending()):
+        assert e.process(row) == "posted"
+    assert e.plan_date(plan["date"])["state"] == "all_published"
+    empty = e.plan_date("2001-01-01")
+    assert empty["state"] == "empty" and "Latest Info" in empty["message"]

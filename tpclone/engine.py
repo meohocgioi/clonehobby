@@ -822,7 +822,10 @@ class Engine:
             self.db.kv_set("gap_missing", json.dumps({str(k): v for k, v in sorted(missing.items())[-5000:]}))
         for r in self.db.by_date(date):
             found.setdefault(r["post_id"], r.get("title"))
+        return self._date_report(date, found, lm, say)
 
+    def _date_report(self, date: str, found: dict, lm: dict, say: Callable[[str], None]) -> dict:
+        """Compare the posts found for a date with the ledger / the channel and say what can be published."""
         # record them (visible on the site, nothing queued yet)
         self.db.bulk_seen([(p, self.post_url(p), lm.get(p)) for p in found], "known", "date-scan", priority=1)
         for p, t in found.items():     # titles/dates fetched before the row existed were not saved yet

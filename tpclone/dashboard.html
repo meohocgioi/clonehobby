@@ -115,7 +115,7 @@
     <table id="recent-tbl"></table>
   </div>
 
-  <div class="card toyonly">
+  <div class="card">
     <h2>Repost older posts by date</h2>
     <div class="row">
       <input type="date" id="date"> <button id="plan">Check date</button>
@@ -126,6 +126,7 @@
       <div class="row"><button class="go" id="pub"></button><button id="cancel">Cancel</button></div>
       <table id="plan-tbl"></table>
     </div>
+    <p class="mut" id="hp_datenote" hidden>For HPOI the app can only list days it has already seen (the newest ~20 items of the website's list, remembered from the moment you started it).</p>
     <p class="mut">Queued reposts are published by the worker (press Start) at the configured delay; they never repeat posts already published.</p>
   </div>
 
@@ -222,8 +223,9 @@ $('pub').onclick=async()=>{const r=await api('/api/date/publish',{date:planData.
 $('cancel').onclick=()=>{$('plan-out').hidden=true};
 
 let settingsLoaded=false;
+function clearPlan(){ if(window._planSrc!==SRC){ window._planSrc=SRC; $('plan-out').hidden=true; planData=null; $('prog').textContent='' } }
 function showRecent(s){
-  const hp=SRC==='hpoi'; $('recentcard').hidden=!hp; $('h1name').textContent=hp?'HPOI':'Toy-People';
+  const hp=SRC==='hpoi'; $('recentcard').hidden=!hp; $('hp_datenote').hidden=!hp; clearPlan(); $('h1name').textContent=hp?'HPOI':'Toy-People';
   document.querySelectorAll('.toyonly').forEach(e=>e.style.display=hp?'none':'');
   $('pv_in').placeholder=hp?'item link or number, e.g. https://www.hpoi.net/hobby/137248':'post number or link, e.g. 114949';
   if(!hp) return;
