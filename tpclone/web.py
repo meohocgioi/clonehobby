@@ -18,6 +18,7 @@ from .engine import Engine, Worker
 from .telegram import TelegramError
 
 DATE_RX = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+BOOT = time.time()            # tells the page that the app has restarted
 
 
 class Jobs:
@@ -89,7 +90,7 @@ def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | No
             "chat": s.telegram_chat_id, "chat_link": chat_link(), "configured": s.telegram_ready,
             "last_backup": float(db.kv_get("last_backup_ts", "0") or 0) or None,
             "watch": db.kv_json("discover_status"), "listing": db.kv_json("listing_info"), "listing_max": db.kv_get("listing_max_id"), "poll_every": s.poll_interval_seconds, "data_dir": str(s.data_dir.resolve()), "probe": db.kv_get("probe_ok"), "version": tpclone.code_version(), "code_dir": tpclone.__path__[0], "update": db.kv_json("update_info"),
-            "sources": list(all_sources), "today": db.today_counts(since),
+            "sources": list(all_sources), "today": db.today_counts(since), "boot": BOOT,
         }
 
     def settings_view() -> dict:
@@ -100,6 +101,8 @@ def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | No
             v = getattr(s, k)
             out[k] = ("••••••" + v[-4:]) if v else ""
         out["hpoi_available"] = "hpoi" in all_sources
+        out["data_dir"] = str(s.data_dir.resolve())
+        out["can_restart"] = restart is not None
         out["configured"] = s.telegram_ready
         out["show_more_styles"] = render.SHOW_MORE_STYLES
         out["paragraph_spacings"] = render.PARAGRAPH_SPACING
@@ -344,6 +347,19 @@ def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | No
                         finally:
                             update_lock.release()
                     return self._json({"job": jobs.run(do_apply)})
+                if path == "/api/telegram/check":     # can the bot post in this website's channel?
+                    if not eng.tg:
+                        return self._json({"error": "Set the bot token and channel first."})
+                    try:
+                        return self._json({"ok": True, **eng.tg.check()})
+                    except Exception as e:  # noqa: BLE001
+                        return self._json({"error": str(e)})
+                if path == "/api/restart":            # e.g. after switching HPOI on/off
+                    if restart is None:
+                        return self._json({"error": "this app cannot restart itself; close it and start it again"}, 400)
+                    engine.db.log("info", "restarting (asked from Settings)")
+                    threading.Timer(1.0, restart).start()
+                    return self._json({"restarting": True})
                 if path == "/api/check-now":
                     def do_check_now(prog):
                         prog("checking the website")

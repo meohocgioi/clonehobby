@@ -24,8 +24,10 @@ if not exist ".venv\Scripts\python.exe" (
   ".venv\Scripts\python.exe" -m pip install --quiet -r requirements.txt playwright || ( echo Install failed - check your internet & pause & exit /b 1 )
 )
 
+set "OPEN=--open"
 :loop
-".venv\Scripts\python.exe" -m tpclone run --open
+".venv\Scripts\python.exe" -m tpclone run %OPEN%
+set "OPEN="
 echo.
 echo The app stopped. Restarting in 10 seconds... (close this window to quit)
 timeout /t 10 /nobreak >nul

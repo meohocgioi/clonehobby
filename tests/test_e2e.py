@@ -55,7 +55,14 @@ class TG(BaseHTTPRequestHandler):
         n = int(self.headers["Content-Length"]); body = self.rfile.read(n)
         if self.path.endswith("/sendRichMessage"):      # (other calls, e.g. the existence probe, are not posts)
             SENT.append({"path": self.path, "ct": self.headers["Content-Type"], "body": body})
-        out = json.dumps({"ok": True, "result": {"message_id": len(SENT)}}).encode()
+        result = {"message_id": len(SENT)}
+        if self.path.endswith("/getMe"):
+            result = {"id": 42, "username": "testbot"}
+        elif self.path.endswith("/getChat"):
+            result = {"id": -100123, "title": "Neko Hobby"}
+        elif self.path.endswith("/getChatMember"):
+            result = {"status": "administrator", "can_post_messages": True}
+        out = json.dumps({"ok": True, "result": result}).encode()
         self.send_response(200); self.send_header("Content-Length", str(len(out))); self.end_headers(); self.wfile.write(out)
 
 
@@ -259,3 +266,30 @@ def test_live_connection_pushes_only_when_something_changes(stack):
     assert got.get(timeout=5) == "data: change"
     post(base, "/api/post/resolve", {"id": 1, "action": "skip"})   # a decision in "Needs your attention"
     assert got.get(timeout=5) == "data: change"
+
+
+def test_settings_page_endpoints(stack):
+    e, w, db, base = stack
+    v = httpx.get(base + "/api/settings").json()
+    assert v["can_restart"] is False and v["data_dir"] and v["hpoi_available"] is False
+    assert "cannot restart" in post(base, "/api/restart")["error"]
+    assert httpx.get(base + "/api/status").json()["boot"] > 0
+    r = post(base, "/api/telegram/check")
+    assert r["ok"] and r["bot"] == "testbot" and r["chat"] == "Neko Hobby"
+    assert httpx.get(base + "/favicon.ico").status_code == 204
+
+
+def test_restart_button_restarts_the_app(tmp_path):
+    called = threading.Event()
+    s = Settings(telegram_bot_token="", telegram_chat_id="", db_path=str(tmp_path / "t.db"), web_port=0)
+    e = Engine(s, DB(s.db_path), Fetcher(s), None)
+    api = make_server(e, Worker(e), restart=called.set)
+    threading.Thread(target=api.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{api.server_port}"
+    try:
+        assert httpx.get(base + "/api/settings").json()["can_restart"] is True
+        assert post(base, "/api/restart")["restarting"] is True
+        assert called.wait(5)
+        assert "token" in post(base, "/api/telegram/check")["error"]       # Telegram not set up yet
+    finally:
+        api.shutdown()

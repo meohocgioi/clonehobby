@@ -50,7 +50,7 @@ To update later: `cd clonehobby && git pull && docker compose up -d --build`
 |---|---|
 | Pause / continue | **■ Stop** / **▶ Start** (it continues exactly where it stopped, never repeats a post) |
 | Post an older day again | **Repost older posts by date** → pick the date → **Check date** → confirm. Posts already sent are never sent twice. |
-| Slow down / speed up | Settings → **Wait between posts** (45 s is safe; Telegram's limit is much looser) |
+| Slow down / speed up | ⚙ Settings → Toy-People (or HPOI) → **Wait between posts** (45 s is safe; Telegram's limit is much looser) |
 | Something shows in red | Look at the **Activity** box. "Needs your attention" lists posts where it isn't sure the post arrived: open your channel and click the matching button. |
 
 ## If something looks wrong
@@ -72,19 +72,19 @@ back automatically. The app also checks twice a day by itself and shows a **"�
 
 * **Private repository?** GitHub then refuses the download ("Update source not found"). Fix it once: either make the
   repository public (GitHub → repository → Settings → Danger Zone → Change visibility), or create a GitHub access token
-  with read access and paste it in Settings → Advanced → *Update access token*.
+  with read access and paste it in ⚙ Settings → Updates → Update source → *Access token*.
 * The very first time (to get the Update button) you still need the manual update once: re-download the ZIP / run
   `git pull && docker compose up -d --build`. After that, only the button.
 * It works the same on your computer and on the VPS/Docker (updates are stored in the `data` folder).
 * Needs the launcher window (or Docker/systemd) to be how you started the app, so it can start again by itself.
 
 ## Changing the look of the "Show More" button
-Settings → **"Show More" button style** (and the emoji next to it). The default is bold CAPITALS with an emoji on both sides,
+⚙ Settings → Toy-People → **"Show More" button** (and the emoji next to it). The default is bold CAPITALS with an emoji on both sides,
 e.g. **👇 SHOW MORE 👇**. Press **Send style samples to my channel** to see every style in your own Telegram first, then choose and **Save**.
 (Telegram rich text has no font sizes, so "bigger" is done with capitals and emoji, which display large.)
 
 ## Space between paragraphs
-Settings → Advanced → **Space between paragraphs**. The default puts a blank line between paragraphs. If your phone shows it
+⚙ Settings → Toy-People → **Space between paragraphs**. The default puts a blank line between paragraphs. If your phone shows it
 differently than you like, press **Send style samples to my channel**: it also posts three spacing samples (blank line,
 empty paragraph, none) so you can pick the one that looks best, then **Save**.
 
@@ -125,7 +125,7 @@ If anything is unclear - for example two unknown messages for one uncertain post
 
 The same app can copy the newest items of **hpoi.net → 最新情报 (Latest Info)** to your channel, in English:
 
-* Open the dashboard: Toy-People and HPOI sit side by side on one page, each with its own Start/Stop. All settings are under the ⚙ gear at the top right (separate sections for each website), together with the backups. The update button is next to the gear.
+* Open the dashboard: Toy-People and HPOI sit side by side on one page, each with its own Start/Stop. All settings are under the ⚙ gear at the top right: a menu on the left (Telegram, Toy-People, HPOI, Backups, Updates), and one **Save changes** bar that appears only when you changed something. The update button is next to the gear.
 * At the top, **Today** shows a ring chart of what was posted since midnight (Toy-People, HPOI) and what failed or is uncertain.
   It updates by itself the moment something happens (the app tells the page; the page does not keep asking).
   Next to it, **Needs your attention** has a tab per website; a red dot on a tab means something new is waiting there.
@@ -138,4 +138,4 @@ The same app can copy the newest items of **hpoi.net → 最新情报 (Latest In
 * **Repost by date** scrolls down hpoi's Latest Info list page by page until it is past the day you chose (one page every 5 seconds). The first time you press Start, the items already on the list are marked “seen” (not posted); only later ones are posted.
   Use the date table or the preview box (with a product link) to post older items by hand.
 * It is polite to the website: one page read every 10 minutes, at least 5 seconds between requests, never the `/api/` area.
-* Settings for it are in **⚙ Settings → HPOI** (another channel, wait time, official Google key).
+* Settings for it are in **⚙ Settings → HPOI** (on/off, wait time, translator); its channel is under ⚙ Settings → Telegram.

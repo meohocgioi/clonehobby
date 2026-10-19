@@ -7,7 +7,9 @@ if [ ! -x .venv/bin/python ]; then
   echo "First run: installing (1-3 minutes, only once)..."
   python3 -m venv .venv && .venv/bin/pip install -q --upgrade pip && .venv/bin/pip install -q -r requirements.txt playwright || { echo "Install failed"; read -p "Press Enter"; exit 1; }
 fi
+OPEN=--open          # open the browser on the first start only (not after every restart)
 while true; do
-  .venv/bin/python -m tpclone run --open
+  .venv/bin/python -m tpclone run $OPEN
+  OPEN=
   echo "The app stopped. Restarting in 10 seconds (close this window to quit)..."; sleep 10
 done

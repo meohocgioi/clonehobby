@@ -77,6 +77,43 @@
   .live{font-size:12px;color:var(--mut);white-space:nowrap} .live .ld{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);margin-right:5px;vertical-align:1px;animation:pulse 2s infinite}
   .live.off .ld{background:var(--bad);animation:none} @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
   @media (prefers-reduced-motion:reduce){.donut .seg,.donut .hero,table.legend td.n{transition:none}.live .ld{animation:none}}
+  [hidden]{display:none!important}
+  /* ---- settings ---- */
+  .sethead{display:flex;align-items:center;gap:12px;margin-bottom:14px} .sethead h2{margin:0;font-size:18px} button.ghost{background:transparent}
+  .setgrid{display:grid;grid-template-columns:180px minmax(0,1fr);gap:18px;align-items:start}
+  .setnav{position:sticky;top:12px;display:flex;flex-direction:column;gap:2px}
+  .setnav button{display:flex;align-items:center;justify-content:space-between;gap:8px;text-align:left;border:1px solid transparent;background:none;padding:9px 12px;border-radius:8px;color:var(--mut);font-weight:600}
+  .setnav button:hover{color:var(--fg);background:color-mix(in srgb,var(--fg) 5%,transparent)}
+  .setnav button.on{color:var(--fg);background:var(--card);border-color:var(--line);box-shadow:inset 3px 0 0 var(--ok)}
+  .setnav .nd{width:7px;height:7px;border-radius:50%;background:var(--warn);flex:none}
+  .setsec{padding:20px 22px;margin-bottom:0} .setsec h3{font-size:19px;margin:0 0 4px} .setsec .lead{color:var(--mut);margin:0 0 6px;font-size:14px}
+  .setsec h4{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--mut);margin:26px 0 0}
+  .srow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,330px);gap:10px 28px;padding:16px 0;border-top:1px solid var(--line);align-items:center}
+  .st{font-weight:600;font-size:15px} .sd{font-size:13px;color:var(--mut);margin-top:3px;line-height:1.45} .sd code,.lead code{font-size:12px}
+  .sc input[type=text],.sc input[type=password],.sc input[type=number],.sc select{max-width:none;width:100%}
+  .unit{display:flex;align-items:center;gap:10px} .unit input{width:96px!important;flex:none} .unit span{color:var(--mut);font-size:14px}
+  .btns{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-items:center}
+  .secret{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 6px 6px 12px;border:1px solid var(--line);border-radius:8px;font-size:14px}
+  .chk{display:flex!important;align-items:center;gap:8px;margin:0 0 8px!important;font-weight:400!important;font-size:14px!important}
+  .switch{position:relative;display:inline-block!important;width:46px;height:26px;margin:0!important}
+  .switch input{opacity:0;width:0;height:0;position:absolute}
+  .switch .knob{position:absolute;inset:0;background:color-mix(in srgb,var(--mut) 45%,transparent);border-radius:99px;transition:.2s;cursor:pointer}
+  .switch .knob:before{content:"";position:absolute;width:20px;height:20px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+  .switch input:checked+.knob{background:var(--ok)} .switch input:checked+.knob:before{transform:translateX(20px)}
+  .switch input:focus-visible+.knob{outline:2px solid var(--ok);outline-offset:2px}
+  .notice{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:8px;background:color-mix(in srgb,var(--warn) 14%,transparent);font-size:14px;margin:4px 0 8px}
+  .setup{padding:12px 14px;border-radius:8px;background:color-mix(in srgb,var(--ok) 10%,transparent);margin:8px 0 6px;font-size:14px}
+  #hp_rows.dim{opacity:.55}
+  .smprev{display:inline-block;margin-left:4px;font-weight:800;color:var(--fg)} .smprev.plain{font-weight:400} .smprev.highlight{background:#fff3a3;color:#111;padding:0 4px;border-radius:3px}
+  .smprev.pill{background:#3a9ee0;color:#fff;border-radius:99px;padding:1px 12px;font-weight:600} .smprev.telegram{font-weight:400;color:var(--mut)}
+  a.btn{display:inline-block;padding:8px 16px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);text-decoration:none;white-space:nowrap}
+  details.advx{margin-top:18px;border-top:1px solid var(--line);padding-top:12px} details.advx summary{cursor:pointer;color:var(--mut);font-weight:600}
+  .savebar{position:sticky;bottom:14px;z-index:6;display:flex;align-items:center;gap:10px;margin-top:14px;padding:10px 12px 10px 18px;border-radius:12px;background:var(--fg);color:var(--bg);box-shadow:0 10px 30px rgba(0,0,0,.25)}
+  .savebar .grow{flex:1} .savebar #discard{background:transparent;color:var(--bg);border-color:color-mix(in srgb,var(--bg) 40%,transparent)} .savebar .go{border-color:var(--ok)}
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:30;background:var(--fg);color:var(--bg);padding:10px 18px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.25);font-size:14px;max-width:90vw}
+  .toast.bad{background:var(--bad);color:#fff}
+  @media(max-width:760px){.setgrid{grid-template-columns:minmax(0,1fr)} .setnav{position:static;flex-direction:row;flex-wrap:wrap;gap:4px} .setnav button{white-space:nowrap;padding:7px 10px}
+    .srow{grid-template-columns:minmax(0,1fr)} .btns{justify-content:flex-start} .setsec{padding:16px}}
 </style>
 </head>
 <body>
@@ -144,68 +181,180 @@
 
   <!-- ============================== SETTINGS ============================== -->
   <div id="view_set" hidden>
-    <div class="row" style="margin-bottom:12px"><button id="back">← Back to the dashboard</button><h2 style="margin:0">Settings</h2></div>
-    <div class="card">
-      <div id="setup-help" hidden>
-        <b>First, connect your Telegram channel (one time, 2 minutes):</b>
-        <ol class="how">
-          <li>In Telegram open <b>@BotFather</b> → send <code>/newbot</code> → follow the steps. It gives you a long <b>token</b>; paste it below.</li>
-          <li>Open your channel → <b>Administrators</b> → <b>Add Administrator</b> → search your new bot → allow <b>Post messages</b>.</li>
-          <li>Type your channel name below (like <code>@mychannel</code>). For a private channel use its number (starts with -100).</li>
-        </ol>
+    <div class="sethead"><button id="back" class="ghost">← Dashboard</button><h2>Settings</h2></div>
+    <div class="setgrid">
+      <nav class="setnav" id="setnav" aria-label="Settings sections">
+        <button data-sec="tg" class="on">Telegram<i class="nd" hidden></i></button>
+        <button data-sec="tp">Toy-People<i class="nd" hidden></i></button>
+        <button data-sec="hp">HPOI<i class="nd" hidden></i></button>
+        <button data-sec="bk">Backups</button>
+        <button data-sec="up">Updates<i class="nd" hidden></i></button>
+      </nav>
+      <div class="setbody">
+
+        <!-- Telegram -->
+        <section class="card setsec" id="sec_tg">
+          <h3>Telegram</h3>
+          <p class="lead">The bot that posts for you, and the channels it posts to.</p>
+          <div class="setup" id="setup-help" hidden>
+            <b>First time? Connect your channel (one time, 2 minutes):</b>
+            <ol class="how">
+              <li>In Telegram open <b>@BotFather</b> → send <code>/newbot</code> → follow the steps. It gives you a long <b>token</b>; paste it below.</li>
+              <li>Open your channel → <b>Administrators</b> → <b>Add Administrator</b> → choose your new bot → allow <b>Post messages</b>.</li>
+              <li>Type your channel name below (like <code>@mychannel</code>) and press <b>Save changes</b>.</li>
+            </ol>
+          </div>
+          <div class="srow">
+            <div><div class="st">Bot token</div><div class="sd">From <b>@BotFather</b>. Used for both websites.</div></div>
+            <div class="sc"><div class="secret" data-for="f_token" hidden><span>Saved · ends with <b data-r="tail"></b></span><button type="button" class="sm" data-r="change">Change</button></div>
+              <input type="password" id="f_token" autocomplete="off" placeholder="123456:ABC-DEF…"></div>
+          </div>
+          <div class="srow">
+            <div><div class="st">Toy-People channel</div><div class="sd">Like <code>@mychannel</code>, or the number of a private channel (starts with -100).</div></div>
+            <div class="sc"><input type="text" id="f_chat" placeholder="@mychannel"></div>
+          </div>
+          <div class="srow hp-on">
+            <div><div class="st">HPOI channel</div><div class="sd">Post HPOI items to the same channel, or to another one.</div></div>
+            <div class="sc"><label class="chk"><input type="checkbox" id="f_hsame"> Same channel as Toy-People</label>
+              <input type="text" id="f_hchat" placeholder="@otherchannel"></div>
+          </div>
+          <div class="srow">
+            <div><div class="st">Connection</div><div class="sd" id="conn_out">Checks that the bot is an admin that may post in your channel(s).</div></div>
+            <div class="sc btns"><button type="button" id="conn_chk">Check connection</button></div>
+          </div>
+          <div class="srow">
+            <div><div class="st">Test post</div><div class="sd" id="test_out">Sends a small post with a “Show More” button, to see that everything works.</div></div>
+            <div class="sc btns"><button type="button" id="test_tp">Send to Toy-People</button><button type="button" id="test_hp" class="hp-run">Send to HPOI</button></div>
+          </div>
+        </section>
+
+        <!-- Toy-People -->
+        <section class="card setsec" id="sec_tp" hidden>
+          <h3>Toy-People</h3>
+          <p class="lead">How often to look at toy-people.com, and how its posts look in your channel.</p>
+          <h4>Schedule</h4>
+          <div class="srow">
+            <div><div class="st">Wait between posts</div><div class="sd">Pause between two posts in the channel. Telegram needs at least 3 seconds.</div></div>
+            <div class="sc"><div class="unit"><input type="number" id="f_delay" min="3" step="1"><span>seconds</span></div></div>
+          </div>
+          <div class="srow">
+            <div><div class="st">Check the website every</div><div class="sd">How often the app looks for new posts.</div></div>
+            <div class="sc"><div class="unit"><input type="number" id="f_poll" min="1" step="1"><span>minutes</span></div></div>
+          </div>
+          <div class="srow">
+            <div><div class="st">On the very first start</div><div class="sd">Also post this many of the newest posts. 0 = only posts that appear after that.</div></div>
+            <div class="sc"><div class="unit"><input type="number" id="f_init" min="0" step="1"><span>posts</span></div></div>
+          </div>
+          <h4>Look of the posts</h4>
+          <div class="srow">
+            <div><div class="st">Hashtags</div><div class="sd">Plain words, or tappable #hashtags.</div></div>
+            <div class="sc"><select id="f_hash"><option value="plain">Same text as on the website</option><option value="hashtag">Clickable #Hashtags</option></select></div>
+          </div>
+          <div class="srow">
+            <div><div class="st">“Show More” button</div><div class="sd">The line people tap to open the full post. Preview: <span class="smprev" id="sm_prev"></span></div></div>
+            <div class="sc"><select id="f_style"></select>
+              <div class="unit" style="margin-top:8px"><input type="text" id="f_emoji" maxlength="4" placeholder="👇" style="width:80px!important"><span>emoji on both sides</span></div></div>
+          </div>
+          <div class="srow">
+            <div><div class="st">Space between paragraphs</div><div class="sd">A blank line keeps long texts readable.</div></div>
+            <div class="sc"><select id="f_spacing"></select></div>
+          </div>
+          <div class="srow">
+            <div><div class="st">Not sure what looks best?</div><div class="sd" id="samples-out">Sends one sample post per style to your channel. Pick the one that works on your phone.</div></div>
+            <div class="sc btns"><button type="button" id="samples">Send style samples</button></div>
+          </div>
+        </section>
+
+        <!-- HPOI -->
+        <section class="card setsec" id="sec_hp" hidden>
+          <h3>HPOI</h3>
+          <p class="lead">The newest items of hpoi.net's “最新情报” list, translated to English.</p>
+          <div class="srow">
+            <div><div class="st">Watch HPOI</div><div class="sd">Switching it on or off needs a quick restart of the app (one click, after saving).</div></div>
+            <div class="sc btns"><label class="switch"><input type="checkbox" id="f_hon"><span class="knob"></span></label></div>
+          </div>
+          <div class="notice" id="hp_restart" hidden><span id="hp_restart_txt"></span> <button type="button" class="go sm" id="restart_now">Restart the app now</button></div>
+          <div id="hp_rows">
+            <h4>Schedule</h4>
+            <div class="srow">
+              <div><div class="st">Wait between posts</div><div class="sd">Pause between two HPOI posts.</div></div>
+              <div class="sc"><div class="unit"><input type="number" id="f_hdelay" min="3" step="1"><span>seconds</span></div></div>
+            </div>
+            <div class="srow">
+              <div><div class="st">Check HPOI every</div><div class="sd">At least 1 minute: hpoi.net asks robots to go slowly.</div></div>
+              <div class="sc"><div class="unit"><input type="number" id="f_hpoll" min="1" step="1"><span>minutes</span></div></div>
+            </div>
+            <div class="srow">
+              <div><div class="st">On the very first start</div><div class="sd">Also post this many of the newest items. 0 = only items that appear after that.</div></div>
+              <div class="sc"><div class="unit"><input type="number" id="f_hinit" min="0" step="1"><span>items</span></div></div>
+            </div>
+            <h4>Translation</h4>
+            <div class="srow">
+              <div><div class="st">Translator</div><div class="sd">Titles and hashtags are translated to English. If it is busy, a post waits — it is never posted untranslated.</div></div>
+              <div class="sc"><select id="f_tr"><option value="google_free">Free Google Translate (no key)</option><option value="google_cloud">Google Cloud Translation (API key)</option></select></div>
+            </div>
+            <div class="srow" id="row_key">
+              <div><div class="st">Google Cloud API key</div><div class="sd">Only for “Google Cloud Translation”.</div></div>
+              <div class="sc"><div class="secret" data-for="f_key" hidden><span>Saved · ends with <b data-r="tail"></b></span><button type="button" class="sm" data-r="change">Change</button></div>
+                <input type="password" id="f_key" autocomplete="off" placeholder="AIza…"></div>
+            </div>
+            <div class="srow">
+              <div><div class="st">Name fixes</div><div class="sd">Wrong English name? Add <code>"中文名": "English Name"</code> to <code>hpoi_glossary.json</code> in your data folder. Used from the next post on.</div></div>
+              <div class="sc btns"><button type="button" class="copy-dir">Copy folder path</button></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Backups -->
+        <section class="card setsec" id="sec_bk" hidden>
+          <h3>Backups</h3>
+          <p class="lead">Every day the app saves a copy of each posted-list and keeps the last 14 days, so a post is never published twice — even after moving the app.</p>
+          <div id="bk_rows"></div>
+          <div class="srow">
+            <div><div class="st">Data folder</div><div class="sd"><code id="bk_dir"></code></div></div>
+            <div class="sc btns"><button type="button" class="copy-dir">Copy path</button></div>
+          </div>
+          <h4>Restore</h4>
+          <div class="srow">
+            <div><div class="st">Import an old posted-list</div><div class="sd">Moved or re-downloaded the app and it forgot what it posted? Choose your old <code>tpclone.db</code> or a backup file. Posts it knew are added to Toy-People; nothing is deleted.</div></div>
+            <div class="sc"><div class="btns" style="flex-wrap:nowrap"><input type="file" id="imp_file" accept=".db" style="min-width:0;flex:1"><button type="button" id="imp_go">Import</button></div>
+              <div class="mut small" id="imp_out" style="margin-top:6px;text-align:right"></div></div>
+          </div>
+        </section>
+
+        <!-- Updates -->
+        <section class="card setsec" id="sec_up" hidden>
+          <h3>Updates</h3>
+          <p class="lead">The app can update itself: it downloads the newest version, tests it and restarts. Your settings and posted-lists are never touched; if the new version fails to start, the old one comes back.</p>
+          <div class="srow">
+            <div><div class="st">Version</div><div class="sd" id="ver"></div></div>
+            <div class="sc btns"><button type="button" id="up_btn">Check for updates</button></div>
+          </div>
+          <details class="advx"><summary>Update source (advanced)</summary>
+            <div class="srow">
+              <div><div class="st">Repository</div><div class="sd">Where new versions come from (owner/name).</div></div>
+              <div class="sc"><input type="text" id="f_urepo" placeholder="owner/name"></div>
+            </div>
+            <div class="srow">
+              <div><div class="st">Branch</div></div>
+              <div class="sc"><input type="text" id="f_ubranch"></div>
+            </div>
+            <div class="srow">
+              <div><div class="st">Access token</div><div class="sd">Only needed if the repository is private.</div></div>
+              <div class="sc"><div class="secret" data-for="f_utoken" hidden><span>Saved · ends with <b data-r="tail"></b></span><button type="button" class="sm" data-r="change">Change</button></div>
+                <input type="password" id="f_utoken" autocomplete="off" placeholder="github_pat_…"></div>
+            </div>
+          </details>
+        </section>
+
+        <div class="savebar" id="savebar" hidden>
+          <span>You have unsaved changes</span><span class="grow"></span>
+          <button type="button" id="discard">Discard</button><button type="button" class="go" id="save">Save changes</button>
+        </div>
       </div>
-
-      <div class="sec" style="margin-top:0"><h2>Telegram (shared by both websites)</h2>
-        <label>Bot token</label><input type="password" id="s_token" autocomplete="off" placeholder="123456:ABC-DEF...">
-      </div>
-
-      <div class="sec"><h2>Toy-People</h2>
-        <label>Channel</label><input type="text" id="s_chat" placeholder="@mychannel">
-        <label>Wait between posts (seconds)</label><input type="number" id="s_delay" min="3" step="1">
-        <label>Check the website every (seconds)</label><input type="number" id="s_poll" min="60">
-        <label>On the very first start, also publish the latest N posts (0 = none, only future posts)</label><input type="number" id="s_init" min="0">
-        <label>Hashtags</label><select id="s_hash"><option value="plain">Same text as on the website</option><option value="hashtag">Clickable #Hashtags</option></select>
-        <label>"Show More" button style</label><select id="s_style"></select>
-        <label>Space between paragraphs</label><select id="s_spacing"></select>
-        <label>Emoji on both sides of the button text</label><input type="text" id="s_emoji" maxlength="4" style="max-width:120px" placeholder="👇">
-        <p class="mut" style="margin:4px 0 0">Not sure which looks best? <button id="samples" type="button">Send style samples to my channel</button> then pick the one that works on your phone. “Plain toggle” is the safest.</p>
-        <div id="samples-out" class="mut"></div>
-      </div>
-
-      <div class="sec" id="hpoi_set"><h2>HPOI (hpoi.net)</h2>
-        <label>Watch HPOI too (takes effect after the app restarts)</label><select id="h_on"><option value="true">Yes</option><option value="false">No</option></select>
-        <label>HPOI channel (empty = the same channel as Toy-People)</label><input type="text" id="h_chat" placeholder="@mychannel">
-        <label>Wait between HPOI posts (seconds)</label><input type="number" id="h_delay" min="3" step="1">
-        <label>Check HPOI every (seconds, at least 60)</label><input type="number" id="h_poll" min="60">
-        <label>On the very first start, also publish the latest N HPOI items (0 = none)</label><input type="number" id="h_init" min="0">
-        <label>Translator</label><select id="h_tr"><option value="google_free">Free Google Translate (no key)</option><option value="google_cloud">Google Cloud Translation (needs an API key)</option></select>
-        <label>Google Cloud API key (only for the option above)</label><input type="password" id="h_key" autocomplete="off">
-        <p class="mut">HPOI hashtags are always clickable. Fix a wrongly translated name in <code>hpoi_glossary.json</code> inside your data folder.</p>
-      </div>
-
-      <p class="row" style="margin-top:16px"><button class="go" id="save">Save &amp; test connection</button><button id="sendtest">Send a test post to Toy-People</button><button id="sendtest_h">Send a test post to HPOI</button></p>
-      <div id="save-out" class="mut"></div>
-    </div>
-
-    <div class="card">
-      <h2>Backup</h2>
-      <p class="mut">Every day the app saves a copy of each posted-list and keeps the last 14 days, in the <code>backups</code> folder inside your data folder. You can also download a copy any time and keep it somewhere safe.</p>
-      <table class="legend" id="bk_tbl"></table>
-      <p class="mut small" id="bk_dir"></p>
-      <h3 class="sub">Import an old posted-list</h3>
-      <p class="mut">Moved or re-downloaded the app and it forgot what it already posted? Choose your old <code>tpclone.db</code> (or a file from the old <code>backups</code> folder, or a downloaded backup). Posts it knew as posted are added to <b>Toy-People</b>, so they won't be posted twice. Nothing is deleted.</p>
-      <div class="row"><input type="file" id="imp_file" accept=".db"><button id="imp_go">Import</button><span class="mut" id="imp_out"></span></div>
-    </div>
-
-    <div class="card">
-      <h2>Advanced: updates</h2>
-      <p class="mut" id="ver"></p>
-      <label>Update source: repository</label><input type="text" id="s_urepo" placeholder="owner/name">
-      <label>Update source: branch</label><input type="text" id="s_ubranch">
-      <label>Update access token (only needed if the repository is private)</label><input type="password" id="s_utoken" autocomplete="off" placeholder="github_pat_...">
-      <p class="mut">Updating (button at the top right of the dashboard) downloads the newest version, tests it, restarts the app by itself (a post in progress finishes first) and reloads the page. Your settings and posted-lists are never touched. If the new version fails to start, the old one comes back automatically.</p>
     </div>
   </div>
+  <div class="toast" id="toast" hidden></div>
 </main>
 <script>
 const $=id=>document.getElementById(id);
@@ -219,10 +368,6 @@ function fmtShort(ts){const d=new Date(ts*1000); return d.toDateString()===new D
 const midnight=()=>Math.floor(new Date().setHours(0,0,0,0)/1000);
 async function pollJob(job,onProg,src){ for(;;){ const j=await api('/api/jobs/'+job,undefined,src); if(j.state==='running'){onProg&&onProg(j.progress); await new Promise(r=>setTimeout(r,800)); continue} return j } }
 
-// ---- views ---------------------------------------------------------------------------------------
-function showView(v){ $('view_dash').hidden=(v!=='dash'); $('view_set').hidden=(v!=='set'); if(v==='set') loadSettings(true); }
-$('gear').onclick=()=>showView($('view_set').hidden?'set':'dash');
-$('back').onclick=()=>showView('dash');
 
 // ---- one status panel per website ---------------------------------------------------------------
 const PANEL=`
@@ -250,7 +395,6 @@ function buildPanels(){
   for(const id of ['pv_src','date_src']){ const sel=$(id); sel.innerHTML=''; sel.hidden=ACTIVE.length<2;
     for(const s of ACTIVE){const o=document.createElement('option'); o.value=s; o.textContent=SOURCES[s]; sel.appendChild(o)} }
   syncSources();
-  $('hpoi_set').hidden=!ACTIVE.includes('hpoi'); $('sendtest_h').hidden=!ACTIVE.includes('hpoi');
 }
 function renderPanel(src,s){
   chatLinks[src]=s.chat_link;
@@ -437,14 +581,6 @@ function renderAttention(all){
 new IntersectionObserver(es=>{ attnVisible=es.some(e=>e.isIntersecting); if(attnVisible) renderAttention() },{threshold:0.3}).observe($('attn'));
 document.addEventListener('visibilitychange',()=>renderAttention());
 
-// ---- backups (settings page) ----------------------------------------------------------------------------------
-function renderBackups(all){
-  const t=$('bk_tbl'); t.textContent='';
-  for(const [src,s] of all){ const tr=t.insertRow(); const b=document.createElement('b'); b.textContent=SOURCES[src]; tr.insertCell().append(b);
-    tr.insertCell().textContent=s.last_backup?('last automatic backup: '+fmt(s.last_backup)):'first automatic backup: within a day';
-    const a=document.createElement('a'); a.href=srcURL('/api/backup',src); a.textContent='Download a backup'; tr.insertCell().append(a); }
-  const tp=all.find(x=>x[0]==='toypeople'); $('bk_dir').textContent=tp?('Your data folder: '+tp[1].data_dir):'';
-}
 async function verifyChannel(src){
   const b=pq(src,'verify'), out=pq(src,'out'); b.disabled=true; out.className='mut'; out.textContent='checking…';
   const {job,error}=await api('/api/verify',{},src); if(error){out.textContent=error;b.disabled=false;return}
@@ -502,49 +638,157 @@ $('pub').onclick=async()=>{const src=planData.src; const r=await api('/api/date/
   $('plan-msg').textContent='Queued '+r.queued+' post(s).'+(r.worker!=='running'?' Press Start to publish them.':''); $('pub').hidden=true; refresh()};
 $('cancel').onclick=()=>{$('plan-out').hidden=true};
 
-// ---- settings ---------------------------------------------------------------------------------------------
-let settingsLoaded=false;
+// ---- settings page ---------------------------------------------------------------------------------------------
+// every editable setting: [element id, setting name, kind, section]
+const F=[
+  ['f_token','telegram_bot_token','secret','tg'], ['f_chat','telegram_chat_id','text','tg'], ['f_hchat','hpoi_chat_id','hchat','tg'],
+  ['f_delay','post_delay_seconds','num','tp'], ['f_poll','poll_interval_seconds','min','tp'], ['f_init','initial_post_latest','num','tp'],
+  ['f_hash','hashtag_style','text','tp'], ['f_style','show_more_style','text','tp'], ['f_emoji','show_more_emoji','text','tp'], ['f_spacing','paragraph_spacing','text','tp'],
+  ['f_hon','hpoi_enabled','bool','hp'], ['f_hdelay','hpoi_post_delay_seconds','num','hp'], ['f_hpoll','hpoi_poll_interval_seconds','min','hp'], ['f_hinit','hpoi_initial_post_latest','num','hp'],
+  ['f_tr','translator','text','hp'], ['f_key','translate_api_key','secret','hp'],
+  ['f_urepo','update_repo','text','up'], ['f_ubranch','update_branch','text','up'], ['f_utoken','update_token','secret','up'],
+];
+const TG_KEYS=['telegram_bot_token','telegram_chat_id','hpoi_chat_id'];
+let SV=null, ORIG={}, settingsLoaded=false, dataDir='', curSec='tg';
+function readField([id,key,kind]){
+  const el=$(id);
+  if(kind==='secret') return (!el.hidden&&el.value.trim())?el.value.trim():null;      // null = keep the saved one
+  if(kind==='bool') return el.checked;
+  if(kind==='num') return el.value===''?null:Number(el.value);
+  if(kind==='min') return el.value===''?null:Math.round(Number(el.value)*60);         // shown in minutes, saved in seconds
+  if(kind==='hchat') return $('f_hsame').checked?'':el.value.trim();
+  return el.value.trim();
+}
+function writeField([id,key,kind],v){
+  const el=$(id);
+  if(kind==='secret'){ const box=document.querySelector(`.secret[data-for="${id}"]`); el.value='';
+    box.hidden=!v; el.hidden=!!v; if(v) box.querySelector('[data-r=tail]').textContent=String(v).slice(-4); return }
+  if(kind==='bool'){ el.checked=!!v; return }
+  if(kind==='min'){ el.value=v?+(v/60).toFixed(1):''; return }
+  if(kind==='hchat'){ $('f_hsame').checked=!v; el.value=v||''; el.hidden=!v; return }
+  el.value=(v==null?'':v);
+}
+function changes(){ const ch={}; for(const f of F){ const v=readField(f); if(v!==null&&v!==ORIG[f[1]]) ch[f[1]]=v } return ch }
+function updateDirty(){
+  const ch=changes(), secs=new Set(F.filter(f=>f[1] in ch).map(f=>f[3]));
+  $('savebar').hidden=!secs.size;
+  document.querySelectorAll('#setnav button').forEach(b=>{const d=b.querySelector('.nd'); if(d) d.hidden=!secs.has(b.dataset.sec)});
+  smPreview(); $('row_key').hidden=$('f_tr').value!=='google_cloud'; $('hp_rows').classList.toggle('dim',!$('f_hon').checked);
+}
+function fillSelect(id,obj){ const sel=$(id); if(sel.options.length) return; for(const [k,d] of Object.entries(obj||{})){const o=document.createElement('option'); o.value=k; o.textContent=d; sel.appendChild(o)} }
 async function loadSettings(force){
-  const v=await api('/api/settings');
+  const v=await api('/api/settings'); SV=v;
   $('setup-help').hidden=v.configured;
   if(settingsLoaded&&!force) return v; settingsLoaded=true;
-  $('s_token').value=v.telegram_bot_token; $('s_chat').value=v.telegram_chat_id; $('s_delay').value=v.post_delay_seconds;
-  $('s_poll').value=v.poll_interval_seconds; $('s_init').value=v.initial_post_latest; $('s_hash').value=v.hashtag_style; fillStyles(v); fillSpacing(v); $('s_emoji').value=v.show_more_emoji; $('s_urepo').value=v.update_repo; $('s_ubranch').value=v.update_branch; $('s_utoken').value=v.update_token;
-  $('h_on').value=String(v.hpoi_enabled); $('h_chat').value=v.hpoi_chat_id; $('h_delay').value=v.hpoi_post_delay_seconds; $('h_poll').value=v.hpoi_poll_interval_seconds; $('h_init').value=v.hpoi_initial_post_latest; $('h_tr').value=v.translator; $('h_key').value=v.translate_api_key;
-  return v;
+  fillSelect('f_style',v.show_more_styles); fillSelect('f_spacing',v.paragraph_spacings);
+  for(const f of F) writeField(f,v[f[1]]);
+  ORIG={}; for(const f of F) ORIG[f[1]]=f[2]==='secret'?null:readField(f);
+  dataDir=v.data_dir||dataDir;
+  document.querySelectorAll('.hp-on').forEach(e=>e.hidden=!v.hpoi_enabled);
+  document.querySelectorAll('.hp-run').forEach(e=>e.hidden=!v.hpoi_available);
+  const need=!!v.hpoi_enabled!==!!v.hpoi_available;                                  // saved on/off differs from what runs now
+  $('hp_restart').hidden=!need; $('restart_now').hidden=!v.can_restart;
+  $('hp_restart_txt').textContent=(v.hpoi_enabled?'HPOI is switched on but not running yet.':'HPOI is switched off but still running.')+(v.can_restart?'':' Close the app and start it again.');
+  updateDirty(); return v;
 }
-function fillSpacing(v){
-  const sel=$('s_spacing'); if(sel.options.length===0){ for(const [k,d] of Object.entries(v.paragraph_spacings||{})){const o=document.createElement('option'); o.value=k; o.textContent=d; sel.appendChild(o)} }
-  sel.value=v.paragraph_spacing;
+function showSec(sec){
+  curSec=sec;
+  document.querySelectorAll('#setnav button').forEach(b=>b.classList.toggle('on',b.dataset.sec===sec));
+  for(const s of ['tg','tp','hp','bk','up']) $('sec_'+s).hidden=(s!==sec);
+  history.replaceState(null,'','#settings/'+sec);
 }
-function fillStyles(v){
-  const sel=$('s_style'); if(sel.options.length===0){ for(const [k,d] of Object.entries(v.show_more_styles||{})){const o=document.createElement('option'); o.value=k; o.textContent=d; sel.appendChild(o)} }
-  sel.value=v.show_more_style;
+function showView(v,sec){
+  if(v==='dash'&&!$('view_set').hidden&&Object.keys(changes()).length){
+    if(!confirm('You have unsaved changes. Leave Settings without saving them?')) return;
+    loadSettings(true);                                                                 // forget them
+  }
+  $('view_dash').hidden=(v!=='dash'); $('view_set').hidden=(v!=='set');
+  if(v==='set'){ showSec(sec||curSec); if(!settingsLoaded) loadSettings(true) }
+  else history.replaceState(null,'',location.pathname+location.search);
+  window.scrollTo(0,0);
+}
+$('gear').onclick=()=>showView($('view_set').hidden?'set':'dash');
+$('back').onclick=()=>showView('dash');
+document.querySelectorAll('#setnav button').forEach(b=>b.onclick=()=>showSec(b.dataset.sec));
+$('view_set').addEventListener('input',updateDirty); $('view_set').addEventListener('change',updateDirty);
+$('f_hsame').addEventListener('change',()=>{ $('f_hchat').hidden=$('f_hsame').checked; if(!$('f_hsame').checked) $('f_hchat').focus() });
+document.querySelectorAll('.secret [data-r=change]').forEach(b=>b.onclick=()=>{ const box=b.closest('.secret'), el=$(box.dataset.for); box.hidden=true; el.hidden=false; el.focus(); updateDirty() });
+window.addEventListener('beforeunload',e=>{ if(!$('view_set').hidden&&Object.keys(changes()).length){ e.preventDefault(); e.returnValue='' } });
+
+let toastT=null;
+function toast(msg,bad){ const t=$('toast'); t.textContent=msg; t.className='toast'+(bad?' bad':''); t.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>t.hidden=true,bad?7000:2600) }
+async function saveSettings(){
+  const ch=changes(); if(!Object.keys(ch).length) return;
+  const b=$('save'); b.disabled=true; b.textContent='Saving…';
+  let r; try{ r=await api('/api/settings',ch) }catch(e){ r={error:'the app is not reachable'} }
+  b.disabled=false; b.textContent='Save changes';
+  if(!r||r.error||!r.saved){ toast('❌ Not saved: '+((r&&r.error)||'unknown error'),true); return }
+  await loadSettings(true); refresh(); toast('✓ Saved');
+  if(TG_KEYS.some(k=>k in ch)) checkConnection();
+}
+$('save').onclick=saveSettings; $('discard').onclick=()=>loadSettings(true);
+
+async function checkConnection(){
+  if(TG_KEYS.some(k=>k in changes())) return saveSettings();                              // saving checks with the new values
+  const out=$('conn_out'); out.className='sd'; out.textContent='Checking…'; $('conn_chk').disabled=true;
+  const res=[]; for(const src of ACTIVE){ let r; try{ r=await api('/api/telegram/check',{},src) }catch(e){ r={error:'the app is not reachable'} } res.push([src,r]) }
+  $('conn_chk').disabled=false; out.textContent='';
+  for(const [src,r] of res){ const d=document.createElement('div'); d.className=r.ok?'good':'error';
+    d.textContent=(ACTIVE.length>1?SOURCES[src]+': ':'')+(r.ok?('✅ bot @'+r.bot+' can post in “'+r.chat+'”'):('❌ '+r.error)); out.append(d) }
+}
+$('conn_chk').onclick=checkConnection;
+async function testPost(src){
+  if(TG_KEYS.some(k=>k in changes())){ toast('Save your changes first',true); return }
+  const out=$('test_out'); out.className='sd'; out.textContent='Sending…';
+  let r; try{ r=await api('/api/send-test',{},src) }catch(e){ r={error:'the app is not reachable'} }
+  out.className='sd '+(r.error?'error':'good'); out.textContent=r.error?('❌ '+r.error):('✅ Sent to the '+SOURCES[src]+' channel — open it and tap “Show More”.');
+}
+$('test_tp').onclick=()=>testPost('toypeople'); $('test_hp').onclick=()=>testPost('hpoi');
+function smPreview(){
+  const st=$('f_style').value||'classic', e=$('f_emoji').value.trim(), label=(SV&&SV.show_more_label)||'Show More', el=$('sm_prev');
+  el.className='smprev '+st;
+  el.textContent=st==='telegram'?'(no button — the post is shown open)':st==='plain'?('▾ '+label):st==='pill'?label:((e?e+' ':'')+label.toUpperCase()+(e?' '+e:''));
 }
 $('samples').onclick=async()=>{
-  $('samples').disabled=true; $('samples-out').textContent='Sending sample posts (takes ~30 seconds)…';
-  const r=await api('/api/send-style-samples',{}); $('samples').disabled=false;
-  if(r.error){$('samples-out').textContent='❌ '+r.error;return}
-  $('samples-out').innerHTML=''; for(const [k,v] of Object.entries(r.results)){const d=document.createElement('div'); d.textContent=(v==='sent'?'✅ ':'❌ ')+k+(v==='sent'?' – open your channel and tap it':(' – '+v)); $('samples-out').appendChild(d)}
+  if(['show_more_style','show_more_emoji','paragraph_spacing'].some(k=>k in changes())){ toast('Save your changes first',true); return }
+  const out=$('samples-out'); $('samples').disabled=true; out.className='sd'; out.textContent='Sending sample posts (takes ~30 seconds)…';
+  const r=await api('/api/send-style-samples',{}).catch(()=>({error:'the app is not reachable'})); $('samples').disabled=false;
+  if(r.error){ out.className='sd error'; out.textContent='❌ '+r.error; return }
+  const bad=Object.entries(r.results).filter(([k,v])=>v!=='sent');
+  out.className='sd '+(bad.length?'error':'good');
+  out.textContent=bad.length?('Some samples failed: '+bad.map(([k,v])=>k+' ('+v+')').join(', ')):'✅ Samples sent — open your channel, tap each one and pick the style you like.';
 };
-$('save').onclick=async()=>{
-  $('save-out').textContent='Saving…'; $('save-out').className='mut';
-  const r=await api('/api/settings',{telegram_bot_token:$('s_token').value,telegram_chat_id:$('s_chat').value,post_delay_seconds:$('s_delay').value,
-    poll_interval_seconds:$('s_poll').value,initial_post_latest:$('s_init').value,hashtag_style:$('s_hash').value,show_more_style:$('s_style').value,paragraph_spacing:$('s_spacing').value,show_more_emoji:$('s_emoji').value,update_repo:$('s_urepo').value,update_branch:$('s_ubranch').value,update_token:$('s_utoken').value,
-    hpoi_enabled:$('h_on').value,hpoi_chat_id:$('h_chat').value,hpoi_post_delay_seconds:$('h_delay').value,hpoi_poll_interval_seconds:$('h_poll').value,hpoi_initial_post_latest:$('h_init').value,translator:$('h_tr').value,translate_api_key:$('h_key').value});
-  if(r.telegram){$('save-out').className='good';$('save-out').textContent='✅ Connected: bot @'+r.telegram.bot+' can post in “'+r.telegram.chat+'”. Go back to the dashboard and press ▶ Start.'}
-  else if(r.telegram_error){$('save-out').className='error';$('save-out').textContent='❌ '+r.telegram_error}
-  else $('save-out').textContent=r.configured?'Saved.':'Saved. Now fill in the bot token and channel.';
-  loadSettings(true); refresh();
+$('restart_now').onclick=async()=>{
+  const b=$('restart_now'); b.disabled=true; b.textContent='Restarting…';
+  const before=S.toypeople&&S.toypeople.boot;
+  const r=await api('/api/restart',{}).catch(()=>({error:'the app is not reachable'}));
+  if(r.error){ b.disabled=false; b.textContent='Restart the app now'; toast('❌ '+r.error,true); return }
+  for(let i=0;i<100;i++){ await new Promise(x=>setTimeout(x,1500));
+    try{ const s=await fetch('/api/status',{cache:'no-store'}).then(x=>x.json()); if(s.boot&&s.boot!==before){ location.reload(); return } }catch(e){} }
+  b.textContent='Taking long — reload this page in a minute';
 };
-async function sendTest(src){const r=await api('/api/send-test',{},src); $('save-out').className=r.error?'error':'good'; $('save-out').textContent=r.error?('❌ '+r.error):'✅ Test post sent to '+SOURCES[src]+' — check your channel and tap “Show More”.'}
-$('sendtest').onclick=()=>sendTest('toypeople'); $('sendtest_h').onclick=()=>sendTest('hpoi');
+document.querySelectorAll('.copy-dir').forEach(b=>b.onclick=async()=>{
+  try{ await navigator.clipboard.writeText(dataDir); toast('✓ Copied: '+dataDir) }catch(e){ prompt('Copy this path:',dataDir) } });
+
+// ---- backups -----------------------------------------------------------------------------------------------------
+function renderBackups(all){
+  const box=$('bk_rows'); box.textContent='';
+  for(const [src,s] of all){
+    const row=document.createElement('div'); row.className='srow';
+    const l=document.createElement('div'), st=document.createElement('div'), sd=document.createElement('div');
+    st.className='st'; st.textContent=SOURCES[src]+' posted-list'; sd.className='sd';
+    sd.textContent=s.last_backup?('Last automatic backup: '+fmt(s.last_backup)):'First automatic backup: within a day'; l.append(st,sd);
+    const c=document.createElement('div'); c.className='sc btns'; const a=document.createElement('a'); a.className='btn'; a.href=srcURL('/api/backup',src); a.textContent='Download a copy'; c.append(a);
+    row.append(l,c); box.append(row);
+  }
+  const tp=all.find(x=>x[0]==='toypeople'); if(tp){ dataDir=tp[1].data_dir; $('bk_dir').textContent=dataDir }
+}
 $('imp_go').onclick=async()=>{
-  const f=$('imp_file').files[0]; if(!f){$('imp_out').textContent='choose a file first';return}
-  $('imp_out').textContent='importing…';
-  const r=await fetch('/api/import-backup',{method:'POST',headers:{'X-Requested-With':'tpclone','Content-Type':'application/octet-stream'},body:f}).then(x=>x.json());
-  $('imp_out').className=r.error?'error':'good';
-  $('imp_out').textContent=r.error?('❌ '+r.error):('✅ '+r.in_file+' posted items in the file: '+r.added+' added, '+r.updated+' corrected'); refresh();
+  const f=$('imp_file').files[0], out=$('imp_out'); if(!f){ out.className='mut small'; out.textContent='Choose a file first'; return }
+  out.className='mut small'; out.textContent='Importing…';
+  const r=await fetch('/api/import-backup',{method:'POST',headers:{'X-Requested-With':'tpclone','Content-Type':'application/octet-stream'},body:f}).then(x=>x.json()).catch(()=>({error:'the app is not reachable'}));
+  out.className='small '+(r.error?'error':'good');
+  out.textContent=r.error?('❌ '+r.error):('✅ '+r.in_file+' posted items in the file: '+r.added+' added, '+r.updated+' corrected'); refresh();
 };
 
 // ---- preview ---------------------------------------------------------------------------------------------------
@@ -628,7 +872,8 @@ function showUpdate(s){
   b.className='upd'+(updAvail?' avail':'');
   b.textContent=updAvail?('⬆ Update available — press to update'):'⟳ Check for updates';
   b.title='Current version: '+s.version+(u&&u.checked_at?(' · last checked '+fmt(u.checked_at)):'');
-  $('ver').textContent='Current version: '+s.version+(u&&u.checked_at?(' · last checked '+fmt(u.checked_at)):'');
+  $('ver').textContent='Current version: '+s.version+(u&&u.checked_at?(' · last checked '+fmt(u.checked_at)):'')+(updAvail?(' · new version '+u.remote+' is available'):'');
+  $('up_btn').textContent=updAvail?'Update now':'Check for updates'; $('up_btn').className=updAvail?'go':'';
   if(updAvail&&!$('upd_msg').textContent) $('upd_msg').textContent='New version '+u.remote+' ('+u.changed.length+' file(s) changed)';
 }
 async function checkUpdate(){
@@ -650,13 +895,15 @@ async function doUpdate(){
   $('upd_msg').textContent='Taking longer than expected — wait a minute and reload this page.';
 }
 $('upd_btn').onclick=()=>updAvail?doUpdate():checkUpdate();
+$('up_btn').onclick=()=>updAvail?doUpdate():checkUpdate();
 
 // ---- start ------------------------------------------------------------------------------------------------------------
 (async()=>{
   let v=null; try{ v=await loadSettings(true) }catch(e){}
   ACTIVE=v&&v.hpoi_available?['toypeople','hpoi']:['toypeople'];
   buildPanels(); initDonut(); await refresh();
-  if(v&&!v.configured) showView('set');            // first run: go straight to the Telegram setup
+  if(v&&!v.configured) showView('set','tg');        // first run: go straight to the Telegram setup
+  else if(location.hash.startsWith('#settings/')) showView('set',location.hash.split('/')[1]);
   startLive(); atMidnight(); setInterval(tick,1000);
 })();
 </script>
