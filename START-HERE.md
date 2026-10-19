@@ -125,8 +125,8 @@ If anything is unclear - for example two unknown messages for one uncertain post
 
 The same app can copy the newest items of **hpoi.net → 最新情报 (Latest Info)** to your channel, in English:
 
-* Open the dashboard: at the top you will see two tabs, **Toy-People** and **HPOI**. Click **HPOI**, then press **▶ Start**
-  (each tab has its own Start/Stop; they remember their state across restarts).
+* Open the dashboard: Toy-People and HPOI sit side by side on one page, each with its own Start/Stop. All settings are under the ⚙ gear at the top right (separate sections for each website). The update button is next to the gear.
+  (each remembers its Start/Stop state across restarts).
 * The title and the hashtags (maker, characters, series) are translated to English by Google Translate. Hashtags are
   clickable `#` tags. The expanded post shows the release month, the photos in one collage (no credit footer).
 * Names the machine gets wrong can be fixed in `hpoi_glossary.json` in your data folder (it already holds the spellings
@@ -135,4 +135,4 @@ The same app can copy the newest items of **hpoi.net → 最新情报 (Latest In
 * **Repost by date** scrolls down hpoi's Latest Info list page by page until it is past the day you chose (one page every 5 seconds). The first time you press Start, the items already on the list are marked “seen” (not posted); only later ones are posted.
   Use the date table or the preview box (with a product link) to post older items by hand.
 * It is polite to the website: one page read every 10 minutes, at least 5 seconds between requests, never the `/api/` area.
-* Settings for it are in **Settings → HPOI (hpoi.net) settings** (another channel, wait time, official Google key).
+* Settings for it are in **⚙ Settings → HPOI** (another channel, wait time, official Google key).

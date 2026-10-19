@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Toy-People → Telegram</title>
+<title>Toy-People + HPOI → Telegram</title>
 <style>
   :root{--bg:#f6f7f9;--card:#fff;--fg:#1c2128;--mut:#6a737d;--line:#e3e6ea;--ok:#1a7f37;--bad:#cf222e;--warn:#9a6700;--acc:#d6232f}
   @media (prefers-color-scheme:dark){:root{--bg:#0f1318;--card:#171c23;--fg:#e6edf3;--mut:#8b949e;--line:#2a313a;--ok:#3fb950;--bad:#f85149;--warn:#d29922;--acc:#ff4d5a}}
@@ -18,7 +18,7 @@
   input[type=date]{font:inherit;padding:7px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
   .pill{padding:2px 10px;border-radius:99px;font-weight:600;font-size:13px;border:1px solid currentColor}
   .running{color:var(--ok)} .stopped{color:var(--mut)} .stopping{color:var(--warn)} .error{color:var(--bad)}
-  .mut{color:var(--mut)} .stats span{margin-right:16px;white-space:nowrap}
+  .mut{color:var(--mut)} .stats{display:flex;flex-wrap:wrap;gap:4px 14px} .stats span{white-space:nowrap}
   table{width:100%;border-collapse:collapse} td,th{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left;font-size:13px;vertical-align:top}
   .log{font:12px/1.5 ui-monospace,monospace;max-height:260px;overflow:auto}
   .log .warn{color:var(--warn)} .log .error{color:var(--bad)}
@@ -36,207 +36,269 @@
   .rowbtn.go{background:var(--ok);border-color:var(--ok);color:#fff} .rowbtn.done{background:color-mix(in srgb,var(--mut) 25%,transparent);border-color:transparent;color:var(--mut)}
   .rowbtn.warn{background:var(--warn);border-color:var(--warn);color:#fff} .rowbtn.err{background:var(--bad);border-color:var(--bad);color:#fff}
   .tg .hl{color:#2481cc} .msgs{font-size:12px;color:var(--mut);margin-top:3px} .reg{display:block;font-size:11px;margin-top:4px;color:var(--mut)} .tg h6{margin:4px 0;font-size:15px}
+  header.top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px} header.top h1{margin:0;flex:1;min-width:200px}
+  button.icon{padding:6px 12px;font-size:18px;line-height:1} button.upd{padding:7px 14px;font-size:13px}
+  button.upd.avail{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:700}
+  .cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start} .cols>.card{margin-bottom:0} @media(max-width:820px){.cols{grid-template-columns:minmax(0,1fr)}}
+  .panelhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px} .panelhead h2{margin:0;font-size:17px} .panelhead .mut{font-size:13px}
+  .sec{margin-top:14px;padding-top:6px} .sec h2{font-size:16px;border-bottom:1px solid var(--line);padding-bottom:6px;margin-bottom:6px}
+  select.src{max-width:200px;width:auto} h3.sub{font-size:13px;margin:14px 0 4px;color:var(--mut)}
+  .attn{border-top:1px solid var(--line);margin-top:10px;padding-top:8px} .attn table td{font-size:12px}
+  .log.small{max-height:180px}
 </style>
 </head>
 <body>
 <main>
-  <h1><span id="h1name">Toy-People</span> → Telegram <span class="mut" id="chat"></span></h1>
-  <div class="row" id="tabs" hidden style="margin-bottom:12px"></div>
-  <div class="msg" id="upd_banner" hidden>🔔 A new version is available. <button class="go" id="upd_go2">Update now</button></div>
+  <header class="top">
+    <h1>Toy-People + HPOI → Telegram</h1>
+    <span class="mut" id="upd_msg"></span>
+    <button class="upd" id="upd_btn" title="">⟳ Check for updates</button>
+    <button class="icon" id="gear" title="Settings" aria-label="Settings">⚙</button>
+  </header>
 
-  <div class="card">
-    <div class="row">
-      <span class="pill stopped" id="state">…</span>
-      <button class="go" id="start">▶ Start</button>
-      <button class="stop" id="stop">■ Stop</button>
-      <span class="mut" id="next"></span>
+  <!-- ============================== DASHBOARD ============================== -->
+  <div id="view_dash">
+    <div class="cols" id="panels"></div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="row" style="justify-content:space-between"><h2 style="margin:0">Preview a post (nothing is sent)</h2>
+        <select class="src" id="pv_src" hidden></select></div>
+      <div class="row" style="margin-top:10px"><input type="text" id="pv_in" placeholder="post number or link, e.g. 114949" style="max-width:420px"> <button id="pv_go">Show preview</button> <button class="go" id="pv_post">Post</button> <span class="mut" id="pv_prog"></span></div>
+      <div id="pv_out" hidden>
+        <div class="tg" id="pv_box"></div>
+        <p class="mut" id="pv_info"></p>
+      </div>
     </div>
-    <div class="msg error" id="err" hidden></div>
-    <p class="stats" id="stats"></p>
-    <p id="watch" class="mut"></p>
-    <p class="mut" id="last"></p>
-    <div class="row"><button id="checknow">Check website now</button><button id="verify">Check channel for deleted posts</button><span class="mut" id="verify-out"></span></div>
-    <p class="mut" id="bk"></p>
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between"><h2 style="margin:0">Repost older posts by date</h2>
+        <select class="src" id="date_src" hidden></select></div>
+      <div class="row" style="margin-top:10px">
+        <input type="date" id="date"> <button id="plan">Check date</button>
+        <span class="mut" id="prog"></span>
+      </div>
+      <div id="plan-out" hidden>
+        <div class="msg" id="plan-msg"></div>
+        <div class="row"><button class="go" id="pub"></button><button id="cancel">Cancel</button></div>
+        <table id="plan-tbl"></table>
+      </div>
+      <p class="mut" id="hp_datenote" hidden>For HPOI the app scrolls down the website's Latest Info list page by page (like you do) until it is past that day. Cards only say “3 days ago”, so an item at the edge of a day can land on the neighbouring date. A far-back date takes a while (one page every 5 seconds).</p>
+      <p class="mut">Queued reposts are published by the worker (press Start) at the configured delay; they never repeat posts already published.</p>
+    </div>
+
+    <div class="cols" id="logs"></div>
   </div>
 
-  <div class="card" id="setup">
-    <h2 id="setup-title">Settings</h2>
-    <div id="setup-help" hidden>
-      <b>First, connect your Telegram channel (one time, 2 minutes):</b>
-      <ol class="how">
-        <li>In Telegram open <b>@BotFather</b> → send <code>/newbot</code> → follow the steps. It gives you a long <b>token</b>; paste it below.</li>
-        <li>Open your channel → <b>Administrators</b> → <b>Add Administrator</b> → search your new bot → allow <b>Post messages</b>.</li>
-        <li>Type your channel name below (like <code>@mychannel</code>). For a private channel use its number (starts with -100).</li>
-      </ol>
+  <!-- ============================== SETTINGS ============================== -->
+  <div id="view_set" hidden>
+    <div class="row" style="margin-bottom:12px"><button id="back">← Back to the dashboard</button><h2 style="margin:0">Settings</h2></div>
+    <div class="card">
+      <div id="setup-help" hidden>
+        <b>First, connect your Telegram channel (one time, 2 minutes):</b>
+        <ol class="how">
+          <li>In Telegram open <b>@BotFather</b> → send <code>/newbot</code> → follow the steps. It gives you a long <b>token</b>; paste it below.</li>
+          <li>Open your channel → <b>Administrators</b> → <b>Add Administrator</b> → search your new bot → allow <b>Post messages</b>.</li>
+          <li>Type your channel name below (like <code>@mychannel</code>). For a private channel use its number (starts with -100).</li>
+        </ol>
+      </div>
+
+      <div class="sec" style="margin-top:0"><h2>Telegram (shared by both websites)</h2>
+        <label>Bot token</label><input type="password" id="s_token" autocomplete="off" placeholder="123456:ABC-DEF...">
+      </div>
+
+      <div class="sec"><h2>Toy-People</h2>
+        <label>Channel</label><input type="text" id="s_chat" placeholder="@mychannel">
+        <label>Wait between posts (seconds)</label><input type="number" id="s_delay" min="3" step="1">
+        <label>Check the website every (seconds)</label><input type="number" id="s_poll" min="60">
+        <label>On the very first start, also publish the latest N posts (0 = none, only future posts)</label><input type="number" id="s_init" min="0">
+        <label>Hashtags</label><select id="s_hash"><option value="plain">Same text as on the website</option><option value="hashtag">Clickable #Hashtags</option></select>
+        <label>"Show More" button style</label><select id="s_style"></select>
+        <label>Space between paragraphs</label><select id="s_spacing"></select>
+        <label>Emoji on both sides of the button text</label><input type="text" id="s_emoji" maxlength="4" style="max-width:120px" placeholder="👇">
+        <p class="mut" style="margin:4px 0 0">Not sure which looks best? <button id="samples" type="button">Send style samples to my channel</button> then pick the one that works on your phone. “Plain toggle” is the safest.</p>
+        <div id="samples-out" class="mut"></div>
+      </div>
+
+      <div class="sec" id="hpoi_set"><h2>HPOI (hpoi.net)</h2>
+        <label>Watch HPOI too (takes effect after the app restarts)</label><select id="h_on"><option value="true">Yes</option><option value="false">No</option></select>
+        <label>HPOI channel (empty = the same channel as Toy-People)</label><input type="text" id="h_chat" placeholder="@mychannel">
+        <label>Wait between HPOI posts (seconds)</label><input type="number" id="h_delay" min="3" step="1">
+        <label>Check HPOI every (seconds, at least 60)</label><input type="number" id="h_poll" min="60">
+        <label>On the very first start, also publish the latest N HPOI items (0 = none)</label><input type="number" id="h_init" min="0">
+        <label>Translator</label><select id="h_tr"><option value="google_free">Free Google Translate (no key)</option><option value="google_cloud">Google Cloud Translation (needs an API key)</option></select>
+        <label>Google Cloud API key (only for the option above)</label><input type="password" id="h_key" autocomplete="off">
+        <p class="mut">HPOI hashtags are always clickable. Fix a wrongly translated name in <code>hpoi_glossary.json</code> inside your data folder.</p>
+      </div>
+
+      <p class="row" style="margin-top:16px"><button class="go" id="save">Save &amp; test connection</button><button id="sendtest">Send a test post to Toy-People</button><button id="sendtest_h">Send a test post to HPOI</button></p>
+      <div id="save-out" class="mut"></div>
     </div>
-    <label>Bot token</label><input type="password" id="s_token" autocomplete="off" placeholder="123456:ABC-DEF...">
-    <label>Channel</label><input type="text" id="s_chat" placeholder="@mychannel">
-    <label>Wait between posts (seconds)</label><input type="number" id="s_delay" min="3" step="1">
-    <details class="adv"><summary>Advanced</summary>
-    <label>"Show More" button style</label>
-    <select id="s_style"></select>
-    <label>Space between paragraphs</label>
-    <select id="s_spacing"></select>
-    <label>Emoji on both sides of the button text</label><input type="text" id="s_emoji" maxlength="4" style="max-width:120px" placeholder="👇">
-    <p class="mut" style="margin:4px 0 0">Not sure which looks best? <button id="samples" type="button">Send style samples to my channel</button> then pick the one that works on your phone. “Plain toggle” is the safest.</p>
-    <div id="samples-out" class="mut"></div>
+
+    <div class="card">
+      <h2>Backup</h2>
+      <p class="mut">Moved or re-downloaded the app and it forgot what it already posted? Choose your old <code>tpclone.db</code> (or a file from the old <code>backups</code> folder, or a downloaded backup). Posts it knew as posted are added to <b>Toy-People</b>, so they won't be posted twice. Nothing is deleted. (Download backups from the dashboard panels.)</p>
+      <div class="row"><input type="file" id="imp_file" accept=".db"><button id="imp_go">Import</button><span class="mut" id="imp_out"></span></div>
+    </div>
+
+    <div class="card">
+      <h2>Advanced: updates</h2>
+      <p class="mut" id="ver"></p>
       <label>Update source: repository</label><input type="text" id="s_urepo" placeholder="owner/name">
       <label>Update source: branch</label><input type="text" id="s_ubranch">
       <label>Update access token (only needed if the repository is private)</label><input type="password" id="s_utoken" autocomplete="off" placeholder="github_pat_...">
-      <label>Check the website every (seconds)</label><input type="number" id="s_poll" min="60">
-      <label>On the very first start, also publish the latest N posts (0 = none, only future posts)</label><input type="number" id="s_init" min="0">
-      <label>Hashtags</label><select id="s_hash"><option value="plain">Same text as on the website</option><option value="hashtag">Clickable #Hashtags</option></select>
-    </details>
-    <details id="hpoi_set"><summary>HPOI (hpoi.net) settings</summary>
-      <label>Watch HPOI too (takes effect after the app restarts)</label><select id="h_on"><option value="true">Yes</option><option value="false">No</option></select>
-      <label>HPOI channel (empty = the same channel as above)</label><input type="text" id="h_chat" placeholder="@mychannel">
-      <label>Wait between HPOI posts (seconds)</label><input type="number" id="h_delay" min="3" step="1">
-      <label>Check HPOI every (seconds, at least 60)</label><input type="number" id="h_poll" min="60">
-      <label>On the very first start, also publish the latest N HPOI items (0 = none)</label><input type="number" id="h_init" min="0">
-      <label>Translator</label><select id="h_tr"><option value="google_free">Free Google Translate (no key)</option><option value="google_cloud">Google Cloud Translation (needs an API key)</option></select>
-      <label>Google Cloud API key (only for the option above)</label><input type="password" id="h_key" autocomplete="off">
-    </details>
-    <p class="row"><button class="go" id="save">Save &amp; test connection</button><button id="sendtest">Send a test post</button></p>
-    <div id="save-out" class="mut"></div>
-  </div>
-
-  <div class="card">
-    <h2>Preview a post (nothing is sent)</h2>
-    <div class="row"><input type="text" id="pv_in" placeholder="post number or link, e.g. 114949" style="max-width:340px"> <button id="pv_go">Show preview</button> <button class="go" id="pv_post">Post</button> <span class="mut" id="pv_prog"></span></div>
-    <div id="pv_out" hidden>
-      <div class="tg" id="pv_box"></div>
-      <p class="mut" id="pv_info"></p>
+      <p class="mut">Updating (button at the top right of the dashboard) downloads the newest version, tests it, restarts the app by itself (a post in progress finishes first) and reloads the page. Your settings and posted-lists are never touched. If the new version fails to start, the old one comes back automatically.</p>
     </div>
   </div>
-
-  <div class="card">
-    <h2>Repost older posts by date</h2>
-    <div class="row">
-      <input type="date" id="date"> <button id="plan">Check date</button>
-      <span class="mut" id="prog"></span>
-    </div>
-    <div id="plan-out" hidden>
-      <div class="msg" id="plan-msg"></div>
-      <div class="row"><button class="go" id="pub"></button><button id="cancel">Cancel</button></div>
-      <table id="plan-tbl"></table>
-    </div>
-    <p class="mut" id="hp_datenote" hidden>For HPOI the app scrolls down the website's Latest Info list page by page (like you do) until it is past that day. Cards only say “3 days ago”, so an item at the edge of a day can land on the neighbouring date. A far-back date takes a while (one page every 5 seconds).</p>
-    <p class="mut">Queued reposts are published by the worker (press Start) at the configured delay; they never repeat posts already published.</p>
-  </div>
-
-  <div class="card" id="review" hidden>
-    <h2>Needs your attention</h2>
-    <p class="mut">“uncertain” = the request may have reached Telegram. The app looks at your channel a few minutes later and settles most of these by itself (marks them posted, or sends them again once it has proved they never arrived). What stays here is what it could not be sure about: look in your channel and choose. “failed” = gave up after several errors.</p>
-    <table id="review-tbl"></table>
-  </div>
-
-  <div class="card toyonly">
-    <h2>Updates</h2>
-    <p class="mut" id="ver"></p>
-    <div class="row"><button id="upd_check">Check for updates</button><button class="go" id="upd_go" hidden>Update now</button><span class="mut" id="upd_out"></span></div>
-    <p class="mut">Updating downloads the newest version, tests it, restarts the app by itself (a post in progress finishes first) and reloads this page. Your settings and posted-list are never touched. If the new version fails to start, the old one comes back automatically.</p>
-  </div>
-
-  <div class="card toyonly">
-    <h2>Import an old posted-list</h2>
-    <p class="mut">Moved or re-downloaded the app and it forgot what it already posted? Choose your old <code>tpclone.db</code> (or a file from the old <code>backups</code> folder, or a downloaded backup). Posts it knew as posted are added here, so they won't be posted twice. Nothing is deleted.</p>
-    <div class="row"><input type="file" id="imp_file" accept=".db"><button id="imp_go">Import</button><span class="mut" id="imp_out"></span></div>
-  </div>
-
-  <div class="card"><h2>Activity</h2><div class="log" id="log"></div></div>
 </main>
 <script>
 const $=id=>document.getElementById(id);
-let SRC='toypeople';
-const srcURL=p=>(SRC==='hpoi'&&!/^\/api\/(settings|update|import-backup)/.test(p))?p+(p.includes('?')?'&':'?')+'source=hpoi':p;
-const api=(p,body)=>fetch(srcURL(p),body===undefined?{}:{method:'POST',headers:{'X-Requested-With':'tpclone','Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
-let planData=null;
+const SOURCES={toypeople:'Toy-People',hpoi:'HPOI'};
+let ACTIVE=['toypeople'];                       // sources the server runs (hpoi only when enabled)
+const srcURL=(p,src)=>(src==='hpoi'&&!/^\/api\/(settings|update|import-backup)/.test(p))?p+(p.includes('?')?'&':'?')+'source=hpoi':p;
+const api=(p,body,src)=>fetch(srcURL(p,src),body===undefined?{}:{method:'POST',headers:{'X-Requested-With':'tpclone','Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+let planData=null, chatLinks={};
 function fmt(ts){return ts?new Date(ts*1000).toLocaleString():''}
+async function pollJob(job,onProg,src){ for(;;){ const j=await api('/api/jobs/'+job,undefined,src); if(j.state==='running'){onProg&&onProg(j.progress); await new Promise(r=>setTimeout(r,800)); continue} return j } }
+
+// ---- views ---------------------------------------------------------------------------------------
+function showView(v){ $('view_dash').hidden=(v!=='dash'); $('view_set').hidden=(v!=='set'); if(v==='set') loadSettings(true); }
+$('gear').onclick=()=>showView($('view_set').hidden?'set':'dash');
+$('back').onclick=()=>showView('dash');
+
+// ---- one status panel per website ---------------------------------------------------------------
+const PANEL=`
+  <div class="panelhead"><h2 data-r="name"></h2><span class="mut" data-r="chat"></span><span class="pill stopped" data-r="state">…</span></div>
+  <div class="row"><button class="go" data-r="start">▶ Start</button><button class="stop" data-r="stop">■ Stop</button><span class="mut" data-r="next"></span></div>
+  <div class="msg error" data-r="err" hidden></div>
+  <p class="stats" data-r="stats"></p>
+  <p class="mut" data-r="watch"></p>
+  <p class="mut" data-r="last"></p>
+  <div class="row"><button data-r="checknow">Check website now</button><button data-r="verify">Check channel for deleted posts</button></div>
+  <p class="mut" data-r="out"></p>
+  <p class="mut" data-r="bk"></p>
+  <div class="attn" data-r="review" hidden><b>Needs your attention</b>
+    <p class="mut">“uncertain” = the request may have reached Telegram; the app settles most of these by itself a few minutes later. What stays here it could not be sure about: look in your channel and choose. “failed” = gave up after several errors.</p>
+    <table data-r="review-tbl"></table></div>`;
+function pq(src,r){return document.querySelector(`[data-panel="${src}"] [data-r="${r}"]`)}
+function buildPanels(){
+  const box=$('panels'), lg=$('logs'); box.innerHTML=''; lg.innerHTML='';
+  for(const src of ACTIVE){
+    const c=document.createElement('div'); c.className='card'; c.dataset.panel=src; c.innerHTML=PANEL; box.appendChild(c);
+    pq(src,'name').textContent=SOURCES[src];
+    pq(src,'start').onclick=async()=>{await api('/api/start',{},src);refresh()};
+    pq(src,'stop').onclick=async()=>{await api('/api/stop',{},src);refresh()};
+    pq(src,'verify').onclick=()=>verifyChannel(src);
+    pq(src,'checknow').onclick=()=>checkNow(src);
+    const l=document.createElement('div'); l.className='card'; l.innerHTML=`<h2>Activity — ${SOURCES[src]}</h2><div class="log small" data-log="${src}"></div>`; lg.appendChild(l);
+  }
+  for(const id of ['pv_src','date_src']){ const sel=$(id); sel.innerHTML=''; sel.hidden=ACTIVE.length<2;
+    for(const s of ACTIVE){const o=document.createElement('option'); o.value=s; o.textContent=SOURCES[s]; sel.appendChild(o)} }
+  syncSources();
+  $('hpoi_set').hidden=!ACTIVE.includes('hpoi'); $('sendtest_h').hidden=!ACTIVE.includes('hpoi');
+}
 async function refresh(){
-  const s=await api('/api/status'); showUpdate(s); window.chatLink=s.chat_link;
-  $('chat').textContent=s.chat?('· '+s.chat):'';
-  showRecent(s);
-  const st=$('state'); st.textContent=s.state.toUpperCase()+(s.dry_run?' (dry-run)':''); st.className='pill '+s.state;
-  $('start').disabled=(s.state==='running')||!s.configured; $('stop').disabled=(s.state!=='running');
-  $('err').hidden=!s.error; $('err').textContent=s.error||'';
-  const k=s.stats; $('stats').innerHTML='';
-  for(const [n,l] of [['posted','Published'],['pending','Queued'],['uncertain','Uncertain'],['failed','Failed'],['skipped','Seen (not posted)'],['total','Tracked']]){
-    const sp=document.createElement('span'); sp.textContent=l+': '+(k[n]||0); $('stats').appendChild(sp);}
-  $('next').textContent=(s.pending&&s.state==='running')?('next post in ~'+s.next_post_in+'s (delay '+s.delay+'s)'):(s.pending&&s.state!=='running'?'queue waits for Start':'');
-  $('bk').innerHTML=''; {const t=document.createTextNode(s.last_backup?('Automatic backup of your posted-list: '+fmt(s.last_backup)+' (kept 14 days) · '):'Automatic backup runs daily · '); const a=document.createElement('a'); a.href=srcURL('/api/backup'); a.textContent='Download a backup'; $('bk').append(t,a);
-    const d=document.createElement('div'); d.className='mut'; d.textContent='Your data folder: '+s.data_dir; $('bk').append(d);
-    if(s.probe==='0'){const w=document.createElement('div'); w.className='error'; w.textContent='⚠ Deleted-post detection is OFF (Telegram did not answer reliably). Nothing is re-posted automatically.'; $('bk').append(w)}}
-  {const w=s.watch, el=$('watch'); el.className='mut';
-   if(s.state!=='running'){el.textContent='Website watcher: off (press Start)'}
-   else if(!w){el.textContent='Website watcher: first check in progress…'}
-   else if(!w.ok){el.className='error'; el.textContent='⚠ Website check failed '+fmt(w.ts)+': '+w.error}
-   else {const ago=Math.max(0,Math.round(Date.now()/1000-w.ts)); el.textContent='🔎 Website watcher: checked '+(ago<90?ago+' s':Math.round(ago/60)+' min')+' ago · '+(w.total||0).toLocaleString()+' posts in the sitemap · every '+Math.round(s.poll_every/60)+' min'+(s.listing&&!s.listing.error?(' · Latest News list: '+s.listing.count+' posts'+(s.listing.count?'':' ⚠ none read')):'')+(s.listing&&s.listing.error?' · ⚠ Latest News list failed':'')+' · new posts are posted automatically'}}
-  $('last').textContent=s.last_posted?('Last published: '+(s.last_posted.title||s.last_posted.post_id)+' — '+fmt(s.last_posted.posted_at)):'';
-  const lg=$('log'); lg.innerHTML='';
-  for(const e of s.events){const d=document.createElement('div'); d.className=e.level; d.textContent=fmt(e.ts)+'  '+e.message; lg.appendChild(d);}
-  const rows=[...s.uncertain.map(r=>[r,'uncertain']),...s.failed.map(r=>[r,'failed'])];
-  $('review').hidden=!rows.length; const t=$('review-tbl'); t.innerHTML='';
-  for(const [r,kind] of rows){
-    const tr=t.insertRow(); tr.insertCell().textContent=kind; tr.insertCell().textContent=r.post_id;
-    tr.insertCell().textContent=(r.title||'')+' — '+(r.last_error||'');
-    const c=tr.insertCell();
-    for(const [a,l] of [['posted','It is in the channel'],['retry','Send again'],['skip','Ignore']]){
-      const b=document.createElement('button'); b.textContent=l; b.onclick=async()=>{await api('/api/post/resolve',{id:r.post_id,action:a});refresh()}; c.appendChild(b);}
+  const all=await Promise.all(ACTIVE.map(src=>api('/api/status',undefined,src).then(s=>[src,s])));
+  for(const [src,s] of all){
+    chatLinks[src]=s.chat_link;
+    if(src==='toypeople') showUpdate(s);
+    pq(src,'chat').textContent=s.chat?('· '+s.chat):'';
+    const st=pq(src,'state'); st.textContent=s.state.toUpperCase()+(s.dry_run?' (dry-run)':''); st.className='pill '+s.state;
+    pq(src,'start').disabled=(s.state==='running')||!s.configured; pq(src,'stop').disabled=(s.state!=='running');
+    const er=pq(src,'err'); er.hidden=!s.error; er.textContent=s.error||'';
+    const k=s.stats, stats=pq(src,'stats'); stats.innerHTML='';
+    for(const [n,l] of [['posted','Published'],['pending','Queued'],['uncertain','Uncertain'],['failed','Failed'],['skipped','Seen (not posted)'],['total','Tracked']]){
+      const sp=document.createElement('span'); sp.textContent=l+': '+(k[n]||0); stats.appendChild(sp);}
+    pq(src,'next').textContent=(s.pending&&s.state==='running')?('next post in ~'+s.next_post_in+'s (delay '+s.delay+'s)'):(s.pending&&s.state!=='running'?'queue waits for Start':'');
+    const bk=pq(src,'bk'); bk.innerHTML='';
+    {const t=document.createTextNode(s.last_backup?('Automatic backup: '+fmt(s.last_backup)+' (kept 14 days) · '):'Automatic backup runs daily · '); const a=document.createElement('a'); a.href=srcURL('/api/backup',src); a.textContent='Download a backup'; bk.append(t,a);
+     if(src==='toypeople'){const d=document.createElement('div'); d.className='mut'; d.textContent='Your data folder: '+s.data_dir; bk.append(d);}
+     if(s.probe==='0'){const w=document.createElement('div'); w.className='error'; w.textContent='⚠ Deleted-post detection is OFF (Telegram did not answer reliably). Nothing is re-posted automatically.'; bk.append(w)}}
+    {const w=s.watch, el=pq(src,'watch'); el.className='mut'; const hp=src==='hpoi';
+     if(s.state!=='running'){el.textContent='Website watcher: off (press Start)'}
+     else if(!w){el.textContent='Website watcher: first check in progress…'}
+     else if(!w.ok){el.className='error'; el.textContent='⚠ Website check failed '+fmt(w.ts)+': '+w.error}
+     else {const ago=Math.max(0,Math.round(Date.now()/1000-w.ts)); el.textContent='🔎 Website watcher: checked '+(ago<90?ago+' s':Math.round(ago/60)+' min')+' ago · '+(hp?((w.total||0)+' items on the Latest Info list'):((w.total||0).toLocaleString()+' posts in the sitemap'))+' · every '+Math.round(s.poll_every/60)+' min'+(!hp&&s.listing&&!s.listing.error?(' · Latest News list: '+s.listing.count+' posts'+(s.listing.count?'':' ⚠ none read')):'')+(!hp&&s.listing&&s.listing.error?' · ⚠ Latest News list failed':'')+' · new posts are posted automatically'}}
+    pq(src,'last').textContent=s.last_posted?('Last published: '+(s.last_posted.title||s.last_posted.post_id)+' — '+fmt(s.last_posted.posted_at)):'';
+    const lg=document.querySelector(`[data-log="${src}"]`); lg.innerHTML='';
+    for(const e of s.events){const d=document.createElement('div'); d.className=e.level; d.textContent=fmt(e.ts)+'  '+e.message; lg.appendChild(d);}
+    const rows=[...s.uncertain.map(r=>[r,'uncertain']),...s.failed.map(r=>[r,'failed'])];
+    pq(src,'review').hidden=!rows.length; const t=pq(src,'review-tbl'); t.innerHTML='';
+    for(const [r,kind] of rows){
+      const tr=t.insertRow(); tr.insertCell().textContent=kind; tr.insertCell().textContent=src==='hpoi'?'':r.post_id;
+      tr.insertCell().textContent=(r.title||'')+' — '+(r.last_error||'');
+      const c=tr.insertCell();
+      for(const [a,l] of [['posted','It is in the channel'],['retry','Send again'],['skip','Ignore']]){
+        const b=document.createElement('button'); b.textContent=l; b.onclick=async()=>{await api('/api/post/resolve',{id:r.post_id,action:a},src);refresh()}; c.appendChild(b);}
+    }
   }
 }
-$('start').onclick=async()=>{await api('/api/start',{});refresh()};
-$('stop').onclick=async()=>{await api('/api/stop',{});refresh()};
+async function verifyChannel(src){
+  const b=pq(src,'verify'), out=pq(src,'out'); b.disabled=true; out.className='mut'; out.textContent='checking…';
+  const {job,error}=await api('/api/verify',{},src); if(error){out.textContent=error;b.disabled=false;return}
+  const j=await pollJob(job,m=>out.textContent=m,src); b.disabled=false; if(j.state==='error'){out.textContent='❌ '+j.error;return}
+  const r=j.result; out.textContent='Checked '+r.checked+' post(s): '+r.deleted.length+' deleted from the channel (now publishable again)'+(r.unknown?(', '+r.unknown+' could not be checked'):'')+(r.note?(' — '+r.note+' (Settings → Send a test post activates it)'):''); refresh();
+}
+async function checkNow(src){
+  const b=pq(src,'checknow'), out=pq(src,'out'); b.disabled=true; out.className='mut'; out.textContent='checking the website…';
+  const {job,error}=await api('/api/check-now',{},src); if(error){out.textContent='❌ '+error;b.disabled=false;return}
+  const j=await pollJob(job,m=>out.textContent=m,src); b.disabled=false;
+  if(j.state==='error'){out.className='error'; out.textContent='❌ '+j.error; return}
+  const r=j.result; const warn=r.listing_error?(' ⚠ list failed: '+r.listing_error):(r.listing===0?' ⚠ the list returned no posts':'');
+  out.className=warn?'error':'good';
+  out.textContent=src==='hpoi'?('✅ Latest Info list: '+r.listing+' items · '+r.new+' new item(s) queued'+warn)
+    :('✅ Latest News list: '+r.listing+' posts (newest '+(r.newest||'?')+') · sitemap: '+(r.sitemap||0).toLocaleString()+' posts · '+r.new+' new post(s) queued'+warn); refresh();
+}
+
+// ---- preview / date selectors -----------------------------------------------------------------------
+const pvSrc=()=>$('pv_src').value||'toypeople', dateSrc=()=>$('date_src').value||'toypeople';
+function syncSources(){
+  $('pv_in').placeholder=pvSrc()==='hpoi'?'item link or number, e.g. https://www.hpoi.net/hobby/137248':'post number or link, e.g. 114949';
+  $('hp_datenote').hidden=dateSrc()!=='hpoi';
+}
+$('pv_src').onchange=()=>{clearPreview(); syncSources()};
+$('date_src').onchange=()=>{$('plan-out').hidden=true; planData=null; $('prog').textContent=''; syncSources()};
+
+// ---- date repost ---------------------------------------------------------------------------------------
 $('plan').onclick=async()=>{
-  const d=$('date').value; if(!d) return; $('plan').disabled=true; $('plan-out').hidden=true; $('prog').textContent='scanning…';
-  const {job,error}=await api('/api/date/plan',{date:d}); if(error){$('prog').textContent=error;$('plan').disabled=false;return}
-  const tick=async()=>{const j=await api('/api/jobs/'+job);
+  const d=$('date').value; if(!d) return; const src=dateSrc(); $('plan').disabled=true; $('plan-out').hidden=true; $('prog').textContent='scanning…';
+  const {job,error}=await api('/api/date/plan',{date:d},src); if(error){$('prog').textContent=error;$('plan').disabled=false;return}
+  const tick=async()=>{const j=await api('/api/jobs/'+job,undefined,src);
     if(j.state==='running'){$('prog').textContent=j.progress;return setTimeout(tick,1500)}
     $('plan').disabled=false; if(j.state==='error'){$('prog').textContent='error: '+j.error;return}
-    $('prog').textContent=''; planData=j.result; $('plan-out').hidden=false; $('plan-msg').textContent=planData.message;
+    $('prog').textContent=''; planData=j.result; planData.src=src; $('plan-out').hidden=false; $('plan-msg').textContent=planData.message;
     const n=planData.to_publish.length; $('pub').hidden=!n;
     $('pub').textContent=planData.state==='new_since'?('Publish only the '+n+' new post(s)'):('Publish '+n+' post(s)');
     const t=$('plan-tbl'); t.innerHTML=''; t.className='grid';
     const h=t.createTHead().insertRow(); for(const [n,c] of [['ID','id'],['Title',''],['Action','act']]){const th=document.createElement('th'); th.textContent=n; if(c)th.className=c; h.appendChild(th)}
-    const tb=t.createTBody(); for(const p of planData.posts){const tr=tb.insertRow(); const c0=tr.insertCell(); c0.className='id'; c0.textContent=p.id;
+    const tb=t.createTBody(); for(const p of planData.posts){const tr=tb.insertRow(); const c0=tr.insertCell(); c0.className='id'; c0.textContent=src==='hpoi'?'':p.id;
       const ct=tr.insertCell(); const tt=document.createElement('div'); tt.textContent=p.title||'(no title)'; ct.appendChild(tt);
       if(p.messages&&p.messages.length){const m=document.createElement('div'); m.className='msgs'; m.append('In your channel: ');
-        p.messages.forEach((x,i)=>{ if(i) m.append(', '); const a=document.createElement(window.chatLink?'a':'span'); if(window.chatLink){a.href=window.chatLink+'/'+x.message_id; a.target='_blank'}
+        p.messages.forEach((x,i)=>{ if(i) m.append(', '); const cl=chatLinks[src]; const a=document.createElement(cl?'a':'span'); if(cl){a.href=cl+'/'+x.message_id; a.target='_blank'}
           a.textContent='#'+x.message_id+(x.deleted?' (deleted)':''); if(x.deleted) a.style.textDecoration='line-through'; m.appendChild(a)}); ct.appendChild(m)}
-      const c=tr.insertCell(); c.className='act'; const btn=postButton(p.id,p.status); c.appendChild(btn);
+      const c=tr.insertCell(); c.className='act'; const btn=postButton(p.id,p.status,src); c.appendChild(btn);
       const reg=document.createElement('a'); reg.href='#'; reg.className='reg'; reg.textContent='already in channel?'; reg.title='Tell the app this post is already in your channel (paste the message number or its t.me link)';
       reg.onclick=async(ev)=>{ev.preventDefault(); const v=prompt('Which message in your channel already contains this post?\nPaste its number or its t.me link (e.g. https://t.me/yourchannel/354):'); if(!v) return;
-        const r=await api('/api/post/register',{id:p.id,message:v}); if(r.error){alert(r.error);return} setBtn(btn,'posted'); reg.remove(); refresh()};
+        const r=await api('/api/post/register',{id:p.id,message:v},src); if(r.error){alert(r.error);return} setBtn(btn,'posted'); reg.remove(); refresh()};
       if(p.status!=='posted'){c.appendChild(reg);
         const sk=document.createElement('a'); sk.href='#'; sk.className='reg'; sk.textContent='don\'t auto-post'; sk.title='Keep this post out of the automatic watcher (you can still press Post yourself)';
-        sk.onclick=async(ev)=>{ev.preventDefault(); await api('/api/post/resolve',{id:p.id,action:'skip'}); sk.textContent='✓ will not auto-post'; sk.onclick=(e2)=>e2.preventDefault()};
+        sk.onclick=async(ev)=>{ev.preventDefault(); await api('/api/post/resolve',{id:p.id,action:'skip'},src); sk.textContent='✓ will not auto-post'; sk.onclick=(e2)=>e2.preventDefault()};
         c.appendChild(sk)}}};
   tick();
 };
-$('pub').onclick=async()=>{const r=await api('/api/date/publish',{date:planData.date,ids:planData.to_publish});
+$('pub').onclick=async()=>{const src=planData.src; const r=await api('/api/date/publish',{date:planData.date,ids:planData.to_publish},src);
   $('plan-msg').textContent='Queued '+r.queued+' post(s).'+(r.worker!=='running'?' Press Start to publish them.':''); $('pub').hidden=true; refresh()};
 $('cancel').onclick=()=>{$('plan-out').hidden=true};
 
+// ---- settings ---------------------------------------------------------------------------------------------
 let settingsLoaded=false;
-function clearPlan(){ if(window._planSrc!==SRC){ window._planSrc=SRC; $('plan-out').hidden=true; planData=null; $('prog').textContent='' } }
-function showRecent(s){
-  const hp=SRC==='hpoi'; $('hp_datenote').hidden=!hp; clearPlan(); $('h1name').textContent=hp?'HPOI':'Toy-People';
-  document.querySelectorAll('.toyonly').forEach(e=>e.style.display=hp?'none':'');
-  $('pv_in').placeholder=hp?'item link or number, e.g. https://www.hpoi.net/hobby/137248':'post number or link, e.g. 114949';
-}
-async function buildTabs(){
-  const v=await api('/api/settings'); if(!v.hpoi_available) return;
-  const box=$('tabs'); box.hidden=false; box.innerHTML='';
-  for(const [k,l] of [['toypeople','Toy-People'],['hpoi','HPOI']]){
-    const b=document.createElement('button'); b.textContent=l; b.id='tab_'+k; b.className=(k===SRC?'go':'');
-    b.onclick=()=>{SRC=k; for(const x of ['toypeople','hpoi']) $('tab_'+x).className=(x===SRC?'go':''); clearPreview(); refresh()}; box.appendChild(b);}
-}
 async function loadSettings(force){
   const v=await api('/api/settings');
-  $('setup-help').hidden=v.configured; $('setup-title').textContent=v.configured?'Settings':'Step 1 — Connect Telegram';
+  $('setup-help').hidden=v.configured;
   if(settingsLoaded&&!force) return; settingsLoaded=true;
   $('s_token').value=v.telegram_bot_token; $('s_chat').value=v.telegram_chat_id; $('s_delay').value=v.post_delay_seconds;
   $('s_poll').value=v.poll_interval_seconds; $('s_init').value=v.initial_post_latest; $('s_hash').value=v.hashtag_style; fillStyles(v); fillSpacing(v); $('s_emoji').value=v.show_more_emoji; $('s_urepo').value=v.update_repo; $('s_ubranch').value=v.update_branch; $('s_utoken').value=v.update_token;
   $('h_on').value=String(v.hpoi_enabled); $('h_chat').value=v.hpoi_chat_id; $('h_delay').value=v.hpoi_post_delay_seconds; $('h_poll').value=v.hpoi_poll_interval_seconds; $('h_init').value=v.hpoi_initial_post_latest; $('h_tr').value=v.translator; $('h_key').value=v.translate_api_key;
+  return v;
 }
 function fillSpacing(v){
   const sel=$('s_spacing'); if(sel.options.length===0){ for(const [k,d] of Object.entries(v.paragraph_spacings||{})){const o=document.createElement('option'); o.value=k; o.textContent=d; sel.appendChild(o)} }
@@ -257,17 +319,27 @@ $('save').onclick=async()=>{
   const r=await api('/api/settings',{telegram_bot_token:$('s_token').value,telegram_chat_id:$('s_chat').value,post_delay_seconds:$('s_delay').value,
     poll_interval_seconds:$('s_poll').value,initial_post_latest:$('s_init').value,hashtag_style:$('s_hash').value,show_more_style:$('s_style').value,paragraph_spacing:$('s_spacing').value,show_more_emoji:$('s_emoji').value,update_repo:$('s_urepo').value,update_branch:$('s_ubranch').value,update_token:$('s_utoken').value,
     hpoi_enabled:$('h_on').value,hpoi_chat_id:$('h_chat').value,hpoi_post_delay_seconds:$('h_delay').value,hpoi_poll_interval_seconds:$('h_poll').value,hpoi_initial_post_latest:$('h_init').value,translator:$('h_tr').value,translate_api_key:$('h_key').value});
-  if(r.telegram){$('save-out').className='good';$('save-out').textContent='✅ Connected: bot @'+r.telegram.bot+' can post in “'+r.telegram.chat+'”. Now press ▶ Start at the top.'}
+  if(r.telegram){$('save-out').className='good';$('save-out').textContent='✅ Connected: bot @'+r.telegram.bot+' can post in “'+r.telegram.chat+'”. Go back to the dashboard and press ▶ Start.'}
   else if(r.telegram_error){$('save-out').className='error';$('save-out').textContent='❌ '+r.telegram_error}
   else $('save-out').textContent=r.configured?'Saved.':'Saved. Now fill in the bot token and channel.';
   loadSettings(true); refresh();
 };
-$('sendtest').onclick=async()=>{const r=await api('/api/send-test',{}); $('save-out').className=r.error?'error':'good'; $('save-out').textContent=r.error?('❌ '+r.error):'✅ Test post sent — check your channel and tap “Show More”.'};
+async function sendTest(src){const r=await api('/api/send-test',{},src); $('save-out').className=r.error?'error':'good'; $('save-out').textContent=r.error?('❌ '+r.error):'✅ Test post sent to '+SOURCES[src]+' — check your channel and tap “Show More”.'}
+$('sendtest').onclick=()=>sendTest('toypeople'); $('sendtest_h').onclick=()=>sendTest('hpoi');
+$('imp_go').onclick=async()=>{
+  const f=$('imp_file').files[0]; if(!f){$('imp_out').textContent='choose a file first';return}
+  $('imp_out').textContent='importing…';
+  const r=await fetch('/api/import-backup',{method:'POST',headers:{'X-Requested-With':'tpclone','Content-Type':'application/octet-stream'},body:f}).then(x=>x.json());
+  $('imp_out').className=r.error?'error':'good';
+  $('imp_out').textContent=r.error?('❌ '+r.error):('✅ '+r.in_file+' posted items in the file: '+r.added+' added, '+r.updated+' corrected'); refresh();
+};
+
+// ---- preview ---------------------------------------------------------------------------------------------------
 $('pv_go').onclick=async()=>{
   if($('pv_go').dataset.mode==='clear'){clearPreview();return}
-  $('pv_out').hidden=true; $('pv_go').disabled=true; $('pv_prog').textContent='working…';
-  const {job,error}=await api('/api/preview',{target:$('pv_in').value}); if(error){$('pv_prog').textContent=error;$('pv_go').disabled=false;return}
-  const tick=async()=>{const j=await api('/api/jobs/'+job);
+  const src=pvSrc(); $('pv_out').hidden=true; $('pv_go').disabled=true; $('pv_prog').textContent='working…';
+  const {job,error}=await api('/api/preview',{target:$('pv_in').value},src); if(error){$('pv_prog').textContent=error;$('pv_go').disabled=false;return}
+  const tick=async()=>{const j=await api('/api/jobs/'+job,undefined,src);
     if(j.state==='running'){$('pv_prog').textContent=j.progress;return setTimeout(tick,1000)}
     $('pv_go').disabled=false; if(j.state==='error'){$('pv_prog').textContent='❌ '+j.error;return}
     $('pv_prog').textContent=''; showPreview(j.result); $('pv_go').textContent='Clear preview'; $('pv_go').dataset.mode='clear'}; tick();
@@ -294,104 +366,86 @@ function showPreview(a){
   for(const p of a.paragraphs){const e=document.createElement('p'); e.style.margin=(a.paragraph_spacing==='tight'?'2px 0':'0 0 14px'); e.textContent=new DOMParser().parseFromString(p.replace(/<br>/g,'\n'),'text/html').body.textContent; inner.appendChild(e)}
   const g=document.createElement('div'); g.className='imgs'; for(const u of a.images.slice(0,12)){const i=document.createElement('img'); i.src=u; i.referrerPolicy='no-referrer'; g.appendChild(i)} inner.appendChild(g);
   if(a.credits.length) add('p',a.credit_label+': '+a.credits.map(c=>c[0]).join(', '),'italic');
-  const warn=[]; if(!a.title) warn.push('no title'); if(!a.cover) warn.push('no cover photo'); if(!a.post_date) warn.push('no date'); if(!a.paragraphs.length) warn.push('no text'); if(!a.images.length) warn.push('no photos');
-  $('pv_info').textContent=(a.show_more_style&&a.show_more_style!=='classic'?'(button style shown approximately'+''+') · ':'')+'Date: '+(a.post_date||'?')+' · '+a.images.length+' photos · photo slots used '+a.slots_used+'/'+a.max_media+(a.overflow?(' ('+a.overflow+' photos merged into the last collage)'):'')+(warn.length?(' · ⚠ missing: '+warn.join(', ')):' · looks complete ✅');
+  const warn=[]; if(!a.title) warn.push('no title'); if(!a.cover) warn.push('no cover photo'); if(!a.post_date&&pvSrc()!=='hpoi') warn.push('no date'); if(!a.paragraphs.length&&pvSrc()!=='hpoi') warn.push('no text'); if(!a.images.length) warn.push('no photos');
+  $('pv_info').textContent=(a.show_more_style&&a.show_more_style!=='classic'?'(button style shown approximately'+''+') · ':'')+(a.post_date?('Date: '+a.post_date+' · '):'')+a.images.length+' photos · photo slots used '+a.slots_used+'/'+a.max_media+(a.overflow?(' ('+a.overflow+' photos merged into the last collage)'):'')+(warn.length?(' · ⚠ missing: '+warn.join(', ')):' · looks complete ✅');
 }
 
-// ---- Post Now / Posted buttons -------------------------------------------------------------
+// ---- Post / Posted buttons -----------------------------------------------------------------------------------
 function setBtn(b,state,msg){
   b.className='rowbtn'; b.disabled=false; b.title=msg||'';
   if(state==='posted'){b.textContent='Posted'; b.disabled=true; b.classList.add('done')}
   else if(state==='busy'){b.textContent='Posting…'; b.disabled=true; b.classList.add('done')}
-  else if(state==='uncertain'){b.textContent='Uncertain'; b.disabled=true; b.classList.add('warn'); b.title='Delivery was uncertain - see "Needs your attention" below'}
+  else if(state==='uncertain'){b.textContent='Uncertain'; b.disabled=true; b.classList.add('warn'); b.title='Delivery was uncertain - see "Needs your attention"'}
   else if(state==='error'){b.textContent='Retry'; b.classList.add('err')}
   else {b.textContent='Post'; b.classList.add('go')}
 }
-function postButton(id,status){
+function postButton(id,status,src){
   const b=document.createElement('button'); setBtn(b,status==='posted'?'posted':status==='uncertain'?'uncertain':'now');
-  b.onclick=()=>postNow(id,b,false); return b;
+  b.onclick=()=>postNow(id,b,false,src); return b;
 }
-async function postNow(id,b,force){
+async function postNow(id,b,force,src){
   setBtn(b,'busy');
-  const {job,error}=await api('/api/post-now',{id:id,force:force}); if(error){setBtn(b,'error',error);return}
-  const tick=async()=>{const j=await api('/api/jobs/'+job);
+  const {job,error}=await api('/api/post-now',{id:id,force:force},src); if(error){setBtn(b,'error',error);return}
+  const tick=async()=>{const j=await api('/api/jobs/'+job,undefined,src);
     if(j.state==='running') return setTimeout(tick,1000);
     if(j.state==='error'){setBtn(b,'error',j.error); alert('Could not post: '+j.error); return}
     const r=j.result;
-    if(r.already){ if(confirm('Post '+id+' is already in the channel. Post it AGAIN (a duplicate)?')) return postNow(id,b,true); return setBtn(b,'posted') }
+    if(r.already){ if(confirm('This post is already in the channel. Post it AGAIN (a duplicate)?')) return postNow(id,b,true,src); return setBtn(b,'posted') }
     if(r.status==='posted') setBtn(b,'posted');
     else {setBtn(b,'error',r.error); alert('Not posted ('+r.status+'): '+(r.error||'')); }
     refresh()}; tick();
 }
 $('pv_post').onclick=async()=>{
-  const m=($('pv_in').value||'').match(/(\d+)\s*$/); if(!m){$('pv_prog').textContent='enter a post number first';return}
-  const b=$('pv_post'); const old=b.textContent; b.disabled=true; $('pv_prog').textContent='posting…';
-  const {job,error}=await api('/api/post-now',{id:+m[1],force:false}); if(error){$('pv_prog').textContent='❌ '+error;b.disabled=false;return}
-  const tick=async()=>{const j=await api('/api/jobs/'+job);
+  const src=pvSrc(); const m=($('pv_in').value||'').match(/(\d+)\s*$/); if(!m){$('pv_prog').textContent='enter a post number first';return}
+  const b=$('pv_post'); b.disabled=true; $('pv_prog').textContent='posting…';
+  const {job,error}=await api('/api/post-now',{id:+m[1],force:false},src); if(error){$('pv_prog').textContent='❌ '+error;b.disabled=false;return}
+  const tick=async()=>{const j=await api('/api/jobs/'+job,undefined,src);
     if(j.state==='running') return setTimeout(tick,1000);
     b.disabled=false; const r=j.result||{};
     if(j.state==='error') $('pv_prog').textContent='❌ '+j.error;
-    else if(r.already){ if(confirm('Already in the channel. Post it AGAIN (a duplicate)?')){ $('pv_prog').textContent='posting…'; b.disabled=true; const x=await api('/api/post-now',{id:+m[1],force:true}); const t2=async()=>{const k=await api('/api/jobs/'+x.job); if(k.state==='running') return setTimeout(t2,1000); b.disabled=false; $('pv_prog').textContent=k.state==='error'?('❌ '+k.error):(k.result.status==='posted'?'✅ posted':'❌ '+(k.result.error||k.result.status)); refresh()}; return t2()} else $('pv_prog').textContent='Not posted (already in the channel)'}
+    else if(r.already){ if(confirm('Already in the channel. Post it AGAIN (a duplicate)?')){ $('pv_prog').textContent='posting…'; b.disabled=true; const x=await api('/api/post-now',{id:+m[1],force:true},src); const t2=async()=>{const k=await api('/api/jobs/'+x.job,undefined,src); if(k.state==='running') return setTimeout(t2,1000); b.disabled=false; $('pv_prog').textContent=k.state==='error'?('❌ '+k.error):(k.result.status==='posted'?'✅ posted':'❌ '+(k.result.error||k.result.status)); refresh()}; return t2()} else $('pv_prog').textContent='Not posted (already in the channel)'}
     else $('pv_prog').textContent=r.status==='posted'?'✅ Posted to the channel':('❌ '+(r.error||r.status));
     refresh()}; tick();
 };
-$('verify').onclick=async()=>{
-  $('verify').disabled=true; $('verify-out').textContent='checking…';
-  const {job,error}=await api('/api/verify',{}); if(error){$('verify-out').textContent=error;$('verify').disabled=false;return}
-  const tick=async()=>{const j=await api('/api/jobs/'+job);
-    if(j.state==='running'){$('verify-out').textContent=j.progress;return setTimeout(tick,1000)}
-    $('verify').disabled=false; if(j.state==='error'){$('verify-out').textContent='❌ '+j.error;return}
-    const r=j.result; $('verify-out').textContent='Checked '+r.checked+' post(s): '+r.deleted.length+' deleted from the channel (now publishable again)'+(r.unknown?(', '+r.unknown+' could not be checked'):'')+(r.note?(' — '+r.note+' (Settings → Send a test post activates it)'):''); refresh()}; tick();
-};
 
-// ---- updates ------------------------------------------------------------------------------------
-let curVersion=null;
+// ---- updates (button in the header) ------------------------------------------------------------------------------
+let updAvail=false;
 function showUpdate(s){
-  curVersion=s.version; const u=s.update; const avail=!!(u&&u.available);
+  const u=s.update; updAvail=!!(u&&u.available); const b=$('upd_btn');
+  b.className='upd'+(updAvail?' avail':'');
+  b.textContent=updAvail?('⬆ Update available — press to update'):'⟳ Check for updates';
+  b.title='Current version: '+s.version+(u&&u.checked_at?(' · last checked '+fmt(u.checked_at)):'');
   $('ver').textContent='Current version: '+s.version+(u&&u.checked_at?(' · last checked '+fmt(u.checked_at)):'');
-  $('upd_go').hidden=!avail; $('upd_banner').hidden=!avail;
-  if(avail && !$('upd_out').textContent) $('upd_out').textContent='New version '+u.remote+' ('+u.changed.length+' file(s) changed)';
+  if(updAvail&&!$('upd_msg').textContent) $('upd_msg').textContent='New version '+u.remote+' ('+u.changed.length+' file(s) changed)';
 }
-async function pollJob(job,onProg){ for(;;){ const j=await api('/api/jobs/'+job); if(j.state==='running'){onProg&&onProg(j.progress); await new Promise(r=>setTimeout(r,800)); continue} return j } }
-$('upd_check').onclick=async()=>{
-  $('upd_check').disabled=true; $('upd_out').textContent='checking…';
-  const {job,error}=await api('/api/update/check',{}); if(error){$('upd_out').textContent='❌ '+error;$('upd_check').disabled=false;return}
-  const j=await pollJob(job,m=>$('upd_out').textContent=m); $('upd_check').disabled=false;
-  if(j.state==='error'){$('upd_out').textContent='❌ '+j.error;return}
-  $('upd_out').textContent=j.result.available?('New version '+j.result.remote+' is available ('+j.result.changed.length+' file(s) changed).'):'✅ You have the newest version.'; refresh();
-};
+async function checkUpdate(){
+  $('upd_btn').disabled=true; $('upd_msg').textContent='checking…';
+  const {job,error}=await api('/api/update/check',{}); if(error){$('upd_msg').textContent='❌ '+error;$('upd_btn').disabled=false;return}
+  const j=await pollJob(job,m=>$('upd_msg').textContent=m); $('upd_btn').disabled=false;
+  if(j.state==='error'){$('upd_msg').textContent='❌ '+j.error;return}
+  $('upd_msg').textContent=j.result.available?('New version '+j.result.remote+' is available ('+j.result.changed.length+' file(s) changed).'):'✅ You have the newest version.'; refresh();
+}
 async function doUpdate(){
   if(!confirm('Update now? The app restarts by itself (a post in progress finishes first) and this page reloads.')) return;
-  for(const id of ['upd_go','upd_go2','upd_check']) $(id).disabled=true;
-  $('upd_out').textContent='starting…';
-  const {job,error}=await api('/api/update/apply',{}); if(error){$('upd_out').textContent='❌ '+error; for(const id of ['upd_go','upd_go2','upd_check']) $(id).disabled=false; return}
-  const j=await pollJob(job,m=>$('upd_out').textContent=m);
-  if(j.state==='error'){$('upd_out').textContent='❌ '+j.error+' (nothing was changed)'; for(const id of ['upd_go','upd_go2','upd_check']) $(id).disabled=false; return}
-  const target=j.result.version; $('upd_out').textContent='Updated to '+target+' — restarting, this page will reload…';
+  $('upd_btn').disabled=true; $('upd_msg').textContent='starting…';
+  const {job,error}=await api('/api/update/apply',{}); if(error){$('upd_msg').textContent='❌ '+error; $('upd_btn').disabled=false; return}
+  const j=await pollJob(job,m=>$('upd_msg').textContent=m);
+  if(j.state==='error'){$('upd_msg').textContent='❌ '+j.error+' (nothing was changed)'; $('upd_btn').disabled=false; return}
+  const target=j.result.version; $('upd_msg').textContent='Updated to '+target+' — restarting, this page will reload…';
   for(let i=0;i<120;i++){ await new Promise(r=>setTimeout(r,1500));
     try{ const r=await fetch('/api/status',{cache:'no-store'}); if(r.ok){ const s=await r.json(); if(s.version===target){location.reload(); return} } }catch(e){} }
-  $('upd_out').textContent='Taking longer than expected — wait a minute and reload this page.';
+  $('upd_msg').textContent='Taking longer than expected — wait a minute and reload this page.';
 }
-$('upd_go').onclick=doUpdate; $('upd_go2').onclick=doUpdate;
+$('upd_btn').onclick=()=>updAvail?doUpdate():checkUpdate();
 
-$('imp_go').onclick=async()=>{
-  const f=$('imp_file').files[0]; if(!f){$('imp_out').textContent='choose a file first';return}
-  $('imp_out').textContent='importing…';
-  const r=await fetch('/api/import-backup',{method:'POST',headers:{'X-Requested-With':'tpclone','Content-Type':'application/octet-stream'},body:f}).then(x=>x.json());
-  $('imp_out').className=r.error?'error':'good';
-  $('imp_out').textContent=r.error?('❌ '+r.error):('✅ '+r.in_file+' posted items in the file: '+r.added+' added, '+r.updated+' corrected'); refresh();
-};
-
-$('checknow').onclick=async()=>{
-  $('checknow').disabled=true; $('verify-out').className='mut'; $('verify-out').textContent='checking the website…';
-  const {job,error}=await api('/api/check-now',{}); if(error){$('verify-out').textContent='❌ '+error;$('checknow').disabled=false;return}
-  const j=await pollJob(job,m=>$('verify-out').textContent=m); $('checknow').disabled=false;
-  if(j.state==='error'){$('verify-out').className='error'; $('verify-out').textContent='❌ '+j.error; return}
-  const r=j.result; const warn=r.listing_error?(' ⚠ Latest News list failed: '+r.listing_error):(r.listing===0?' ⚠ the Latest News list returned no posts':'');
-  $('verify-out').className=warn?'error':'good';
-  $('verify-out').textContent='✅ Latest News list: '+r.listing+' posts (newest '+(r.newest||'?')+') · sitemap: '+(r.sitemap||0).toLocaleString()+' posts · '+r.new+' new post(s) queued'+warn; refresh();
-};
-buildTabs(); refresh(); loadSettings(); setInterval(refresh,4000); setInterval(loadSettings,8000);
+// ---- start ------------------------------------------------------------------------------------------------------------
+(async()=>{
+  const v=await loadSettings(true);
+  ACTIVE=v&&v.hpoi_available?['toypeople','hpoi']:['toypeople'];
+  buildPanels(); await refresh();
+  if(v&&!v.configured) showView('set');            // first run: go straight to the Telegram setup
+  setInterval(refresh,4000);
+})();
 </script>
 </body>
 </html>
