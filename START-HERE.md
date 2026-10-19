@@ -128,12 +128,11 @@ The same app can copy the newest items of **hpoi.net → 最新情报 (Latest In
 * Open the dashboard: at the top you will see two tabs, **Toy-People** and **HPOI**. Click **HPOI**, then press **▶ Start**
   (each tab has its own Start/Stop; they remember their state across restarts).
 * The title and the hashtags (maker, characters, series) are translated to English by Google Translate. Hashtags are
-  clickable `#` tags. The expanded post shows the release month, the photos in one collage and “via: Hpoi” (linked).
+  clickable `#` tags. The expanded post shows the release month, the photos in one collage (no credit footer).
 * Names the machine gets wrong can be fixed in `hpoi_glossary.json` in your data folder (it already holds the spellings
   you asked for, e.g. 伊地知星歌 → Ijichi Seika). Add lines like `"中文名": "English Name"`; they apply to the next post.
 * If Google Translate is busy, the post simply waits and retries – nothing is ever posted untranslated.
 * **Repost by date** scrolls down hpoi's Latest Info list page by page until it is past the day you chose (one page every 5 seconds). The first time you press Start, the items already on the list are marked “seen” (not posted); only later ones are posted.
   Use the date table or the preview box (with a product link) to post older items by hand.
 * It is polite to the website: one page read every 10 minutes, at least 5 seconds between requests, never the `/api/` area.
-  HPOI content is shared by its users – the credit link keeps the source visible.
 * Settings for it are in **Settings → HPOI (hpoi.net) settings** (another channel, wait time, official Google key).

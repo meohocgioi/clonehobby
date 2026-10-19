@@ -133,8 +133,7 @@ def test_publish_translated_post(tmp_path):
     assert "#Bushiroad_Creative" in html and "#Ijichi_Seika" in html and "#Onkyo_ALTO" in html
     assert "#Hiroi_Kikuri" in html and "#Goto_Doll" in html and "#Lonely_Rock" in html
     assert "<tg-collage>" in html and html.count("<img") == 6               # cover + 5 photos
-    assert '<a href="https://www.hpoi.net/hobby/137248">Hpoi</a>' in html
-    assert "via" in html
+    assert "hpoi.net" not in html and "via" not in html.lower()          # no credit footer
     assert tg.sent[0]["kw"]["skip_entity_detection"] is False                # clickable hashtags
 
 

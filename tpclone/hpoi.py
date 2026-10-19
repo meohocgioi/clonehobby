@@ -417,6 +417,6 @@ class HpoiEngine(Engine):
         art = site.Article(
             post_id=key, url=url, title=title, cover=info["cover"] or it.get("cover"),
             scheduled=scheduled_line(info["release"]), tags=tags,
-            images=info["images"][: self.s.max_media], credit_label="via", credits=[("Hpoi", url)], lang="en")
+            images=info["images"][: self.s.max_media], credits=[], lang="en")      # no "via" footer, by request
         self.db.set_meta(key, title, None)
         return art
