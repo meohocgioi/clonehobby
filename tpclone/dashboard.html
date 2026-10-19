@@ -109,12 +109,6 @@
     </div>
   </div>
 
-  <div class="card" id="recentcard" hidden>
-    <h2>Latest Info on HPOI</h2>
-    <p class="mut">The newest items on hpoi.net's “最新情报” list. New ones are translated and posted automatically after you press Start; use <b>Post</b> to send an older one by hand. Titles and hashtags are translated to English by Google Translate (free service: if it is busy a post waits and retries — nothing is ever posted untranslated).</p>
-    <table id="recent-tbl"></table>
-  </div>
-
   <div class="card">
     <h2>Repost older posts by date</h2>
     <div class="row">
@@ -225,16 +219,9 @@ $('cancel').onclick=()=>{$('plan-out').hidden=true};
 let settingsLoaded=false;
 function clearPlan(){ if(window._planSrc!==SRC){ window._planSrc=SRC; $('plan-out').hidden=true; planData=null; $('prog').textContent='' } }
 function showRecent(s){
-  const hp=SRC==='hpoi'; $('recentcard').hidden=!hp; $('hp_datenote').hidden=!hp; clearPlan(); $('h1name').textContent=hp?'HPOI':'Toy-People';
+  const hp=SRC==='hpoi'; $('hp_datenote').hidden=!hp; clearPlan(); $('h1name').textContent=hp?'HPOI':'Toy-People';
   document.querySelectorAll('.toyonly').forEach(e=>e.style.display=hp?'none':'');
   $('pv_in').placeholder=hp?'item link or number, e.g. https://www.hpoi.net/hobby/137248':'post number or link, e.g. 114949';
-  if(!hp) return;
-  const t=$('recent-tbl'); t.innerHTML='';
-  for(const r of (s.recent||[])){
-    const tr=t.insertRow(); tr.insertCell().textContent=r.status;
-    const c=tr.insertCell(); const a=document.createElement('a'); a.href=r.url; a.target='_blank'; a.textContent=r.title||r.url; c.appendChild(a);
-    tr.insertCell().appendChild(postButton(r.post_id,r.status));
-  }
 }
 async function buildTabs(){
   const v=await api('/api/settings'); if(!v.hpoi_available) return;

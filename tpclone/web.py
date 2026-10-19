@@ -73,7 +73,7 @@ def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | No
             "chat": s.telegram_chat_id, "chat_link": chat_link(), "configured": s.telegram_ready,
             "last_backup": float(db.kv_get("last_backup_ts", "0") or 0) or None,
             "watch": db.kv_json("discover_status"), "listing": db.kv_json("listing_info"), "listing_max": db.kv_get("listing_max_id"), "poll_every": s.poll_interval_seconds, "data_dir": str(s.data_dir.resolve()), "probe": db.kv_get("probe_ok"), "version": tpclone.code_version(), "code_dir": tpclone.__path__[0], "update": db.kv_json("update_info"),
-            "sources": list(all_sources), "recent": db.recent_posts(30) if engine is not all_sources["toypeople"][0] else [],
+            "sources": list(all_sources),
         }
 
     def settings_view() -> dict:

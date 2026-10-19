@@ -133,7 +133,7 @@ The same app can copy the newest items of **hpoi.net → 最新情报 (Latest In
   you asked for, e.g. 伊地知星歌 → Ijichi Seika). Add lines like `"中文名": "English Name"`; they apply to the next post.
 * If Google Translate is busy, the post simply waits and retries – nothing is ever posted untranslated.
 * **Repost by date** scrolls down hpoi's Latest Info list page by page until it is past the day you chose (one page every 5 seconds). The first time you press Start, the items already on the list are marked “seen” (not posted); only later ones are posted.
-  The tab's list shows the latest items, each with a **Post** button for sending one by hand.
+  Use the date table or the preview box (with a product link) to post older items by hand.
 * It is polite to the website: one page read every 10 minutes, at least 5 seconds between requests, never the `/api/` area.
   HPOI content is shared by its users – the credit link keeps the source visible.
 * Settings for it are in **Settings → HPOI (hpoi.net) settings** (another channel, wait time, official Google key).

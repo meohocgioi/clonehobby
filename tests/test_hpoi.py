@@ -195,8 +195,8 @@ def test_dashboard_routes_by_source(tmp_path):
     try:
         e.discover()
         st = httpx.get(base + "/api/status?source=hpoi").json()
-        assert st["stats"]["skipped"] == 5 and len(st["recent"]) == 5 and st["sources"] == ["toypeople", "hpoi"]
-        assert httpx.get(base + "/api/status").json()["stats"]["total"] == 0 and httpx.get(base + "/api/status").json()["recent"] == []
+        assert st["stats"]["skipped"] == 5 and st["sources"] == ["toypeople", "hpoi"]
+        assert httpx.get(base + "/api/status").json()["stats"]["total"] == 0
         # preview by the product number from the link
         job = httpx.post(base + "/api/preview?source=hpoi", json={"target": "https://www.hpoi.net/hobby/137248"}, headers=h).json()["job"]
         j = _wait(base, job)
