@@ -20,6 +20,7 @@ from .config import Settings, load_settings
 from .db import DB
 from .engine import Engine, Worker
 from .fetch import Fetcher
+from .hpoi import HpoiEngine
 from .site import parse_article, load_selectors
 from .telegram import Telegram, TelegramError
 from .web import make_server
@@ -41,9 +42,10 @@ def _post_id(arg: str) -> int:
     return int(m.group(1))
 
 
-def restart_process(worker: Worker) -> None:
+def restart_process(worker: Worker, workers: list | None = None) -> None:
     """Apply an update: let the in-flight post finish, then start again (same command, new code)."""
-    worker.halt()          # keeps the saved Start/Stop state, so AUTO_RESUME continues exactly as before
+    for w in (workers or [worker]):
+        w.halt()           # keeps the saved Start/Stop state, so AUTO_RESUME continues exactly as before
     logging.info("restarting to apply the update")
     if sys.platform == "win32" or getattr(sys, "frozen", False):
         os._exit(0)        # the Start-Windows.bat loop starts it again
@@ -60,7 +62,13 @@ def cmd_run(s: Settings, a) -> None:
         except (TelegramError, httpx.HTTPError) as e:
             raise SystemExit(f"Telegram check failed: {e}")
     worker = Worker(engine)
-    server = make_server(engine, worker, restart=lambda: restart_process(worker))
+    sources, workers = {}, [worker]
+    if s.hpoi_enabled:
+        hp_engine = HpoiEngine.create(s)
+        hp_worker = Worker(hp_engine)
+        sources["hpoi"] = (hp_engine, hp_worker)
+        workers.append(hp_worker)
+    server = make_server(engine, worker, restart=lambda: restart_process(worker, workers), sources=sources)
     stopping = threading.Event()
 
     def shutdown(*_):
@@ -68,15 +76,17 @@ def cmd_run(s: Settings, a) -> None:
             return
         stopping.set()
         logging.info("shutting down: letting the in-flight post finish; progress is already saved")
-        worker.halt()
+        for w in workers:
+            w.halt()
         threading.Thread(target=server.shutdown, daemon=True).start()
 
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, shutdown)
-    if worker.resume_if_desired():
-        logging.info("resumed (it was running when the app last stopped)")
-    elif a.start:
-        worker.start()
+    for w in workers:
+        if w.resume_if_desired():
+            logging.info("resumed %s (it was running when the app last stopped)", w.e.source)
+        elif a.start and w is worker:
+            w.start()
     url = f"http://{'127.0.0.1' if s.web_host in ('0.0.0.0', '') else s.web_host}:{server.server_port}/"
     logging.info("dashboard: %s   state=%s", url, worker.state())
     if s.web_token and s.web_host not in ("127.0.0.1", "localhost", "::1"):

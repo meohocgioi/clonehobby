@@ -40,7 +40,8 @@
 </head>
 <body>
 <main>
-  <h1>Toy-People → Telegram <span class="mut" id="chat"></span></h1>
+  <h1><span id="h1name">Toy-People</span> → Telegram <span class="mut" id="chat"></span></h1>
+  <div class="row" id="tabs" hidden style="margin-bottom:12px"></div>
   <div class="msg" id="upd_banner" hidden>🔔 A new version is available. <button class="go" id="upd_go2">Update now</button></div>
 
   <div class="card">
@@ -86,6 +87,15 @@
       <label>On the very first start, also publish the latest N posts (0 = none, only future posts)</label><input type="number" id="s_init" min="0">
       <label>Hashtags</label><select id="s_hash"><option value="plain">Same text as on the website</option><option value="hashtag">Clickable #Hashtags</option></select>
     </details>
+    <details id="hpoi_set"><summary>HPOI (hpoi.net) settings</summary>
+      <label>Watch HPOI too (takes effect after the app restarts)</label><select id="h_on"><option value="true">Yes</option><option value="false">No</option></select>
+      <label>HPOI channel (empty = the same channel as above)</label><input type="text" id="h_chat" placeholder="@mychannel">
+      <label>Wait between HPOI posts (seconds)</label><input type="number" id="h_delay" min="3" step="1">
+      <label>Check HPOI every (seconds, at least 60)</label><input type="number" id="h_poll" min="60">
+      <label>On the very first start, also publish the latest N HPOI items (0 = none)</label><input type="number" id="h_init" min="0">
+      <label>Translator</label><select id="h_tr"><option value="google_free">Free Google Translate (no key)</option><option value="google_cloud">Google Cloud Translation (needs an API key)</option></select>
+      <label>Google Cloud API key (only for the option above)</label><input type="password" id="h_key" autocomplete="off">
+    </details>
     <p class="row"><button class="go" id="save">Save &amp; test connection</button><button id="sendtest">Send a test post</button></p>
     <div id="save-out" class="mut"></div>
   </div>
@@ -99,7 +109,13 @@
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" id="recentcard" hidden>
+    <h2>Latest Info on HPOI</h2>
+    <p class="mut">The newest items on hpoi.net's “最新情报” list. New ones are translated and posted automatically after you press Start; use <b>Post</b> to send an older one by hand. Titles and hashtags are translated to English by Google Translate (free service: if it is busy a post waits and retries — nothing is ever posted untranslated).</p>
+    <table id="recent-tbl"></table>
+  </div>
+
+  <div class="card toyonly">
     <h2>Repost older posts by date</h2>
     <div class="row">
       <input type="date" id="date"> <button id="plan">Check date</button>
@@ -119,14 +135,14 @@
     <table id="review-tbl"></table>
   </div>
 
-  <div class="card">
+  <div class="card toyonly">
     <h2>Updates</h2>
     <p class="mut" id="ver"></p>
     <div class="row"><button id="upd_check">Check for updates</button><button class="go" id="upd_go" hidden>Update now</button><span class="mut" id="upd_out"></span></div>
     <p class="mut">Updating downloads the newest version, tests it, restarts the app by itself (a post in progress finishes first) and reloads this page. Your settings and posted-list are never touched. If the new version fails to start, the old one comes back automatically.</p>
   </div>
 
-  <div class="card">
+  <div class="card toyonly">
     <h2>Import an old posted-list</h2>
     <p class="mut">Moved or re-downloaded the app and it forgot what it already posted? Choose your old <code>tpclone.db</code> (or a file from the old <code>backups</code> folder, or a downloaded backup). Posts it knew as posted are added here, so they won't be posted twice. Nothing is deleted.</p>
     <div class="row"><input type="file" id="imp_file" accept=".db"><button id="imp_go">Import</button><span class="mut" id="imp_out"></span></div>
@@ -136,12 +152,15 @@
 </main>
 <script>
 const $=id=>document.getElementById(id);
-const api=(p,body)=>fetch(p,body===undefined?{}:{method:'POST',headers:{'X-Requested-With':'tpclone','Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+let SRC='toypeople';
+const srcURL=p=>(SRC==='hpoi'&&!/^\/api\/(settings|update|import-backup)/.test(p))?p+(p.includes('?')?'&':'?')+'source=hpoi':p;
+const api=(p,body)=>fetch(srcURL(p),body===undefined?{}:{method:'POST',headers:{'X-Requested-With':'tpclone','Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
 let planData=null;
 function fmt(ts){return ts?new Date(ts*1000).toLocaleString():''}
 async function refresh(){
   const s=await api('/api/status'); showUpdate(s); window.chatLink=s.chat_link;
   $('chat').textContent=s.chat?('· '+s.chat):'';
+  showRecent(s);
   const st=$('state'); st.textContent=s.state.toUpperCase()+(s.dry_run?' (dry-run)':''); st.className='pill '+s.state;
   $('start').disabled=(s.state==='running')||!s.configured; $('stop').disabled=(s.state!=='running');
   $('err').hidden=!s.error; $('err').textContent=s.error||'';
@@ -149,7 +168,7 @@ async function refresh(){
   for(const [n,l] of [['posted','Published'],['pending','Queued'],['uncertain','Uncertain'],['failed','Failed'],['skipped','Seen (not posted)'],['total','Tracked']]){
     const sp=document.createElement('span'); sp.textContent=l+': '+(k[n]||0); $('stats').appendChild(sp);}
   $('next').textContent=(s.pending&&s.state==='running')?('next post in ~'+s.next_post_in+'s (delay '+s.delay+'s)'):(s.pending&&s.state!=='running'?'queue waits for Start':'');
-  $('bk').innerHTML=''; {const t=document.createTextNode(s.last_backup?('Automatic backup of your posted-list: '+fmt(s.last_backup)+' (kept 14 days) · '):'Automatic backup runs daily · '); const a=document.createElement('a'); a.href='/api/backup'; a.textContent='Download a backup'; $('bk').append(t,a);
+  $('bk').innerHTML=''; {const t=document.createTextNode(s.last_backup?('Automatic backup of your posted-list: '+fmt(s.last_backup)+' (kept 14 days) · '):'Automatic backup runs daily · '); const a=document.createElement('a'); a.href=srcURL('/api/backup'); a.textContent='Download a backup'; $('bk').append(t,a);
     const d=document.createElement('div'); d.className='mut'; d.textContent='Your data folder: '+s.data_dir; $('bk').append(d);
     if(s.probe==='0'){const w=document.createElement('div'); w.className='error'; w.textContent='⚠ Deleted-post detection is OFF (Telegram did not answer reliably). Nothing is re-posted automatically.'; $('bk').append(w)}}
   {const w=s.watch, el=$('watch'); el.className='mut';
@@ -203,12 +222,32 @@ $('pub').onclick=async()=>{const r=await api('/api/date/publish',{date:planData.
 $('cancel').onclick=()=>{$('plan-out').hidden=true};
 
 let settingsLoaded=false;
+function showRecent(s){
+  const hp=SRC==='hpoi'; $('recentcard').hidden=!hp; $('h1name').textContent=hp?'HPOI':'Toy-People';
+  document.querySelectorAll('.toyonly').forEach(e=>e.style.display=hp?'none':'');
+  $('pv_in').placeholder=hp?'item link or number, e.g. https://www.hpoi.net/hobby/137248':'post number or link, e.g. 114949';
+  if(!hp) return;
+  const t=$('recent-tbl'); t.innerHTML='';
+  for(const r of (s.recent||[])){
+    const tr=t.insertRow(); tr.insertCell().textContent=r.status;
+    const c=tr.insertCell(); const a=document.createElement('a'); a.href=r.url; a.target='_blank'; a.textContent=r.title||r.url; c.appendChild(a);
+    tr.insertCell().appendChild(postButton(r.post_id,r.status));
+  }
+}
+async function buildTabs(){
+  const v=await api('/api/settings'); if(!v.hpoi_available) return;
+  const box=$('tabs'); box.hidden=false; box.innerHTML='';
+  for(const [k,l] of [['toypeople','Toy-People'],['hpoi','HPOI']]){
+    const b=document.createElement('button'); b.textContent=l; b.id='tab_'+k; b.className=(k===SRC?'go':'');
+    b.onclick=()=>{SRC=k; for(const x of ['toypeople','hpoi']) $('tab_'+x).className=(x===SRC?'go':''); clearPreview(); refresh()}; box.appendChild(b);}
+}
 async function loadSettings(force){
   const v=await api('/api/settings');
   $('setup-help').hidden=v.configured; $('setup-title').textContent=v.configured?'Settings':'Step 1 — Connect Telegram';
   if(settingsLoaded&&!force) return; settingsLoaded=true;
   $('s_token').value=v.telegram_bot_token; $('s_chat').value=v.telegram_chat_id; $('s_delay').value=v.post_delay_seconds;
   $('s_poll').value=v.poll_interval_seconds; $('s_init').value=v.initial_post_latest; $('s_hash').value=v.hashtag_style; fillStyles(v); fillSpacing(v); $('s_emoji').value=v.show_more_emoji; $('s_urepo').value=v.update_repo; $('s_ubranch').value=v.update_branch; $('s_utoken').value=v.update_token;
+  $('h_on').value=String(v.hpoi_enabled); $('h_chat').value=v.hpoi_chat_id; $('h_delay').value=v.hpoi_post_delay_seconds; $('h_poll').value=v.hpoi_poll_interval_seconds; $('h_init').value=v.hpoi_initial_post_latest; $('h_tr').value=v.translator; $('h_key').value=v.translate_api_key;
 }
 function fillSpacing(v){
   const sel=$('s_spacing'); if(sel.options.length===0){ for(const [k,d] of Object.entries(v.paragraph_spacings||{})){const o=document.createElement('option'); o.value=k; o.textContent=d; sel.appendChild(o)} }
@@ -227,7 +266,8 @@ $('samples').onclick=async()=>{
 $('save').onclick=async()=>{
   $('save-out').textContent='Saving…'; $('save-out').className='mut';
   const r=await api('/api/settings',{telegram_bot_token:$('s_token').value,telegram_chat_id:$('s_chat').value,post_delay_seconds:$('s_delay').value,
-    poll_interval_seconds:$('s_poll').value,initial_post_latest:$('s_init').value,hashtag_style:$('s_hash').value,show_more_style:$('s_style').value,paragraph_spacing:$('s_spacing').value,show_more_emoji:$('s_emoji').value,update_repo:$('s_urepo').value,update_branch:$('s_ubranch').value,update_token:$('s_utoken').value});
+    poll_interval_seconds:$('s_poll').value,initial_post_latest:$('s_init').value,hashtag_style:$('s_hash').value,show_more_style:$('s_style').value,paragraph_spacing:$('s_spacing').value,show_more_emoji:$('s_emoji').value,update_repo:$('s_urepo').value,update_branch:$('s_ubranch').value,update_token:$('s_utoken').value,
+    hpoi_enabled:$('h_on').value,hpoi_chat_id:$('h_chat').value,hpoi_post_delay_seconds:$('h_delay').value,hpoi_poll_interval_seconds:$('h_poll').value,hpoi_initial_post_latest:$('h_init').value,translator:$('h_tr').value,translate_api_key:$('h_key').value});
   if(r.telegram){$('save-out').className='good';$('save-out').textContent='✅ Connected: bot @'+r.telegram.bot+' can post in “'+r.telegram.chat+'”. Now press ▶ Start at the top.'}
   else if(r.telegram_error){$('save-out').className='error';$('save-out').textContent='❌ '+r.telegram_error}
   else $('save-out').textContent=r.configured?'Saved.':'Saved. Now fill in the bot token and channel.';
@@ -362,7 +402,7 @@ $('checknow').onclick=async()=>{
   $('verify-out').className=warn?'error':'good';
   $('verify-out').textContent='✅ Latest News list: '+r.listing+' posts (newest '+(r.newest||'?')+') · sitemap: '+(r.sitemap||0).toLocaleString()+' posts · '+r.new+' new post(s) queued'+warn; refresh();
 };
-refresh(); loadSettings(); setInterval(refresh,4000); setInterval(loadSettings,8000);
+buildTabs(); refresh(); loadSettings(); setInterval(refresh,4000); setInterval(loadSettings,8000);
 </script>
 </body>
 </html>

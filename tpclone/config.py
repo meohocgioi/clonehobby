@@ -63,6 +63,14 @@ class Settings:
     update_branch: str = "claude/vibrant-tesla-uen2xl"
     update_token: str = ""              # only for a private repository (GitHub token, read access)
     update_api_base: str = "https://api.github.com"
+    # ---- second source: hpoi.net "Latest Info" (translated to English) ----
+    hpoi_enabled: bool = True
+    hpoi_chat_id: str = ""              # empty = the same channel as toy-people
+    hpoi_poll_interval_seconds: int = 600
+    hpoi_post_delay_seconds: float = 45.0
+    hpoi_initial_post_latest: int = 0
+    translator: str = "google_free"     # google_free | google_cloud
+    translate_api_key: str = ""         # only for google_cloud
     user_agent: str = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -95,7 +103,9 @@ class Settings:
 # Fields editable from the dashboard (saved to <data>/settings.json, which wins over .env)
 UI_FIELDS = ("telegram_bot_token", "telegram_chat_id", "post_delay_seconds", "poll_interval_seconds",
              "initial_post_latest", "hashtag_style", "media_mode", "show_more_label", "show_more_style", "show_more_emoji", "paragraph_spacing",
-             "max_posts_per_hour", "site_tz", "update_repo", "update_branch", "update_token")
+             "max_posts_per_hour", "site_tz", "update_repo", "update_branch", "update_token",
+             "hpoi_enabled", "hpoi_chat_id", "hpoi_poll_interval_seconds", "hpoi_post_delay_seconds",
+             "hpoi_initial_post_latest", "translator", "translate_api_key")
 
 
 def app_dir() -> Path:

@@ -42,8 +42,13 @@ class Jobs:
         return jid
 
 
-def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPServer:
+def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | None = None) -> ThreadingHTTPServer:
+    """`sources` = extra {name: (Engine, Worker)} (e.g. "hpoi"); every API call may carry ?source=<name>."""
     s = engine.s
+    all_sources = {"toypeople": (engine, worker), **(sources or {})}
+
+    def pick(source: str | None):
+        return all_sources.get(source or "toypeople") or all_sources["toypeople"]
     jobs = Jobs()
     update_lock = threading.Lock()
     page = Path(__file__).with_name("dashboard.html").read_text(encoding="utf8")
@@ -54,7 +59,8 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
             return f"https://t.me/{c[1:]}"
         return f"https://t.me/c/{c[4:]}" if c.startswith("-100") else ""
 
-    def status() -> dict:
+    def status(engine: Engine, worker: Worker) -> dict:
+        s = engine.s
         db = engine.db
         nxt = engine.pacer.next_allowed_at()
         return {
@@ -67,14 +73,17 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
             "chat": s.telegram_chat_id, "chat_link": chat_link(), "configured": s.telegram_ready,
             "last_backup": float(db.kv_get("last_backup_ts", "0") or 0) or None,
             "watch": db.kv_json("discover_status"), "listing": db.kv_json("listing_info"), "listing_max": db.kv_get("listing_max_id"), "poll_every": s.poll_interval_seconds, "data_dir": str(s.data_dir.resolve()), "probe": db.kv_get("probe_ok"), "version": tpclone.code_version(), "code_dir": tpclone.__path__[0], "update": db.kv_json("update_info"),
+            "sources": list(all_sources), "recent": db.recent_posts(30) if engine is not all_sources["toypeople"][0] else [],
         }
 
     def settings_view() -> dict:
         out = {k: getattr(s, k) for k in UI_FIELDS}
         t = s.telegram_bot_token
         out["telegram_bot_token"] = ("••••••" + t[-4:]) if t else ""
-        u = s.update_token
-        out["update_token"] = ("••••••" + u[-4:]) if u else ""
+        for k in ("update_token", "translate_api_key"):
+            v = getattr(s, k)
+            out[k] = ("••••••" + v[-4:]) if v else ""
+        out["hpoi_available"] = "hpoi" in all_sources
         out["configured"] = s.telegram_ready
         out["show_more_styles"] = render.SHOW_MORE_STYLES
         out["paragraph_spacings"] = render.PARAGRAPH_SPACING
@@ -86,7 +95,7 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
             if k not in body:
                 continue
             v = body[k]
-            if k in ("telegram_bot_token", "update_token") and str(v).startswith("•"):
+            if k in ("telegram_bot_token", "update_token", "translate_api_key") and str(v).startswith("•"):
                 continue                                   # unchanged (masked) token
             if k == "telegram_bot_token" and not str(v).strip():
                 continue
@@ -96,7 +105,8 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
         for k, v in changes.items():
             setattr(s, k, v)
         save_ui_settings(s, changes)
-        engine.apply_settings()
+        for eng, _ in all_sources.values():
+            eng.apply_settings()
         res = {"saved": True, "configured": s.telegram_ready}
         if engine.tg:
             try:
@@ -105,12 +115,13 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
                 res["telegram_error"] = str(e)
         return res
 
-    def preview(target: str, prog) -> dict:
+    def preview(engine: Engine, target: str, prog) -> dict:
+        s = engine.s
         m = re.search(r"(\d+)\s*$", target.strip())
         if not m:
             raise ValueError("enter a post number or a link like https://www.toy-people.com/en/?p=114949")
         prog("downloading the article")
-        art = engine.fetch_article(int(m.group(1)))
+        art = engine.fetch_article(engine.resolve_key(int(m.group(1))))
         plan = render.plan_media(art, s.max_media)
         html = render.build_html(art, s, plan, lambda k: k)
         d = art.to_dict()
@@ -151,7 +162,7 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
             n = int(self.headers.get("Content-Length") or 0)
             return json.loads(self.rfile.read(n) or b"{}") if n else {}
 
-        def _import_backup(self):
+        def _import_backup(self, eng):
             import sqlite3
             import tempfile
             n = int(self.headers.get("Content-Length") or 0)
@@ -161,21 +172,22 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
                 f = Path(td) / "upload.db"
                 f.write_bytes(self.rfile.read(n))
                 try:
-                    res = engine.db.merge_posted_from(str(f))
+                    res = eng.db.merge_posted_from(str(f))
                 except (sqlite3.DatabaseError, ValueError) as e:
                     return self._json({"error": f"that is not a usable backup file: {e}"}, 400)
-            engine.db.log("info", f"imported posted-list from a backup file: {res['added']} added, {res['updated']} corrected")
+            eng.db.log("info", f"imported posted-list from a backup file: {res['added']} added, {res['updated']} corrected")
             self._json(res)
 
         def do_GET(self):
             if not self._auth():
                 return self._json({"error": "unauthorized"}, 401)
             u = urlparse(self.path)
+            eng, wk = pick(parse_qs(u.query).get("source", [""])[0])
             if u.path == "/":
                 extra = {"Set-Cookie": f"tpt={s.web_token}; HttpOnly; SameSite=Strict; Path=/"} if s.web_token else {}
                 return self._send(200, page.encode(), "text/html; charset=utf-8", extra)
             if u.path == "/api/status":
-                return self._json(status())
+                return self._json(status(eng, wk))
             if u.path == "/api/settings":
                 return self._json(settings_view())
             if u.path == "/api/backup":      # fresh consistent copy for the user to keep somewhere safe
@@ -183,9 +195,9 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
                 from pathlib import Path
                 with tempfile.TemporaryDirectory() as td:
                     dest = Path(td) / "backup.db"
-                    engine.db.backup_to(str(dest))
+                    eng.db.backup_to(str(dest))
                     data = dest.read_bytes()
-                name = time.strftime("tpclone-backup-%Y-%m-%d.db")
+                name = time.strftime(("hpoi" if eng is not engine else "tpclone") + "-backup-%Y-%m-%d.db")
                 return self._send(200, data, "application/octet-stream",
                                   {"Content-Disposition": f'attachment; filename="{name}"'})
             if u.path.startswith("/api/jobs/"):
@@ -199,17 +211,18 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
             if self.headers.get("X-Requested-With") != "tpclone":   # CSRF guard for the cookie-auth case
                 return self._json({"error": "missing X-Requested-With"}, 400)
             path = urlparse(self.path).path
+            eng, wk = pick(parse_qs(urlparse(self.path).query).get("source", [""])[0])
             if path == "/api/import-backup":          # raw file upload (an old tpclone .db backup)
-                return self._import_backup()
+                return self._import_backup(eng)
             body = self._body()
             try:
                 if path == "/api/settings":
                     return self._json(save_settings(body))
                 if path == "/api/preview":
-                    jid = jobs.run(lambda prog: preview(str(body.get("target", "")), prog))
+                    jid = jobs.run(lambda prog: preview(eng, str(body.get("target", "")), prog))
                     return self._json({"job": jid})
                 if path == "/api/send-style-samples":
-                    if not engine.tg:
+                    if not eng.tg:
                         return self._json({"error": "Set the bot token and channel first (Settings)."}, 400)
                     results = {}
                     for key, desc in render.SHOW_MORE_STYLES.items():
@@ -223,9 +236,9 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
                                     f"<details>{render.summary_html(s.show_more_label, key, s.show_more_emoji)}"
                                     f"<p><i>This is the expanded text. If you read this, the style “{key}” works.</i></p></details>")
                         try:
-                            res = engine.tg.send_rich(html)
-                            engine._calibrate_probe(res.get("message_id"))
-                            engine.db.add_message(0, res["message_id"])
+                            res = eng.tg.send_rich(html)
+                            eng._calibrate_probe(res.get("message_id"))
+                            eng.db.add_message(0, res["message_id"])
                             results[key] = "sent"
                         except Exception as e:  # noqa: BLE001
                             results[key] = f"Telegram refused it: {e}"
@@ -237,22 +250,22 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
                     for mode in render.PARAGRAPH_SPACING:
                         html = f"<h6>Spacing sample: {mode}</h6>" + "".join(render.body_blocks(sample, mode))
                         try:
-                            res = engine.tg.send_rich(html)
-                            engine._calibrate_probe(res.get("message_id"))
-                            engine.db.add_message(0, res["message_id"])
+                            res = eng.tg.send_rich(html)
+                            eng._calibrate_probe(res.get("message_id"))
+                            eng.db.add_message(0, res["message_id"])
                             results[f"spacing: {mode}"] = "sent"
                         except Exception as e:  # noqa: BLE001
                             results[f"spacing: {mode}"] = f"Telegram refused it: {e}"
                         time.sleep(min(3, s.effective_delay))
                     return self._json({"results": results})
                 if path == "/api/send-test":
-                    if not engine.tg:
+                    if not eng.tg:
                         return self._json({"error": "Set the bot token and channel first (Settings)."}, 400)
                     try:
-                        res = engine.tg.send_rich("<h6>Test post</h6><details><summary>Show More</summary>"
+                        res = eng.tg.send_rich("<h6>Test post</h6><details><summary>Show More</summary>"
                                                   "<p><i>If you can open this, rich messages work in your channel.</i></p></details>")
-                        engine._calibrate_probe(res.get("message_id"))   # also switches on deleted-post detection
-                        engine.db.add_message(0, res["message_id"])
+                        eng._calibrate_probe(res.get("message_id"))   # also switches on deleted-post detection
+                        eng.db.add_message(0, res["message_id"])
                     except TelegramError as e:
                         return self._json({"error": str(e)}, 400)
                     return self._json({"ok": True})
@@ -260,8 +273,8 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
                     def do_check(prog):
                         prog("looking for a newer version")
                         info = updater.check(s)
-                        engine.db.kv_set("update_info", json.dumps(info))
-                        engine.db.kv_set("last_update_check", time.time())
+                        eng.db.kv_set("update_info", json.dumps(info))
+                        eng.db.kv_set("last_update_check", time.time())
                         return info
                     return self._json({"job": jobs.run(do_check)})
                 if path == "/api/update/apply":
@@ -273,9 +286,9 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
                     def do_apply(prog):
                         try:
                             res = updater.apply(s, prog)
-                            engine.db.kv_set("update_info", json.dumps({"available": False, "remote": res["version"],
+                            eng.db.kv_set("update_info", json.dumps({"available": False, "remote": res["version"],
                                                                          "local": res["version"], "changed": []}))
-                            engine.db.log("info", f"updated to version {res['version']} - restarting")
+                            eng.db.log("info", f"updated to version {res['version']} - restarting")
                             threading.Timer(1.5, restart).start()     # let this answer reach the browser first
                             return {**res, "restarting": True}
                         finally:
@@ -284,55 +297,55 @@ def make_server(engine: Engine, worker: Worker, restart=None) -> ThreadingHTTPSe
                 if path == "/api/check-now":
                     def do_check_now(prog):
                         prog("checking the website")
-                        n = engine.discover(manual=True)
-                        info = engine.db.kv_json("listing_info") or {}
-                        st = engine.db.kv_json("discover_status") or {}
+                        n = eng.discover(manual=True)
+                        info = eng.db.kv_json("listing_info") or {}
+                        st = eng.db.kv_json("discover_status") or {}
                         return {"new": n, "listing": info.get("count", 0), "listing_error": info.get("error"),
-                                "sitemap": st.get("total", 0), "newest": engine.db.kv_get("listing_max_id"),
-                                "probed": (engine.db.kv_json("probe_info") or {}).get("found", 0)}
+                                "sitemap": st.get("total", 0), "newest": eng.db.kv_get("listing_max_id"),
+                                "probed": (eng.db.kv_json("probe_info") or {}).get("found", 0)}
                     return self._json({"job": jobs.run(do_check_now)})
                 if path == "/api/post/register":
                     pid = int(body["id"])
                     m = re.search(r"(\d+)\s*/?\s*$", str(body.get("message", "")))
                     if not m:
                         return self._json({"error": "enter the message number or its t.me link (…/nekohobby/354)"}, 400)
-                    return self._json(engine.register_message(pid, int(m.group(1))))
+                    return self._json(eng.register_message(pid, int(m.group(1))))
                 if path == "/api/post-now":
                     pid, force = int(body["id"]), bool(body.get("force"))
-                    jid = jobs.run(lambda prog: engine.post_now(pid, force))
+                    jid = jobs.run(lambda prog: eng.post_now(pid, force))
                     return self._json({"job": jid})
                 if path == "/api/verify":
-                    jid = jobs.run(lambda prog: engine.verify_posted(progress=prog, force=True))
+                    jid = jobs.run(lambda prog: eng.verify_posted(progress=prog, force=True))
                     return self._json({"job": jid})
                 if path == "/api/start":
                     if not s.telegram_ready and not s.dry_run:
                         return self._json({"error": "Set the bot token and channel first (Settings)."}, 400)
-                    worker.start()
-                    return self._json(status())
+                    wk.start()
+                    return self._json(status(eng, wk))
                 if path == "/api/stop":
-                    worker.stop()
-                    return self._json(status())
+                    wk.stop()
+                    return self._json(status(eng, wk))
                 if path == "/api/date/plan":
                     d = body.get("date", "")
                     if not DATE_RX.match(d):
                         return self._json({"error": "date must be YYYY-MM-DD"}, 400)
-                    jid = jobs.run(lambda prog: engine.plan_date(d, progress=prog))
+                    jid = jobs.run(lambda prog: eng.plan_date(d, progress=prog))
                     return self._json({"job": jid})
                 if path == "/api/date/publish":
                     d = body.get("date", "")
                     if not DATE_RX.match(d):
                         return self._json({"error": "date must be YYYY-MM-DD"}, 400)
                     ids = [int(x) for x in body.get("ids", [])]
-                    n = engine.enqueue_date(d, ids)
-                    return self._json({"queued": n, "worker": worker.state()})
+                    n = eng.enqueue_date(d, ids)
+                    return self._json({"queued": n, "worker": wk.state()})
                 if path == "/api/post/resolve":   # uncertain / failed rows
                     pid, action = int(body["id"]), body["action"]
                     if action == "posted":
-                        engine.db.mark_posted_import(pid)
+                        eng.db.mark_posted_import(pid)
                     elif action == "retry":
-                        engine.db.reset_status(pid, "pending")
+                        eng.db.reset_status(pid, "pending")
                     elif action == "skip":
-                        engine.db.reset_status(pid, "skipped")
+                        eng.db.reset_status(pid, "skipped")
                     else:
                         return self._json({"error": "bad action"}, 400)
                     return self._json({"ok": True})

@@ -16,10 +16,20 @@ from .telegram import MediaRejected, Pacer, Telegram, TelegramError, UncertainDe
 
 log = logging.getLogger("tpclone.engine")
 
+class Deferred(Exception):
+    """A post cannot be built right now (e.g. the translator is busy): put it back in the queue, no failed attempt."""
+
+    def __init__(self, message: str, seconds: float = 600):
+        super().__init__(message)
+        self.seconds = seconds
+
+
 FATAL_CODES = (401, 403)   # bad token / kicked from the channel: stop instead of burning every post
 
 
 class Engine:
+    source = "toypeople"
+
     def __init__(self, settings: Settings, db: DB, fetcher: Fetcher, tg: Telegram | None):
         self.s, self.db, self.fetcher, self.tg = settings, db, fetcher, tg
         self.selectors = site.load_selectors(settings.selectors_file)
@@ -43,6 +53,10 @@ class Engine:
     # ------------------------------------------------------------------ site access
     def post_url(self, post_id: int) -> str:
         return f"{self.s.site_base.rstrip('/')}/?p={post_id}"
+
+    def resolve_key(self, number: int) -> int:
+        """What the user typed in 'preview' -> the ledger key (for toy-people they are the same)."""
+        return number
 
     def load_sitemap(self, force: bool = False) -> list[tuple[int, str, str | None]] | None:
         """Download + parse the sitemap. Returns None when the server says it did not change.
@@ -405,6 +419,10 @@ class Engine:
             return guard
         try:
             mid = self.publish(pid)
+        except Deferred as e:
+            self.db.defer(pid, str(e), e.seconds)
+            self.db.log("warn", f"post {pid}: {e}; trying again in {int(e.seconds // 60)} min")
+            return "pending"
         except ChallengeError as e:
             self.db.defer(pid, f"Cloudflare: {e}", 900)
             self.db.log("warn", f"post {pid}: Cloudflare blocked the fetch; retrying in 15 min")
@@ -462,6 +480,7 @@ class Engine:
 
     # ------------------------------------------------------------------ automatic backups
     BACKUP_KEEP = 14
+    BACKUP_PREFIX = "tpclone"
     PLAN_PROBES = 10         # a date check asks Telegram at most this many times; the rest is left to the background checker
     FRESH_SECONDS = 1800     # a message confirmed in the channel within this time is not asked about again
     GAP_LIMIT = 400          # most IDs probed between the daily sitemap and the newest listed post
@@ -475,10 +494,10 @@ class Engine:
         if time.time() - last < every:
             return None
         d = self.backup_dir()
-        dest = d / f"tpclone-{time.strftime('%Y-%m-%d_%H%M')}.db"
+        dest = d / f"{self.BACKUP_PREFIX}-{time.strftime('%Y-%m-%d_%H%M')}.db"
         self.db.backup_to(str(dest))
         self.db.kv_set("last_backup_ts", time.time())
-        for old in sorted(d.glob("tpclone-*.db"))[:-self.BACKUP_KEEP]:
+        for old in sorted(d.glob(f"{self.BACKUP_PREFIX}-*.db"))[:-self.BACKUP_KEEP]:
             old.unlink(missing_ok=True)
         self.db.log("info", f"automatic backup saved: {dest.name}")
         return str(dest)

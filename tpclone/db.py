@@ -355,6 +355,11 @@ class DB:
         return [dict(r) for r in self._q("SELECT * FROM posts WHERE status=? ORDER BY post_id DESC LIMIT ?",
                                          (status, limit))]
 
+    def recent_posts(self, n: int = 30) -> list[dict]:
+        return [dict(r) for r in self._q(
+            "SELECT post_id, url, title, status, source, tg_message_id, last_error, discovered_at, posted_at FROM posts "
+            "ORDER BY discovered_at DESC, post_id DESC LIMIT ?", (n,))]
+
     def title_index(self) -> dict[int, str]:
         return {r["post_id"]: r["title"] for r in self._q("SELECT post_id,title FROM posts WHERE title IS NOT NULL")}
 
