@@ -706,6 +706,7 @@ class Engine:
         if self.db.get(post_id) is None:
             self.db.upsert_seen(post_id, self.post_url(post_id), None, "known", "manual")
         self.db.mark_posted(post_id, message_id)
+        self.db._x("UPDATE posts SET source='registered' WHERE post_id=?", (post_id,))   # not counted as posted today
         self.db.log("info", f"post {post_id} registered as already in the channel (message {message_id})")
         return {"status": "posted", "message_id": message_id}
 

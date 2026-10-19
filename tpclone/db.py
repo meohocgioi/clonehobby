@@ -60,11 +60,13 @@ class DB:
                 self.conn.execute("PRAGMA journal_mode=WAL")
             self.conn.execute("PRAGMA synchronous=FULL")  # a crash must not forget a published post
             self.conn.executescript(SCHEMA)
-            for col in ("uncertain_anchor INTEGER", "uncertain_at REAL", "uncertain_tried REAL"):
+            for col in ("uncertain_anchor INTEGER", "uncertain_at REAL", "uncertain_tried REAL", "flagged_at REAL"):
                 try:   # ledgers created before the automatic resolution of uncertain deliveries
                     self.conn.execute(f"ALTER TABLE posts ADD COLUMN {col}")
                 except sqlite3.OperationalError:
                     pass
+            # 'today' counts on the dashboard
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_posts_posted_at ON posts(posted_at)")
             try:   # ledgers created before 'verified_at' existed
                 self.conn.execute("ALTER TABLE sent_messages ADD COLUMN verified_at REAL")
             except sqlite3.OperationalError:
@@ -280,8 +282,9 @@ class DB:
             row = self.conn.execute("SELECT attempts FROM posts WHERE post_id=?", (post_id,)).fetchone()
             attempts = (row["attempts"] if row else 0) + 1
             status = "failed" if attempts >= give_up_after else "pending"
-            self.conn.execute("UPDATE posts SET status=?, attempts=?, last_error=?, not_before=? WHERE post_id=?",
-                              (status, attempts, error[:500], time.time() + delay, post_id))
+            self.conn.execute("UPDATE posts SET status=?, attempts=?, last_error=?, not_before=?, "
+                              "flagged_at=CASE WHEN ?='failed' THEN ? ELSE flagged_at END WHERE post_id=?",
+                              (status, attempts, error[:500], time.time() + delay, status, time.time(), post_id))
             self.conn.commit()
             return status
 
@@ -289,8 +292,8 @@ class DB:
         """anchor = highest channel message number we knew when the send was attempted. Only set for 'did it arrive?'
         cases; the app then resolves them by itself by looking at the numbers after it."""
         self._x("UPDATE posts SET status='uncertain', last_error=?, uncertain_anchor=?, "
-                "uncertain_at=?, uncertain_tried=NULL WHERE post_id=?",
-                (error[:500], anchor, time.time() if anchor is not None else None, post_id))
+                "uncertain_at=?, uncertain_tried=NULL, flagged_at=? WHERE post_id=?",
+                (error[:500], anchor, time.time() if anchor is not None else None, time.time(), post_id))
 
     def max_message_id(self) -> int:
         r = self._q("SELECT MAX(message_id) m FROM sent_messages")
@@ -309,8 +312,8 @@ class DB:
 
     def resolve_uncertain_stale(self) -> int:
         """Called at startup: a 'sending' row means the process died mid-request."""
-        cur = self._x("UPDATE posts SET status='uncertain', last_error='process stopped while sending' "
-                      "WHERE status='sending'")
+        cur = self._x("UPDATE posts SET status='uncertain', last_error='process stopped while sending', flagged_at=? "
+                      "WHERE status='sending'", (time.time(),))
         return cur.rowcount
 
     def reset_status(self, post_id: int, status: str) -> None:
@@ -371,6 +374,16 @@ class DB:
     def last_posted(self) -> dict | None:
         r = self._q("SELECT * FROM posts WHERE status='posted' ORDER BY posted_at DESC LIMIT 1")
         return dict(r[0]) if r else None
+
+    def today_counts(self, since: float) -> dict[str, int]:
+        """The dashboard's 'Today' chart: posts the app published since `since` (the viewer's midnight) and posts that
+        ran into trouble since then and still need a decision. Posts only marked as posted by hand are not counted."""
+        posted = self._q("SELECT COUNT(*) c FROM posts WHERE status='posted' AND posted_at>=? "
+                         "AND COALESCE(source,'') NOT IN ('import','registered')", (since,))[0]["c"]
+        bad = {r["status"]: r["c"] for r in self._q(
+            "SELECT status, COUNT(*) c FROM posts WHERE status IN ('failed','uncertain') AND flagged_at>=? "
+            "GROUP BY status", (since,))}
+        return {"posted": posted, "failed": bad.get("failed", 0), "uncertain": bad.get("uncertain", 0)}
 
     def posts_in_last_hour(self) -> int:
         return self._q("SELECT COUNT(*) c FROM posts WHERE status='posted' AND source!='import' AND posted_at>?",

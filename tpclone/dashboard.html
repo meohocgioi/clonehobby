@@ -43,8 +43,40 @@
   .panelhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px} .panelhead h2{margin:0;font-size:17px} .panelhead .mut{font-size:13px}
   .sec{margin-top:14px;padding-top:6px} .sec h2{font-size:16px;border-bottom:1px solid var(--line);padding-bottom:6px;margin-bottom:6px}
   select.src{max-width:200px;width:auto} h3.sub{font-size:13px;margin:14px 0 4px;color:var(--mut)}
-  .attn{border-top:1px solid var(--line);margin-top:10px;padding-top:8px} .attn table td{font-size:12px}
   .log.small{max-height:180px}
+  .cols{margin-bottom:14px} .small{font-size:12px}
+  /* ---- "Today" donut. Colours validated with the dataviz palette checker (all pairs, light + dark surfaces):
+     Toy-People = categorical blue, HPOI = categorical yellow, failed/uncertain = reserved status red (+ icon + label) */
+  :root{--s1:#2a78d6;--s2:#eda100;--crit:#d03b3b;--ink:#0b0b0b}
+  @media (prefers-color-scheme:dark){:root{--s1:#3987e5;--s2:#c98500;--crit:#d03b3b}}
+  .today{display:flex;gap:18px;align-items:center;flex-wrap:wrap;position:relative}
+  .donut{width:180px;height:180px;flex:none;overflow:visible}
+  .donut .seg{transition:opacity .12s;cursor:default} .donut.hov .seg:not(.on){opacity:.4} .donut .seg:focus{outline:none}
+  .donut .hero{font-size:48px;font-weight:600;fill:var(--fg);pointer-events:none} .donut .herosub{font-size:12px;fill:var(--mut);pointer-events:none}
+  .donut .lbl{font-size:13px;font-weight:700;pointer-events:none}
+  table.legend{width:auto;border-collapse:collapse} table.legend td{border:0;padding:4px 10px 4px 0;font-size:14px;vertical-align:top}
+  table.legend td.n{font-weight:600;text-align:right;font-variant-numeric:tabular-nums} table.legend tr{cursor:default}
+  table.legend .sub{font-size:12px;color:var(--mut);margin-left:20px}
+  .sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:8px;vertical-align:-1px}
+  .tip{position:absolute;pointer-events:none;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 10px;box-shadow:0 4px 14px rgba(0,0,0,.14);font-size:13px;white-space:nowrap;z-index:5}
+  .tip b{font-size:16px;display:block} .tip .key{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:6px;vertical-align:middle}
+  /* ---- Needs your attention ---- */
+  .tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin:2px 0 4px}
+  .tab{border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:7px 12px;color:var(--mut);font-weight:600}
+  .tab.active{color:var(--fg);border-bottom-color:var(--fg)} .tab .cnt{font-weight:400;margin-left:5px}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--bad);margin-left:6px;vertical-align:2px}
+  .item{display:flex;gap:8px 12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;padding:9px 0;border-bottom:1px solid var(--line)}
+  .item:last-child{border-bottom:0} .itxt{flex:1 1 240px;min-width:0;font-size:14px} .itxt a{color:inherit}
+  .itxt .dot{margin:0 6px 0 0} .ierr{font-size:12px;margin-top:2px;overflow-wrap:anywhere}
+  .iact{display:flex;gap:6px;flex-wrap:wrap} button.sm{padding:4px 10px;font-size:12px;border-radius:6px}
+  .badge{display:inline-block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;padding:0 7px;border-radius:99px;margin-right:6px;border:1px solid currentColor}
+  .badge.failed{color:var(--bad)} .badge.uncertain{color:var(--warn)} .empty{padding:14px 0;color:var(--mut)}
+  #toprow{align-items:stretch} .more{margin-top:6px} #todaycard{display:flex;flex-direction:column} #todaycard .today{flex:1}
+  .donut .seg{transition:stroke-dasharray .6s ease,stroke-dashoffset .6s ease,opacity .12s}
+  .donut .hero{transition:fill .8s} .donut .hero.flash{fill:var(--ok)} table.legend td.n{transition:color .8s} table.legend td.n.flash{color:var(--ok)}
+  .live{font-size:12px;color:var(--mut);white-space:nowrap} .live .ld{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);margin-right:5px;vertical-align:1px;animation:pulse 2s infinite}
+  .live.off .ld{background:var(--bad);animation:none} @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  @media (prefers-reduced-motion:reduce){.donut .seg,.donut .hero,table.legend td.n{transition:none}.live .ld{animation:none}}
 </style>
 </head>
 <body>
@@ -58,9 +90,30 @@
 
   <!-- ============================== DASHBOARD ============================== -->
   <div id="view_dash">
+    <div class="cols" id="toprow">
+      <div class="card" id="todaycard">
+        <div class="row" style="justify-content:space-between">
+          <h2 style="margin:0">Today <span class="mut" id="today_date" style="font-weight:400"></span></h2>
+          <span class="live off" id="live" title="The page is told the moment something happens; nothing is polled."><span class="ld"></span><span id="live_txt">connecting…</span></span>
+        </div>
+        <div class="today" id="today_box">
+          <svg class="donut" id="donut" viewBox="0 0 180 180" role="img" aria-labelledby="donut_t"><title id="donut_t">Today</title></svg>
+          <table class="legend" id="legend" aria-label="Today, as a table"></table>
+          <div class="tip" id="tip" hidden></div>
+        </div>
+        <p class="mut small" style="margin:8px 0 0">Since midnight. “Posted” = published by the app today; “failed / uncertain” = today's posts that still need you (see the card next to this one).</p>
+      </div>
+      <div class="card" id="attn">
+        <h2>Needs your attention</h2>
+        <div class="tabs" id="attn_tabs" role="tablist"></div>
+        <div class="attnlist" id="attn_list"></div>
+        <p class="mut small" style="margin:8px 0 0">“uncertain” = may have reached Telegram (usually settled by itself within minutes) · “failed” = gave up after several errors.</p>
+      </div>
+    </div>
+
     <div class="cols" id="panels"></div>
 
-    <div class="card" style="margin-top:14px">
+    <div class="card">
       <div class="row" style="justify-content:space-between"><h2 style="margin:0">Preview a post (nothing is sent)</h2>
         <select class="src" id="pv_src" hidden></select></div>
       <div class="row" style="margin-top:10px"><input type="text" id="pv_in" placeholder="post number or link, e.g. 114949" style="max-width:420px"> <button id="pv_go">Show preview</button> <button class="go" id="pv_post">Post</button> <span class="mut" id="pv_prog"></span></div>
@@ -136,7 +189,11 @@
 
     <div class="card">
       <h2>Backup</h2>
-      <p class="mut">Moved or re-downloaded the app and it forgot what it already posted? Choose your old <code>tpclone.db</code> (or a file from the old <code>backups</code> folder, or a downloaded backup). Posts it knew as posted are added to <b>Toy-People</b>, so they won't be posted twice. Nothing is deleted. (Download backups from the dashboard panels.)</p>
+      <p class="mut">Every day the app saves a copy of each posted-list and keeps the last 14 days, in the <code>backups</code> folder inside your data folder. You can also download a copy any time and keep it somewhere safe.</p>
+      <table class="legend" id="bk_tbl"></table>
+      <p class="mut small" id="bk_dir"></p>
+      <h3 class="sub">Import an old posted-list</h3>
+      <p class="mut">Moved or re-downloaded the app and it forgot what it already posted? Choose your old <code>tpclone.db</code> (or a file from the old <code>backups</code> folder, or a downloaded backup). Posts it knew as posted are added to <b>Toy-People</b>, so they won't be posted twice. Nothing is deleted.</p>
       <div class="row"><input type="file" id="imp_file" accept=".db"><button id="imp_go">Import</button><span class="mut" id="imp_out"></span></div>
     </div>
 
@@ -156,8 +213,10 @@ const SOURCES={toypeople:'Toy-People',hpoi:'HPOI'};
 let ACTIVE=['toypeople'];                       // sources the server runs (hpoi only when enabled)
 const srcURL=(p,src)=>(src==='hpoi'&&!/^\/api\/(settings|update|import-backup)/.test(p))?p+(p.includes('?')?'&':'?')+'source=hpoi':p;
 const api=(p,body,src)=>fetch(srcURL(p,src),body===undefined?{}:{method:'POST',headers:{'X-Requested-With':'tpclone','Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
-let planData=null, chatLinks={};
+let planData=null, chatLinks={}, S={}, lastAll=null;
 function fmt(ts){return ts?new Date(ts*1000).toLocaleString():''}
+function fmtShort(ts){const d=new Date(ts*1000); return d.toDateString()===new Date().toDateString()?('today '+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})):d.toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}
+const midnight=()=>Math.floor(new Date().setHours(0,0,0,0)/1000);
 async function pollJob(job,onProg,src){ for(;;){ const j=await api('/api/jobs/'+job,undefined,src); if(j.state==='running'){onProg&&onProg(j.progress); await new Promise(r=>setTimeout(r,800)); continue} return j } }
 
 // ---- views ---------------------------------------------------------------------------------------
@@ -175,10 +234,7 @@ const PANEL=`
   <p class="mut" data-r="last"></p>
   <div class="row"><button data-r="checknow">Check website now</button><button data-r="verify">Check channel for deleted posts</button></div>
   <p class="mut" data-r="out"></p>
-  <p class="mut" data-r="bk"></p>
-  <div class="attn" data-r="review" hidden><b>Needs your attention</b>
-    <p class="mut">“uncertain” = the request may have reached Telegram; the app settles most of these by itself a few minutes later. What stays here it could not be sure about: look in your channel and choose. “failed” = gave up after several errors.</p>
-    <table data-r="review-tbl"></table></div>`;
+  <p class="error small" data-r="probe" hidden>⚠ Deleted-post detection is OFF (Telegram did not answer reliably). Nothing is re-posted automatically.</p>`;
 function pq(src,r){return document.querySelector(`[data-panel="${src}"] [data-r="${r}"]`)}
 function buildPanels(){
   const box=$('panels'), lg=$('logs'); box.innerHTML=''; lg.innerHTML='';
@@ -196,41 +252,198 @@ function buildPanels(){
   syncSources();
   $('hpoi_set').hidden=!ACTIVE.includes('hpoi'); $('sendtest_h').hidden=!ACTIVE.includes('hpoi');
 }
-async function refresh(){
-  const all=await Promise.all(ACTIVE.map(src=>api('/api/status',undefined,src).then(s=>[src,s])));
-  for(const [src,s] of all){
-    chatLinks[src]=s.chat_link;
-    if(src==='toypeople') showUpdate(s);
-    pq(src,'chat').textContent=s.chat?('· '+s.chat):'';
-    const st=pq(src,'state'); st.textContent=s.state.toUpperCase()+(s.dry_run?' (dry-run)':''); st.className='pill '+s.state;
-    pq(src,'start').disabled=(s.state==='running')||!s.configured; pq(src,'stop').disabled=(s.state!=='running');
-    const er=pq(src,'err'); er.hidden=!s.error; er.textContent=s.error||'';
-    const k=s.stats, stats=pq(src,'stats'); stats.innerHTML='';
-    for(const [n,l] of [['posted','Published'],['pending','Queued'],['uncertain','Uncertain'],['failed','Failed'],['skipped','Seen (not posted)'],['total','Tracked']]){
-      const sp=document.createElement('span'); sp.textContent=l+': '+(k[n]||0); stats.appendChild(sp);}
-    pq(src,'next').textContent=(s.pending&&s.state==='running')?('next post in ~'+s.next_post_in+'s (delay '+s.delay+'s)'):(s.pending&&s.state!=='running'?'queue waits for Start':'');
-    const bk=pq(src,'bk'); bk.innerHTML='';
-    {const t=document.createTextNode(s.last_backup?('Automatic backup: '+fmt(s.last_backup)+' (kept 14 days) · '):'Automatic backup runs daily · '); const a=document.createElement('a'); a.href=srcURL('/api/backup',src); a.textContent='Download a backup'; bk.append(t,a);
-     if(src==='toypeople'){const d=document.createElement('div'); d.className='mut'; d.textContent='Your data folder: '+s.data_dir; bk.append(d);}
-     if(s.probe==='0'){const w=document.createElement('div'); w.className='error'; w.textContent='⚠ Deleted-post detection is OFF (Telegram did not answer reliably). Nothing is re-posted automatically.'; bk.append(w)}}
-    {const w=s.watch, el=pq(src,'watch'); el.className='mut'; const hp=src==='hpoi';
-     if(s.state!=='running'){el.textContent='Website watcher: off (press Start)'}
-     else if(!w){el.textContent='Website watcher: first check in progress…'}
-     else if(!w.ok){el.className='error'; el.textContent='⚠ Website check failed '+fmt(w.ts)+': '+w.error}
-     else {const ago=Math.max(0,Math.round(Date.now()/1000-w.ts)); el.textContent='🔎 Website watcher: checked '+(ago<90?ago+' s':Math.round(ago/60)+' min')+' ago · '+(hp?((w.total||0)+' items on the Latest Info list'):((w.total||0).toLocaleString()+' posts in the sitemap'))+' · every '+Math.round(s.poll_every/60)+' min'+(!hp&&s.listing&&!s.listing.error?(' · Latest News list: '+s.listing.count+' posts'+(s.listing.count?'':' ⚠ none read')):'')+(!hp&&s.listing&&s.listing.error?' · ⚠ Latest News list failed':'')+' · new posts are posted automatically'}}
-    pq(src,'last').textContent=s.last_posted?('Last published: '+(s.last_posted.title||s.last_posted.post_id)+' — '+fmt(s.last_posted.posted_at)):'';
-    const lg=document.querySelector(`[data-log="${src}"]`); lg.innerHTML='';
-    for(const e of s.events){const d=document.createElement('div'); d.className=e.level; d.textContent=fmt(e.ts)+'  '+e.message; lg.appendChild(d);}
-    const rows=[...s.uncertain.map(r=>[r,'uncertain']),...s.failed.map(r=>[r,'failed'])];
-    pq(src,'review').hidden=!rows.length; const t=pq(src,'review-tbl'); t.innerHTML='';
-    for(const [r,kind] of rows){
-      const tr=t.insertRow(); tr.insertCell().textContent=kind; tr.insertCell().textContent=src==='hpoi'?'':r.post_id;
-      tr.insertCell().textContent=(r.title||'')+' — '+(r.last_error||'');
-      const c=tr.insertCell();
-      for(const [a,l] of [['posted','It is in the channel'],['retry','Send again'],['skip','Ignore']]){
-        const b=document.createElement('button'); b.textContent=l; b.onclick=async()=>{await api('/api/post/resolve',{id:r.post_id,action:a},src);refresh()}; c.appendChild(b);}
-    }
+function renderPanel(src,s){
+  chatLinks[src]=s.chat_link;
+  if(src==='toypeople') showUpdate(s);
+  pq(src,'chat').textContent=s.chat?('· '+s.chat):'';
+  const st=pq(src,'state'); st.textContent=s.state.toUpperCase()+(s.dry_run?' (dry-run)':''); st.className='pill '+s.state;
+  pq(src,'start').disabled=(s.state==='running')||!s.configured; pq(src,'stop').disabled=(s.state!=='running');
+  const er=pq(src,'err'); er.hidden=!s.error; er.textContent=s.error||'';
+  const k=s.stats, stats=pq(src,'stats'); stats.innerHTML='';
+  for(const [n,l] of [['posted','Published'],['pending','Queued'],['uncertain','Uncertain'],['failed','Failed'],['skipped','Seen (not posted)'],['total','Tracked']]){
+    const sp=document.createElement('span'); sp.textContent=l+': '+(k[n]||0); stats.appendChild(sp);}
+  pq(src,'probe').hidden=s.probe!=='0';
+  pq(src,'last').textContent=s.last_posted?('Last published: '+(s.last_posted.title||s.last_posted.post_id)+' — '+fmt(s.last_posted.posted_at)):'';
+  const lg=document.querySelector(`[data-log="${src}"]`); lg.innerHTML='';
+  for(const e of s.events){const d=document.createElement('div'); d.className=e.level; d.textContent=fmt(e.ts)+'  '+e.message; lg.appendChild(d);}
+}
+// texts that only depend on the clock ("checked 2 min ago", "next post in ~30s"): updated every second, no request
+function tick(){
+  const now=Date.now()/1000;
+  for(const src of ACTIVE){ const s=S[src]; if(!s) continue;
+    const left=s.next_post_in==null?0:Math.max(0,Math.round(s.next_post_in-(now-s._at)));
+    pq(src,'next').textContent=(s.pending&&s.state==='running')?('next post in ~'+left+'s (delay '+s.delay+'s)'):(s.pending&&s.state!=='running'?'queue waits for Start':'');
+    const w=s.watch, el=pq(src,'watch'), hp=src==='hpoi'; el.className='mut';
+    if(s.state!=='running'){el.textContent='Website watcher: off (press Start)'}
+    else if(!w){el.textContent='Website watcher: first check in progress…'}
+    else if(!w.ok){el.className='error'; el.textContent='⚠ Website check failed '+fmt(w.ts)+': '+w.error}
+    else {const ago=Math.max(0,Math.round(now-w.ts)); el.textContent='🔎 Website watcher: checked '+(ago<90?ago+' s':Math.round(ago/60)+' min')+' ago · '+(hp?((w.total||0)+' items on the Latest Info list'):((w.total||0).toLocaleString()+' posts in the sitemap'))+' · every '+Math.round(s.poll_every/60)+' min'+(!hp&&s.listing&&!s.listing.error?(' · Latest News list: '+s.listing.count+' posts'+(s.listing.count?'':' ⚠ none read')):'')+(!hp&&s.listing&&s.listing.error?' · ⚠ Latest News list failed':'')+' · new posts are posted automatically'}
   }
+}
+
+// ---- loading the numbers: only when the app says something changed -----------------------------------
+let refreshing=false, again=false;
+async function refresh(){
+  if(refreshing){again=true;return}
+  refreshing=true;
+  try{
+    const since=midnight();
+    const all=await Promise.all(ACTIVE.map(src=>api('/api/status?since='+since,undefined,src).then(s=>[src,s])));
+    const now=Date.now()/1000; lastAll=all;
+    for(const [src,s] of all){ s._at=now; S[src]=s; renderPanel(src,s) }
+    renderToday(all); renderAttention(all); renderBackups(all); tick();
+  }catch(e){ setLive(false,'app not reachable') }
+  finally{ refreshing=false; if(again){again=false; refresh()} }
+}
+function setLive(ok,txt){ $('live').className='live'+(ok?'':' off'); $('live_txt').textContent=txt||(ok?'Live':'reconnecting…') }
+let es=null, fallback=null;
+function startLive(){
+  const poll=()=>{ if(!fallback) fallback=setInterval(refresh,15000) };      // only while the live link is down
+  if(!window.EventSource){ setLive(false,'updates every 15 s'); poll(); return }
+  es=new EventSource('/api/live');
+  es.onopen=()=>{ setLive(true); if(fallback){clearInterval(fallback); fallback=null} };
+  es.onmessage=()=>refresh();                                                  // "something changed"
+  es.onerror=()=>{ setLive(false); poll() };                                   // the browser reconnects by itself
+}
+function atMidnight(){ setTimeout(()=>{ refresh(); atMidnight() }, new Date().setHours(24,0,2,0)-Date.now()) }   // new day, new chart
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') refresh() });
+
+// ---- "Today" donut ------------------------------------------------------------------------------------
+const DR=70, DW=26, DC=2*Math.PI*DR, GAP=2; let D=null, todayDefs=[], todaySig='', lastVals={}, labelTimer=null;
+function initDonut(){
+  const NS='http://www.w3.org/2000/svg', svg=$('donut');
+  const mk=(tag,at)=>{const e=document.createElementNS(NS,tag); for(const k in at) e.setAttribute(k,at[k]); return e};
+  const track=mk('circle',{cx:90,cy:90,r:DR,fill:'none','stroke-width':DW}); track.style.stroke='var(--line)';
+  const g=mk('g',{transform:'rotate(-90 90 90)'}), lbl=mk('g',{});
+  const hero=mk('text',{x:90,y:101,'text-anchor':'middle','class':'hero'}), sub=mk('text',{x:90,y:122,'text-anchor':'middle','class':'herosub'});
+  svg.append(track,g,lbl,hero,sub); D={svg,track,g,lbl,hero,sub,mk,segs:{}};
+  svg.addEventListener('pointerleave',()=>hover(null));
+}
+function segDefs(all){
+  const by=Object.fromEntries(all), z={posted:0,failed:0,uncertain:0};
+  const tp=(by.toypeople&&by.toypeople.today)||z, hp=by.hpoi?(by.hpoi.today||z):null;
+  const eTP=tp.failed+tp.uncertain, eHP=hp?hp.failed+hp.uncertain:0;
+  const d=[{key:'toypeople',name:'Toy-People',what:'posted today',v:tp.posted,col:'--s1'}];
+  if(hp) d.push({key:'hpoi',name:'HPOI',what:'posted today',v:hp.posted,col:'--s2'});
+  d.push({key:'err',name:'⚠ Failed / uncertain',what:hp?('Toy-People '+eTP+' · HPOI '+eHP):'today, still open',v:eTP+eHP,col:'--crit'});
+  return d;
+}
+const cssVar=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function lum(hex){const m=hex.replace('#',''); return [0,2,4].map(i=>parseInt(m.substr(i,2),16)/255).map(v=>v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4)).reduce((a,v,i)=>a+v*[0.2126,0.7152,0.0722][i],0)}
+function inkOn(hex){const L=lum(hex); return (1.05/(L+0.05))>=((L+0.05)/(lum('#0b0b0b')+0.05))?'#ffffff':'#0b0b0b'}   // label inside a fill: white or ink, whichever reads better
+function flash(el){el.classList.add('flash'); setTimeout(()=>el.classList.remove('flash'),1600)}
+function renderToday(all){
+  const d=segDefs(all), day=new Date().toDateString(), sig=day+JSON.stringify(d.map(x=>[x.key,x.v,x.what]));
+  if(sig===todaySig) return; todaySig=sig; todayDefs=d;
+  const total=d.reduce((a,x)=>a+x.v,0), posted=d.filter(x=>x.key!=='err').reduce((a,x)=>a+x.v,0), nz=d.filter(x=>x.v>0).length;
+  $('today_date').textContent='· '+new Date().toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'});
+  let start=0;
+  for(const x of d){
+    let el=D.segs[x.key];
+    if(!el){ el=D.mk('circle',{cx:90,cy:90,r:DR,fill:'none','stroke-width':DW,'class':'seg'}); el.style.stroke='var('+x.col+')';
+      el.style.strokeDasharray='0 '+DC; el.style.strokeDashoffset='0';
+      el.addEventListener('pointermove',ev=>hover(x.key,ev)); el.addEventListener('focus',()=>hover(x.key)); el.addEventListener('blur',()=>hover(null));
+      D.g.append(el); D.segs[x.key]=el; el.getBoundingClientRect(); }          // start from empty so the first draw animates too
+    const len=total?x.v/total*DC:0, gap=nz>1?GAP:0, dash=Math.max(len-gap,0);
+    el.style.strokeDasharray=dash.toFixed(2)+' '+(DC-dash).toFixed(2); el.style.strokeDashoffset=(-(start+gap/2)).toFixed(2);
+    el.setAttribute('tabindex',x.v?'0':'-1'); el.setAttribute('aria-label',x.name.replace('⚠ ','')+': '+x.v+' ('+x.what+')');
+    x._start=start; x._len=len; start+=len;
+  }
+  D.track.style.opacity=total?0:1;
+  if(lastVals.__hero!==undefined && posted>lastVals.__hero) flash(D.hero);
+  lastVals.__hero=posted; D.hero.textContent=posted; D.sub.textContent=total?'posted today':'nothing yet today';
+  $('donut_t').textContent='Today: '+d.map(x=>x.name.replace('⚠ ','')+' '+x.v).join(', ');
+  // numbers inside the ring, once the slices have moved (only where the number fits)
+  D.lbl.textContent=''; clearTimeout(labelTimer);
+  labelTimer=setTimeout(()=>{ D.lbl.textContent='';
+    for(const x of d){ if(!x.v) continue; const txt=String(x.v); if(x._len-(nz>1?GAP:0)<txt.length*8+12) continue;
+      const a=(x._start+x._len/2)/DC*2*Math.PI-Math.PI/2;
+      const t=D.mk('text',{x:(90+DR*Math.cos(a)).toFixed(1),y:(90+DR*Math.sin(a)+4.5).toFixed(1),'text-anchor':'middle','class':'lbl'});
+      t.style.fill=inkOn(cssVar(x.col)); t.textContent=txt; D.lbl.append(t) } },650);
+  // legend = the table view (every value readable without hovering)
+  const lg=$('legend'); lg.textContent='';
+  for(const x of d){ const tr=lg.insertRow();
+    const c1=tr.insertCell(); const sw=document.createElement('span'); sw.className='sw'; sw.style.background='var('+x.col+')';
+    const sub=document.createElement('div'); sub.className='sub'; sub.textContent=x.what; c1.append(sw,x.name,sub);
+    const c2=tr.insertCell(); c2.className='n'; c2.textContent=x.v;
+    if(lastVals[x.key]!==undefined && x.v>lastVals[x.key]) flash(c2); lastVals[x.key]=x.v;
+    tr.addEventListener('pointerenter',()=>hover(x.key)); tr.addEventListener('pointerleave',()=>hover(null)); }
+}
+function hover(key,ev){
+  const tip=$('tip');
+  for(const k in D.segs) D.segs[k].classList.toggle('on',k===key);
+  D.svg.classList.toggle('hov',!!key);
+  const x=key&&todayDefs.find(y=>y.key===key);
+  if(!x){tip.hidden=true;return}
+  const total=todayDefs.reduce((a,y)=>a+y.v,0);
+  tip.textContent=''; const b=document.createElement('b'); b.textContent=x.v+(total?'  ('+Math.round(x.v/total*100)+'%)':'');
+  const k=document.createElement('span'); k.className='key'; k.style.background='var('+x.col+')';
+  const l=document.createElement('span'); l.textContent=x.name.replace('⚠ ','')+' — '+x.what; tip.append(b,k,l); tip.hidden=false;
+  const box=$('today_box').getBoundingClientRect(); let px,py;
+  if(ev){px=ev.clientX-box.left+14; py=ev.clientY-box.top+14}
+  else{const a=(x._start+x._len/2)/DC*2*Math.PI-Math.PI/2, sb=D.svg.getBoundingClientRect(); px=sb.left-box.left+(90+(DR+18)*Math.cos(a))*sb.width/180; py=sb.top-box.top+(90+(DR+18)*Math.sin(a))*sb.height/180}
+  tip.style.left=Math.max(0,Math.min(px,box.width-tip.offsetWidth-4))+'px'; tip.style.top=Math.max(0,py)+'px';
+}
+
+// ---- Needs your attention (tabs with a red dot for anything new) ---------------------------------------------
+const SEEN_KEY='tpclone.attnSeen.v1', ATTN_SHOW=3; let attnTab=null, attnVisible=false, attnSig='', attnAll=false; const attnRows={}, fresh=new Set();
+function seenGet(){try{return JSON.parse(localStorage.getItem(SEEN_KEY)||'{}')||{}}catch(e){return {}}}
+function seenPut(o){try{localStorage.setItem(SEEN_KEY,JSON.stringify(o))}catch(e){}}
+const keyOf=r=>r.post_id+':'+r.status+':'+Math.round(r.flagged_at||0);
+function unseen(src,seen){const s=new Set(seen[src]||[]); return (attnRows[src]||[]).filter(r=>!s.has(keyOf(r)))}
+function markSeen(){            // what is on screen in the open tab counts as seen (shown with a small dot this time)
+  if(!attnTab||!attnVisible||document.visibilityState!=='visible'||!$('view_set').hidden) return;
+  const seen=seenGet(), news=unseen(attnTab,seen), cur=(attnRows[attnTab]||[]).map(keyOf);
+  news.forEach(r=>fresh.add(keyOf(r)));
+  if(news.length||(seen[attnTab]||[]).length!==cur.length){ seen[attnTab]=cur; seenPut(seen) }
+}
+function renderAttention(all){
+  if(all) for(const [src,s] of all) attnRows[src]=[...(s.uncertain||[]),...(s.failed||[])].sort((a,b)=>(b.flagged_at||0)-(a.flagged_at||0)||b.post_id-a.post_id);
+  if(!attnTab){const s0=seenGet(); attnTab=ACTIVE.find(src=>unseen(src,s0).length)||ACTIVE[0]}
+  markSeen();
+  const seen=seenGet();
+  const sig=JSON.stringify([attnTab,attnAll,ACTIVE.map(src=>[(attnRows[src]||[]).map(keyOf),unseen(src,seen).length]),[...fresh]]);
+  if(sig===attnSig) return; attnSig=sig;
+  const tabs=$('attn_tabs'); tabs.textContent='';
+  for(const src of ACTIVE){
+    const b=document.createElement('button'); b.className='tab'+(src===attnTab?' active':''); b.setAttribute('role','tab'); b.setAttribute('aria-selected',String(src===attnTab));
+    b.append(SOURCES[src]); const n=(attnRows[src]||[]).length;
+    if(n){const c=document.createElement('span'); c.className='cnt'; c.textContent=n; b.append(c)}
+    if(unseen(src,seen).length){const dt=document.createElement('span'); dt.className='dot'; dt.title='new'; dt.setAttribute('aria-label','new'); b.append(dt)}
+    b.onclick=()=>{ if(attnTab!==src){ fresh.clear(); attnTab=src; attnAll=false; renderAttention() } };
+    tabs.append(b);
+  }
+  const list=$('attn_list'); list.textContent=''; const src=attnTab, rows=attnRows[src]||[];
+  if(!rows.length){const e=document.createElement('div'); e.className='empty'; e.textContent='✅ Nothing needs your attention here.'; list.append(e)}
+  for(const r of (attnAll?rows:rows.slice(0,ATTN_SHOW))){
+    const it=document.createElement('div'); it.className='item';
+    const tx=document.createElement('div'); tx.className='itxt';
+    if(fresh.has(keyOf(r))){const dt=document.createElement('span'); dt.className='dot'; dt.title='new'; tx.append(dt)}
+    const bd=document.createElement('span'); bd.className='badge '+r.status; bd.textContent=r.status;
+    const a=document.createElement('a'); a.href=r.url; a.target='_blank'; a.rel='noopener'; a.textContent=r.title||(src==='hpoi'?'HPOI item':'Post '+r.post_id);
+    const er=document.createElement('div'); er.className='mut ierr';
+    er.textContent=[src==='hpoi'?'':('#'+r.post_id), r.flagged_at?('since '+fmtShort(r.flagged_at)):'', r.last_error||''].filter(Boolean).join(' · ');
+    tx.append(bd,a,er);
+    const ac=document.createElement('div'); ac.className='iact';
+    for(const [act,l] of [['posted','It is in the channel'],['retry','Send again'],['skip','Ignore']]){
+      const b=document.createElement('button'); b.className='sm'; b.textContent=l;
+      b.onclick=async()=>{ ac.querySelectorAll('button').forEach(x=>x.disabled=true); await api('/api/post/resolve',{id:r.post_id,action:act},src); refresh() };
+      ac.append(b) }
+    it.append(tx,ac); list.append(it);
+  }
+  if(rows.length>ATTN_SHOW){ const m=document.createElement('button'); m.className='sm more';
+    m.textContent=attnAll?'Show fewer':('Show all '+rows.length); m.onclick=()=>{ attnAll=!attnAll; renderAttention() }; list.append(m) }
+}
+new IntersectionObserver(es=>{ attnVisible=es.some(e=>e.isIntersecting); if(attnVisible) renderAttention() },{threshold:0.3}).observe($('attn'));
+document.addEventListener('visibilitychange',()=>renderAttention());
+
+// ---- backups (settings page) ----------------------------------------------------------------------------------
+function renderBackups(all){
+  const t=$('bk_tbl'); t.textContent='';
+  for(const [src,s] of all){ const tr=t.insertRow(); const b=document.createElement('b'); b.textContent=SOURCES[src]; tr.insertCell().append(b);
+    tr.insertCell().textContent=s.last_backup?('last automatic backup: '+fmt(s.last_backup)):'first automatic backup: within a day';
+    const a=document.createElement('a'); a.href=srcURL('/api/backup',src); a.textContent='Download a backup'; tr.insertCell().append(a); }
+  const tp=all.find(x=>x[0]==='toypeople'); $('bk_dir').textContent=tp?('Your data folder: '+tp[1].data_dir):'';
 }
 async function verifyChannel(src){
   const b=pq(src,'verify'), out=pq(src,'out'); b.disabled=true; out.className='mut'; out.textContent='checking…';
@@ -294,7 +507,7 @@ let settingsLoaded=false;
 async function loadSettings(force){
   const v=await api('/api/settings');
   $('setup-help').hidden=v.configured;
-  if(settingsLoaded&&!force) return; settingsLoaded=true;
+  if(settingsLoaded&&!force) return v; settingsLoaded=true;
   $('s_token').value=v.telegram_bot_token; $('s_chat').value=v.telegram_chat_id; $('s_delay').value=v.post_delay_seconds;
   $('s_poll').value=v.poll_interval_seconds; $('s_init').value=v.initial_post_latest; $('s_hash').value=v.hashtag_style; fillStyles(v); fillSpacing(v); $('s_emoji').value=v.show_more_emoji; $('s_urepo').value=v.update_repo; $('s_ubranch').value=v.update_branch; $('s_utoken').value=v.update_token;
   $('h_on').value=String(v.hpoi_enabled); $('h_chat').value=v.hpoi_chat_id; $('h_delay').value=v.hpoi_post_delay_seconds; $('h_poll').value=v.hpoi_poll_interval_seconds; $('h_init').value=v.hpoi_initial_post_latest; $('h_tr').value=v.translator; $('h_key').value=v.translate_api_key;
@@ -440,11 +653,11 @@ $('upd_btn').onclick=()=>updAvail?doUpdate():checkUpdate();
 
 // ---- start ------------------------------------------------------------------------------------------------------------
 (async()=>{
-  const v=await loadSettings(true);
+  let v=null; try{ v=await loadSettings(true) }catch(e){}
   ACTIVE=v&&v.hpoi_available?['toypeople','hpoi']:['toypeople'];
-  buildPanels(); await refresh();
+  buildPanels(); initDonut(); await refresh();
   if(v&&!v.configured) showView('set');            // first run: go straight to the Telegram setup
-  setInterval(refresh,4000);
+  startLive(); atMidnight(); setInterval(tick,1000);
 })();
 </script>
 </body>

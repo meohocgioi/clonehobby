@@ -1038,3 +1038,26 @@ def test_worker_resolves_uncertain_posts_when_idle(env):
         time.sleep(0.1)
     w.stop(wait=True)
     assert db.get(2)["status"] == "posted" and len(tg.sent) == 2
+
+
+def test_today_counts_for_the_dashboard_chart(env):
+    import time as _t
+    e, f, tg, db = env
+    now = _t.time()
+    db.upsert_seen(1, "u1", None, "pending", "new"); db.mark_posted(1, 501)                 # published today
+    db.upsert_seen(2, "u2", None, "pending", "new"); db.mark_posted(2, 502)
+    db._x("UPDATE posts SET posted_at=? WHERE post_id=2", (now - 3 * 86400,))                # published days ago
+    db.upsert_seen(3, "u3", None, "known", "manual"); db.mark_posted_import(3)              # "it is in the channel"
+    e.register_message(4, 504)                                                              # registered by hand
+    db.upsert_seen(5, "u5", None, "pending", "new")
+    for _ in range(6):
+        db.mark_retry(5, "boom", 0)                                                         # gave up today
+    assert db.get(5)["status"] == "failed" and db.get(5)["flagged_at"] >= now - 5
+    db.upsert_seen(6, "u6", None, "pending", "new"); db.mark_uncertain(6, "timeout")
+    db.upsert_seen(7, "u7", None, "pending", "new"); db.mark_uncertain(7, "timeout")
+    db._x("UPDATE posts SET flagged_at=? WHERE post_id=7", (now - 2 * 86400,))              # uncertain since days
+    assert db.today_counts(now - 3600) == {"posted": 1, "failed": 1, "uncertain": 1}
+    # a crash mid-send is flagged with the time it was found
+    db.upsert_seen(8, "u8", None, "pending", "new"); db.mark_sending(8)
+    assert db.resolve_uncertain_stale() == 1 and db.get(8)["flagged_at"] >= now - 5
+    assert db.today_counts(now - 3600)["uncertain"] == 2

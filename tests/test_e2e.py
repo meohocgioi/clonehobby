@@ -128,6 +128,9 @@ def test_full_flow_over_http(stack):
     assert db.count("posted") == 4 and len(SENT) == 4
     st = httpx.get(base + "/api/status").json()
     assert st["stats"]["posted"] == 4 and st["state"] == "stopped"
+    assert st["today"] == {"posted": 4, "failed": 0, "uncertain": 0}            # all published since midnight
+    assert httpx.get(base + "/api/status?since=9999999999").json()["today"]["posted"] == 0
+    assert httpx.get(base + "/api/status?since=abc").json()["today"]["posted"] == 4
 
 
 def test_settings_from_browser_and_start_gate(stack, tmp_path):
@@ -230,3 +233,29 @@ def test_register_message_endpoint(stack):
     bad = httpx.post(base + "/api/post/register", json={"id": 1, "message": "nonsense"}, headers={"X-Requested-With": "tpclone"})
     assert bad.status_code == 400
     assert httpx.get(base + "/api/status").json()["chat_link"] in ("", "https://t.me/c") or True
+
+
+def test_live_connection_pushes_only_when_something_changes(stack):
+    import queue
+    e, w, db, base = stack
+    got: queue.Queue = queue.Queue()
+
+    def reader():
+        try:
+            with httpx.stream("GET", base + "/api/live", timeout=httpx.Timeout(30)) as r:
+                got.put(r.headers["content-type"])
+                for line in r.iter_lines():
+                    if line.startswith("data:"):
+                        got.put(line)
+        except httpx.HTTPError:
+            pass
+
+    threading.Thread(target=reader, daemon=True).start()
+    assert got.get(timeout=5).startswith("text/event-stream")
+    assert got.get(timeout=5) == "data: change"            # on connect: the page loads once
+    with pytest.raises(queue.Empty):
+        got.get(timeout=2.5)                               # nothing happened -> nothing is sent, nothing is asked
+    db.log("info", "posted 123: a new post")               # a post went out
+    assert got.get(timeout=5) == "data: change"
+    post(base, "/api/post/resolve", {"id": 1, "action": "skip"})   # a decision in "Needs your attention"
+    assert got.get(timeout=5) == "data: change"

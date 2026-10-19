@@ -49,6 +49,19 @@ def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | No
 
     def pick(source: str | None):
         return all_sources.get(source or "toypeople") or all_sources["toypeople"]
+
+    live_stop = threading.Event()
+
+    def live_signature() -> str:
+        """Changes whenever something the dashboard shows changes: every post published / failed / uncertain, every
+        start/stop and backup is written to the activity log; the website check and the update check have their own
+        markers. Cheap enough to look at every second."""
+        parts = []
+        for name, (eng, wk) in all_sources.items():
+            last_event = eng.db._q("SELECT MAX(id) m FROM events")[0]["m"]
+            parts.append(f"{name}:{last_event}:{eng.db.kv_get('discover_status')}:{wk.state()}:{wk.error}")
+        parts.append(engine.db.kv_get("update_info") or "")
+        return "|".join(parts)
     jobs = Jobs()
     update_lock = threading.Lock()
     page = Path(__file__).with_name("dashboard.html").read_text(encoding="utf8")
@@ -59,9 +72,12 @@ def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | No
             return f"https://t.me/{c[1:]}"
         return f"https://t.me/c/{c[4:]}" if c.startswith("-100") else ""
 
-    def status(engine: Engine, worker: Worker) -> dict:
+    def status(engine: Engine, worker: Worker, since: float | None = None) -> dict:
         s = engine.s
         db = engine.db
+        if not since:                       # the page sends its own midnight; otherwise this computer's
+            from datetime import datetime
+            since = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
         nxt = engine.pacer.next_allowed_at()
         return {
             "state": worker.state(), "error": worker.error, "stats": db.stats(),
@@ -73,7 +89,7 @@ def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | No
             "chat": s.telegram_chat_id, "chat_link": chat_link(), "configured": s.telegram_ready,
             "last_backup": float(db.kv_get("last_backup_ts", "0") or 0) or None,
             "watch": db.kv_json("discover_status"), "listing": db.kv_json("listing_info"), "listing_max": db.kv_get("listing_max_id"), "poll_every": s.poll_interval_seconds, "data_dir": str(s.data_dir.resolve()), "probe": db.kv_get("probe_ok"), "version": tpclone.code_version(), "code_dir": tpclone.__path__[0], "update": db.kv_json("update_info"),
-            "sources": list(all_sources),
+            "sources": list(all_sources), "today": db.today_counts(since),
         }
 
     def settings_view() -> dict:
@@ -178,6 +194,32 @@ def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | No
             eng.db.log("info", f"imported posted-list from a backup file: {res['added']} added, {res['updated']} corrected")
             self._json(res)
 
+        def _live(self):
+            """Server-sent events: the page keeps this one request open and is told 'change' only when something
+            happened (then it reloads the numbers once). No polling from the browser."""
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Accel-Buffering", "no")       # a reverse proxy (VPS) must not hold the messages back
+            self.end_headers()
+            last, quiet = None, 0
+            try:
+                self.wfile.write(b"retry: 3000\n\n")
+                while not live_stop.is_set():
+                    sig = live_signature()
+                    if sig != last:
+                        last, quiet = sig, 0
+                        self.wfile.write(b"data: change\n\n")
+                    else:
+                        quiet += 1
+                        if quiet >= 15:                         # keep the connection alive / notice a closed tab
+                            quiet = 0
+                            self.wfile.write(b": ping\n\n")
+                    self.wfile.flush()
+                    live_stop.wait(1.0)
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
+                pass                                            # the tab was closed
+
         def do_GET(self):
             if not self._auth():
                 return self._json({"error": "unauthorized"}, 401)
@@ -186,8 +228,16 @@ def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | No
             if u.path == "/":
                 extra = {"Set-Cookie": f"tpt={s.web_token}; HttpOnly; SameSite=Strict; Path=/"} if s.web_token else {}
                 return self._send(200, page.encode(), "text/html; charset=utf-8", extra)
+            if u.path == "/favicon.ico":
+                return self._send(204, b"", "image/x-icon")
+            if u.path == "/api/live":
+                return self._live()
             if u.path == "/api/status":
-                return self._json(status(eng, wk))
+                try:
+                    since = float(parse_qs(u.query).get("since", ["0"])[0] or 0)
+                except ValueError:
+                    since = 0
+                return self._json(status(eng, wk, since))
             if u.path == "/api/settings":
                 return self._json(settings_view())
             if u.path == "/api/backup":      # fresh consistent copy for the user to keep somewhere safe
@@ -340,12 +390,16 @@ def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | No
                     return self._json({"queued": n, "worker": wk.state()})
                 if path == "/api/post/resolve":   # uncertain / failed rows
                     pid, action = int(body["id"]), body["action"]
+                    name = (eng.db.get(pid) or {}).get("title") or pid
                     if action == "posted":
                         eng.db.mark_posted_import(pid)
+                        eng.db.log("info", f"marked as already in the channel (by you): {name}")
                     elif action == "retry":
                         eng.db.reset_status(pid, "pending")
+                        eng.db.log("info", f"queued again (by you): {name}")
                     elif action == "skip":
                         eng.db.reset_status(pid, "skipped")
+                        eng.db.log("info", f"will not be posted automatically (by you): {name}")
                     else:
                         return self._json({"error": "bad action"}, 400)
                     return self._json({"ok": True})
@@ -353,4 +407,11 @@ def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | No
                 return self._json({"error": f"{type(e).__name__}: {e}"}, 500)
             self._json({"error": "not found"}, 404)
 
-    return ThreadingHTTPServer((s.web_host, s.web_port), H)
+    class Server(ThreadingHTTPServer):
+        daemon_threads = True
+
+        def shutdown(self):
+            live_stop.set()                  # end the open live connections
+            super().shutdown()
+
+    return Server((s.web_host, s.web_port), H)

@@ -125,7 +125,10 @@ If anything is unclear - for example two unknown messages for one uncertain post
 
 The same app can copy the newest items of **hpoi.net → 最新情报 (Latest Info)** to your channel, in English:
 
-* Open the dashboard: Toy-People and HPOI sit side by side on one page, each with its own Start/Stop. All settings are under the ⚙ gear at the top right (separate sections for each website). The update button is next to the gear.
+* Open the dashboard: Toy-People and HPOI sit side by side on one page, each with its own Start/Stop. All settings are under the ⚙ gear at the top right (separate sections for each website), together with the backups. The update button is next to the gear.
+* At the top, **Today** shows a ring chart of what was posted since midnight (Toy-People, HPOI) and what failed or is uncertain.
+  It updates by itself the moment something happens (the app tells the page; the page does not keep asking).
+  Next to it, **Needs your attention** has a tab per website; a red dot on a tab means something new is waiting there.
   (each remembers its Start/Stop state across restarts).
 * The title and the hashtags (maker, characters, series) are translated to English by Google Translate. Hashtags are
   clickable `#` tags. The expanded post shows the release month, the photos in one collage (no credit footer).
