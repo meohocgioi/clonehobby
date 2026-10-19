@@ -160,6 +160,7 @@ def test_unknown_preview_target(tmp_path):
     e, _, _ = make(tmp_path)
     e.discover()
     assert e.resolve_key(137248) == hpoi.post_key(137248, HEAD)
+    e.fetcher.item = "<html></html>"
     with pytest.raises(Exception):
         e.resolve_key(5)
 
@@ -206,3 +207,13 @@ def test_dashboard_routes_by_source(tmp_path):
         assert httpx.get(base + "/api/settings").json()["translate_api_key"].endswith("5678")
     finally:
         srv.shutdown()
+
+
+def test_old_product_can_be_previewed_and_posted(tmp_path):
+    e, tg, _ = make(tmp_path)
+    e.fetcher.item = ITEM.replace("<title>x</title>", "<title>孤独摇滚！ 毛绒玩偶挂件 vol.3 | Hpoi动漫模玩百科资料库</title>")
+    key = e.resolve_key(137248)                      # never listed: read from its own page
+    assert key == hpoi.post_key(137248, "孤独摇滚！ 毛绒玩偶挂件 vol.3") and e.resolve_key(137248) == key
+    art = e.fetch_article(key)
+    assert art.title.startswith("EN(") and art.scheduled == "Scheduled Release: Apr 2027"
+    assert e.post_now(137248)["status"] == "posted" and len(tg.sent) == 1

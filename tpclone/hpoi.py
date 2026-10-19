@@ -34,6 +34,9 @@ BASE = "https://www.hpoi.net/"
 KEY_SPAN = 100000          # post key = hobby_id * KEY_SPAN + crc32(headline) % KEY_SPAN  (one product can have several news items)
 
 
+KEY_FLOOR = 10 ** 9         # anything this big is a ledger key, smaller numbers are product numbers
+
+
 def post_key(hobby_id: int, headline: str) -> int:
     return hobby_id * KEY_SPAN + zlib.crc32(headline.strip().encode("utf8")) % KEY_SPAN
 
@@ -204,12 +207,31 @@ class HpoiEngine(Engine):
 
     def resolve_key(self, number: int) -> int:
         """Preview/post box: a full item number, or the product number from the link (…/hobby/137248)."""
-        if number >= KEY_SPAN and self._item(number):
+        if number >= KEY_FLOOR and self._item(number):
             return number
         r = self.db._q("SELECT key FROM hpoi_items WHERE hobby_id=? ORDER BY seen_at DESC LIMIT 1", (number,))
         if r:
             return r[0]["key"]
-        raise FetchError(f"{number} is not on the current HPOI 'Latest Info' list (only those items can be previewed)")
+        if number >= KEY_FLOOR:
+            raise FetchError(f"unknown HPOI item number {number}; use the product number from its link (…/hobby/137248)")
+        return self._adopt(number)
+
+    def _adopt(self, hobby_id: int) -> int:
+        """An older product (no longer on the Latest Info list): read its page and give it a ledger entry, so it can be
+        previewed or posted by hand. Its 'headline' is the product name."""
+        url = f"{BASE}hobby/{hobby_id}"
+        page = self.fetcher.get_text(url).text
+        soup = BeautifulSoup(page, "lxml")
+        name = _clean(soup.title.get_text()).split("|")[0].strip() if soup.title else ""
+        if not name:
+            raise FetchError(f"could not read the product name from {url}")
+        key = post_key(hobby_id, name)
+        info = parse_item(page)
+        self._remember([{"key": key, "id": hobby_id, "headline": name, "name": name, "category": "", "kind": "",
+                         "cover": info["cover"]}])
+        self.db.upsert_seen(key, url, None, "known", "manual")
+        self.db.set_meta(key, name, None)
+        return key
 
     def post_now(self, post_id: int, force: bool = False) -> dict:
         return super().post_now(self.resolve_key(post_id), force)
