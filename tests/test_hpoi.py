@@ -11,7 +11,9 @@ from tpclone.db import DB
 from tpclone.fetch import Page
 from tpclone.translate import TranslateError, Translator
 
-HOME = (Path(__file__).parent / "fixtures" / "hpoi_home.html").read_text(encoding="utf8")
+HOME = (Path(__file__).parent / "fixtures" / "hpoi_home.html").read_text(encoding="utf8").replace(
+    "</body>", '<input id="actionLastId854" type="text" hidden value="111"></body>')
+PAGE2 = (Path(__file__).parent / "fixtures" / "hpoi_page2.html").read_text(encoding="utf8")
 ITEM = (Path(__file__).parent / "fixtures" / "hpoi_item.html").read_text(encoding="utf8")
 HEAD = "Bushiroad Creative 孤独摇滚！ 毛绒玩偶挂件 vol.3 开订 每款1430日元含税 2027年4月出货"
 
@@ -41,6 +43,8 @@ class HFetcher:
 
     def get_text(self, url, **kw):
         self.urls.append(url)
+        if "index/action/get" in url:
+            return Page(url, 200, PAGE2 if "page=2&" in url else "", {})      # page 3: nothing more
         return Page(url, 200, self.home if url == hpoi.BASE else self.item, {})
 
     def get_bytes(self, url, referer=None):
@@ -263,4 +267,18 @@ def test_date_repost_from_seen_items(tmp_path):
         assert e.process(row) == "posted"
     assert e.plan_date(plan["date"])["state"] == "all_published"
     empty = e.plan_date("2001-01-01")
-    assert empty["state"] == "empty" and "Latest Info" in empty["message"]
+    assert empty["state"] == "empty" and "No HPOI items found" in empty["message"]
+
+
+def test_parse_last_time_and_scrolling_pages(tmp_path):
+    assert hpoi.parse_last_time(HOME) == "111" and hpoi.parse_last_time(PAGE2) == "1792373903415"
+    e, tg, _ = make(tmp_path)
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    yesterday = (datetime.now(ZoneInfo("Asia/Shanghai")) - timedelta(days=1)).date().isoformat()
+    plan = e.plan_date(yesterday)
+    urls = [u for u in e.fetcher.urls if "index/action/get" in u]
+    assert urls and "page=2&actionType=401&lastTime=111" in urls[0]       # scrolled down with the marker of the page
+    assert any("lastTime=1792373903415" in u for u in urls[1:])           # and chained the next marker
+    assert e.db.count() == 25                                             # 5 homepage + 20 older cards recorded
+    assert plan["state"] in ("none", "empty") 

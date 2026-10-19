@@ -77,6 +77,11 @@ def parse_listing(html: str) -> list[dict]:
     return out
 
 
+def parse_last_time(html: str) -> str:
+    m = re.search(r'id="actionLastId\d*"[^>]*value="(\d+)"', html)
+    return m.group(1) if m else ""
+
+
 def site_url(u: str) -> str:
     return urljoin(BASE, u.strip()) if u else ""
 
@@ -209,6 +214,7 @@ class HpoiEngine(Engine):
               "name TEXT, category TEXT, kind TEXT, cover TEXT, seen_at REAL)")
         for r in db._q("SELECT p.post_id, h.seen_at FROM posts p JOIN hpoi_items h ON h.key=p.post_id WHERE p.post_date IS NULL"):
             db.set_meta(r["post_id"], None, datetime.fromtimestamp(r["seen_at"] or time.time(), ZoneInfo(self.s.site_tz)).date().isoformat())
+        self._last_time = ""
         self.translator = Translator(db, main.translator, main.translate_api_key,
                                      glossary_file=main.data_dir / "hpoi_glossary.json")
 
@@ -275,7 +281,15 @@ class HpoiEngine(Engine):
         return eng
 
     def fetch_listing(self) -> list[dict]:
-        return parse_listing(self.fetcher.get_text(BASE).text)
+        html = self.fetcher.get_text(BASE).text
+        self._last_time = parse_last_time(html)
+        return parse_listing(html)
+
+    def fetch_more(self, page: int, last_time: str) -> tuple[list[dict], str]:
+        """Older cards, exactly what the website's own 'scroll down for more' asks for (not the /api/ area):
+        GET /index/action/get?page=N&actionType=401&lastTime=<marker from the previous page>."""
+        html = self.fetcher.get_text(f"{BASE}index/action/get?page={page}&actionType=401&lastTime={last_time}").text
+        return parse_listing(html), parse_last_time(html)
 
     def _remember(self, cards: list[dict]) -> None:
         for c in cards:
@@ -288,21 +302,49 @@ class HpoiEngine(Engine):
         ts = published_at(card.get("age", ""), now) or now
         return datetime.fromtimestamp(ts, ZoneInfo(self.s.site_tz)).date().isoformat()
 
+    MAX_PAGES = 60              # ~20 cards per page; at 5 s per page this reaches about a month back
+
     def plan_date(self, date: str, margin: int = 25, tail: int = 60, progress=None) -> dict:
-        """HPOI has no browsable archive without the /api/ area that robots.txt asks robots to leave alone, so a day can
-        only be rebuilt from the items this app has SEEN on the homepage list (its ~20 newest cards, read every poll)."""
+        """Every HPOI item of `date` (site time). The homepage shows the newest 20 cards; the website loads older ones
+        page by page when you scroll down, and so do we - until a card is older than the requested day. Cards only say
+        how long ago they appeared ('3天前'), so a card's day can be off by one at the edges."""
         say = progress or (lambda m: None)
         say("reading the HPOI Latest Info list")
-        try:
-            self.discover(manual=True)
-        except Exception as e:  # noqa: BLE001
-            say(f"(could not refresh the list: {e})")
-        found = {r["post_id"]: r.get("title") for r in self.db.by_date(date)}
+        now = time.time()
+        cards = self.fetch_listing()
+        last, pages = self._last_time, 1
+        start = datetime.fromisoformat(date).replace(tzinfo=ZoneInfo(self.s.site_tz)).timestamp()
+        capped = False
+
+        def oldest(cs):
+            ts = [published_at(c["age"], now) for c in cs if c.get("age")]
+            return min([x for x in ts if x], default=None)
+        while cards and (oldest(cards) or now) > start - 86400:
+            if pages >= self.MAX_PAGES:
+                capped = True
+                break
+            say(f"scrolling down: page {pages + 1} ({len(cards)} items read, back to "
+                f"{datetime.fromtimestamp(oldest(cards) or now, ZoneInfo(self.s.site_tz)).date()})")
+            more, last = self.fetch_more(pages + 1, last)
+            pages += 1
+            if not more:
+                break
+            cards += more
+        self._remember(cards)
+        found: dict[int, str | None] = {}
+        for c in cards:
+            self.db.upsert_seen(c["key"], f"{BASE}hobby/{c['id']}", None, "known", "date-scan", priority=1)
+            row = self.db.get(c["key"]) or {}
+            day = row.get("post_date") or self._date_of(c, now)
+            self.db.set_meta(c["key"], row.get("title") or c["headline"], day)
+            if day == date:
+                found[c["key"]] = row.get("title") or c["headline"]
+        for r in self.db.by_date(date):
+            found.setdefault(r["post_id"], r.get("title"))
         rep = self._date_report(date, found, {}, say)
         if rep["state"] == "empty":
-            rep["message"] = (f"No HPOI items recorded for {date}. The app can only see the newest ~20 items of hpoi.net's "
-                              f"Latest Info list (about a day or two back) and remembers everything it has seen since it "
-                              f"started. Older days cannot be listed; paste a product link into the preview box to post one by hand.")
+            rep["message"] = (f"No HPOI items found for {date} (looked through {len(cards)} items on {pages} page(s)"
+                              f"{'; stopped at the safety limit' if capped else ''}).")
         return rep
 
     # ---- discovery ------------------------------------------------------------
