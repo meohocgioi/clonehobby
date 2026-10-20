@@ -69,6 +69,10 @@ class Engine:
     def post_url(self, post_id: int) -> str:
         return f"{self.s.site_base.rstrip('/')}/?p={post_id}"
 
+    def knows(self, number: int) -> bool:
+        """Has the app seen a post with this number (the one in the website's link)?"""
+        return self.db.get(number) is not None
+
     def display_id(self, post_id: int) -> int:
         """The number people know the post by (the one in the website's link)."""
         return post_id

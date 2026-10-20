@@ -197,6 +197,11 @@ def test_dashboard_routes_by_source(tmp_path):
         st = httpx.get(base + "/api/status?source=hpoi").json()
         assert st["stats"]["skipped"] == 5 and st["sources"] == ["toypeople", "hpoi"]
         assert httpx.get(base + "/api/status").json()["stats"]["total"] == 0
+        # a bare number in the preview box: which website knows it?
+        assert httpx.get(base + "/api/which?n=137248").json() == {"toypeople": False, "hpoi": True}
+        assert httpx.get(base + "/api/which?n=12").json() == {"toypeople": False, "hpoi": False}
+        toy.db.upsert_seen(115209, toy.post_url(115209), None, "known", "manual")
+        assert httpx.get(base + "/api/which?n=115209").json() == {"toypeople": True, "hpoi": False}
         # preview by the product number from the link
         job = httpx.post(base + "/api/preview?source=hpoi", json={"target": "https://www.hpoi.net/hobby/137248"}, headers=h).json()["job"]
         j = _wait(base, job)

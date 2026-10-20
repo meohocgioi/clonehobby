@@ -235,6 +235,12 @@ def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | No
                 return self._send(204, b"", "image/x-icon")
             if u.path == "/api/live":
                 return self._live()
+            if u.path == "/api/which":           # which website knows this number? (preview box with a bare number)
+                try:
+                    n = int(parse_qs(u.query).get("n", ["0"])[0])
+                except ValueError:
+                    n = 0
+                return self._json({name: bool(n) and e.knows(n) for name, (e, _) in all_sources.items()})
             if u.path == "/api/status":
                 try:
                     since = float(parse_qs(u.query).get("since", ["0"])[0] or 0)

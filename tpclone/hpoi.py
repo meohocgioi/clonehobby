@@ -236,6 +236,11 @@ class HpoiEngine(Engine):
         r = self.db._q("SELECT * FROM hpoi_items WHERE key=?", (key,))
         return dict(r[0]) if r else None
 
+    def knows(self, number: int) -> bool:
+        if number >= KEY_FLOOR:
+            return self._item(number) is not None
+        return bool(self.db._q("SELECT 1 FROM hpoi_items WHERE hobby_id=? LIMIT 1", (number,)))
+
     def display_id(self, key: int) -> int:
         return key // KEY_SPAN                       # the product number in https://www.hpoi.net/hobby/<number>
 

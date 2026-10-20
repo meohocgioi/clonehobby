@@ -151,9 +151,8 @@
     <div class="cols" id="panels"></div>
 
     <div class="card">
-      <div class="row" style="justify-content:space-between"><h2 style="margin:0">Preview a post (nothing is sent)</h2>
-        <select class="src" id="pv_src" hidden></select></div>
-      <div class="row" style="margin-top:10px"><input type="text" id="pv_in" placeholder="post number or link, e.g. 114949" style="max-width:420px"> <button id="pv_go">Show preview</button> <button class="go" id="pv_post">Post</button> <span class="mut" id="pv_prog"></span></div>
+      <h2 style="margin:0">Preview a post (nothing is sent)</h2>
+      <div class="row" style="margin-top:10px"><input type="text" id="pv_in" placeholder="Paste a Toy-People or HPOI link (or a post number)" style="max-width:420px"> <button id="pv_go">Show preview</button> <button class="go" id="pv_post">Post</button> <span class="mut" id="pv_prog"></span></div>
       <div id="pv_out" hidden>
         <div class="tg" id="pv_box"></div>
         <p class="mut" id="pv_info"></p>
@@ -392,7 +391,7 @@ function buildPanels(){
     pq(src,'checknow').onclick=()=>checkNow(src);
     const l=document.createElement('div'); l.className='card'; l.innerHTML=`<h2>Activity — ${SOURCES[src]}</h2><div class="log small" data-log="${src}"></div>`; lg.appendChild(l);
   }
-  for(const id of ['pv_src','date_src']){ const sel=$(id); sel.innerHTML=''; sel.hidden=ACTIVE.length<2;
+  for(const id of ['date_src']){ const sel=$(id); sel.innerHTML=''; sel.hidden=ACTIVE.length<2;
     for(const s of ACTIVE){const o=document.createElement('option'); o.value=s; o.textContent=SOURCES[s]; sel.appendChild(o)} }
   syncSources();
 }
@@ -600,12 +599,10 @@ async function checkNow(src){
 }
 
 // ---- preview / date selectors -----------------------------------------------------------------------
-const pvSrc=()=>$('pv_src').value||'toypeople', dateSrc=()=>$('date_src').value||'toypeople';
+const dateSrc=()=>$('date_src').value||'toypeople';
 function syncSources(){
-  $('pv_in').placeholder=pvSrc()==='hpoi'?'item link or number, e.g. https://www.hpoi.net/hobby/137248':'post number or link, e.g. 114949';
   $('hp_datenote').hidden=dateSrc()!=='hpoi';
 }
-$('pv_src').onchange=()=>{clearPreview(); syncSources()};
 $('date_src').onchange=()=>{$('plan-out').hidden=true; planData=null; $('prog').textContent=''; syncSources()};
 
 // ---- date repost ---------------------------------------------------------------------------------------
@@ -794,9 +791,30 @@ $('imp_go').onclick=async()=>{
 };
 
 // ---- preview ---------------------------------------------------------------------------------------------------
+// which website the box means: a link says it; for a bare number the app checks which website knows it, and asks if it can't tell
+let pvSource='toypeople';
+function askSource(n){ return new Promise(res=>{ const p=$('pv_prog'); p.textContent='Which website is '+n+' from?';
+  for(const s of ACTIVE){ const b=document.createElement('button'); b.className='sm'; b.style.marginLeft='8px'; b.textContent=SOURCES[s]; b.onclick=()=>{p.textContent=''; res(s)}; p.append(b) } }) }
+async function detectSource(text){
+  text=(text||'').trim(); if(!text) return null;
+  if(/hpoi\.net/i.test(text)) return 'hpoi';
+  if(/toy-people\.com/i.test(text)||ACTIVE.length<2) return 'toypeople';
+  const n=(text.match(/(\d+)\s*\/?\s*$/)||[])[1]; if(!n) return null;
+  let w={}; try{ w=await api('/api/which?n='+n) }catch(e){}
+  if(w.toypeople&&!w.hpoi) return 'toypeople';
+  if(w.hpoi&&!w.toypeople) return 'hpoi';
+  return askSource(n);
+}
+async function pvTarget(){
+  const src=await detectSource($('pv_in').value);
+  if(!src){ $('pv_prog').textContent='Paste a post link (or type its number) first'; return null }
+  if(!ACTIVE.includes(src)){ $('pv_prog').textContent='HPOI is switched off (⚙ Settings → HPOI)'; return null }
+  return pvSource=src;
+}
 $('pv_go').onclick=async()=>{
   if($('pv_go').dataset.mode==='clear'){clearPreview();return}
-  const src=pvSrc(); $('pv_out').hidden=true; $('pv_go').disabled=true; $('pv_prog').textContent='working…';
+  const src=await pvTarget(); if(!src) return;
+  $('pv_out').hidden=true; $('pv_go').disabled=true; $('pv_prog').textContent='working…';
   const {job,error}=await api('/api/preview',{target:$('pv_in').value},src); if(error){$('pv_prog').textContent=error;$('pv_go').disabled=false;return}
   const tick=async()=>{const j=await api('/api/jobs/'+job,undefined,src);
     if(j.state==='running'){$('pv_prog').textContent=j.progress;return setTimeout(tick,1000)}
@@ -828,8 +846,8 @@ function showPreview(a){
   for(const p of a.paragraphs){const e=document.createElement('p'); e.style.margin=(a.paragraph_spacing==='tight'?'2px 0':'0 0 14px'); e.textContent=new DOMParser().parseFromString(p.replace(/<br>/g,'\n'),'text/html').body.textContent; inner.appendChild(e)}
   const g=document.createElement('div'); g.className='imgs'; for(const u of a.images.slice(0,12)){g.appendChild(mediaEl(u))} inner.appendChild(g);
   if(a.credits.length) add('p',a.credit_label+': '+a.credits.map(c=>c[0]).join(', '),'italic');
-  const warn=[]; if(!a.title) warn.push('no title'); if(!a.cover) warn.push('no cover photo'); if(!a.post_date&&pvSrc()!=='hpoi') warn.push('no date'); if(!a.paragraphs.length&&pvSrc()!=='hpoi') warn.push('no text'); if(!a.images.length) warn.push('no photos');
-  $('pv_info').textContent=(a.show_more_style&&a.show_more_style!=='classic'?'(button style shown approximately'+''+') · ':'')+(a.post_date?('Date: '+a.post_date+' · '):'')+a.images.length+' photos/GIFs/videos · media slots used '+a.slots_used+'/'+a.max_media+(a.overflow?(' ('+a.overflow+' photos merged into the last collage)'):'')+(warn.length?(' · ⚠ missing: '+warn.join(', ')):' · looks complete ✅');
+  const warn=[]; if(!a.title) warn.push('no title'); if(!a.cover) warn.push('no cover photo'); if(!a.post_date&&pvSource!=='hpoi') warn.push('no date'); if(!a.paragraphs.length&&pvSource!=='hpoi') warn.push('no text'); if(!a.images.length) warn.push('no photos');
+  $('pv_info').textContent=SOURCES[pvSource]+' · '+(a.show_more_style&&a.show_more_style!=='classic'?'(button style shown approximately'+''+') · ':'')+(a.post_date?('Date: '+a.post_date+' · '):'')+a.images.length+' photos/GIFs/videos · media slots used '+a.slots_used+'/'+a.max_media+(a.overflow?(' ('+a.overflow+' photos merged into the last collage)'):'')+(warn.length?(' · ⚠ missing: '+warn.join(', ')):' · looks complete ✅');
 }
 
 // ---- Post / Posted buttons -----------------------------------------------------------------------------------
@@ -858,7 +876,8 @@ async function postNow(id,b,force,src){
     refresh()}; tick();
 }
 $('pv_post').onclick=async()=>{
-  const src=pvSrc(); const m=($('pv_in').value||'').match(/(\d+)\s*$/); if(!m){$('pv_prog').textContent='enter a post number first';return}
+  const m=($('pv_in').value||'').match(/(\d+)\s*\/?\s*$/); if(!m){$('pv_prog').textContent='Paste a post link (or type its number) first';return}
+  const src=await pvTarget(); if(!src) return;
   const b=$('pv_post'); b.disabled=true; $('pv_prog').textContent='posting…';
   const {job,error}=await api('/api/post-now',{id:+m[1],force:false},src); if(error){$('pv_prog').textContent='❌ '+error;b.disabled=false;return}
   const tick=async()=>{const j=await api('/api/jobs/'+job,undefined,src);
