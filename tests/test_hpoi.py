@@ -262,6 +262,8 @@ def test_date_repost_from_seen_items(tmp_path):
     dates = {e.db.get(r["post_id"])["post_date"] for r in rows}
     plan = e.plan_date(sorted(dates)[0])
     assert plan["total"] >= 1 and plan["to_publish"] and plan["state"] == "none"
+    for row in plan["posts"]:                                   # the date table links each item to hpoi.net
+        assert row["ref"] == row["id"] // hpoi.KEY_SPAN and row["url"] == f"{hpoi.BASE}hobby/{row['ref']}"
     assert e.enqueue_date(plan["date"], plan["to_publish"]) == len(plan["to_publish"])
     while (row := e.db.next_pending()):
         assert e.process(row) == "posted"

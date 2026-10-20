@@ -69,6 +69,10 @@ class Engine:
     def post_url(self, post_id: int) -> str:
         return f"{self.s.site_base.rstrip('/')}/?p={post_id}"
 
+    def display_id(self, post_id: int) -> int:
+        """The number people know the post by (the one in the website's link)."""
+        return post_id
+
     def resolve_key(self, number: int) -> int:
         """What the user typed in 'preview' -> the ledger key (for toy-people they are the same)."""
         return number
@@ -997,7 +1001,8 @@ class Engine:
             "date": date, "state": state, "message": msg, "total": total,
             "published": posted, "to_publish": [p for p in unpublished if p not in uncertain],
             "already_queued": queued, "uncertain": uncertain, "deleted_from_channel": gone,
-            "posts": [{"id": p, "title": (rows[p] or {}).get("title"), "status": (rows[p] or {}).get("status"),
+            "posts": [{"id": p, "ref": self.display_id(p), "url": (rows[p] or {}).get("url") or self.post_url(p),
+                       "title": (rows[p] or {}).get("title"), "status": (rows[p] or {}).get("status"),
                        "messages": msgs.get(p, [])} for p in sorted(found)],
         }
 

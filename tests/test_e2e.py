@@ -124,6 +124,8 @@ def test_full_flow_over_http(stack):
             break
         time.sleep(0.1)
     assert j["state"] == "done" and j["result"]["to_publish"] == [3, 4, 5], j
+    first = j["result"]["posts"][0]                             # the date table links each post to the website
+    assert first["ref"] == first["id"] and first["url"].endswith(f"/en/?p={first['id']}")
     assert post(base, "/api/date/publish", {"date": "2026-09-25", "ids": j["result"]["to_publish"]})["queued"] == 3
     w.stop(wait=True)
     post(base, "/api/start")

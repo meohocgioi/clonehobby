@@ -31,7 +31,7 @@
   table.grid{width:100%;border-collapse:separate;border-spacing:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:12px}
   table.grid th{background:color-mix(in srgb,var(--fg) 5%,transparent);font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);padding:9px 12px}
   table.grid td{padding:9px 12px;vertical-align:middle;border-bottom:1px solid var(--line)} table.grid tr:last-child td{border-bottom:0}
-  table.grid td.id{width:78px;color:var(--mut);font-variant-numeric:tabular-nums} table.grid td.act,table.grid th.act{width:112px;text-align:center}
+  table.grid td.id{width:78px;color:var(--mut);font-variant-numeric:tabular-nums} table.grid td.id a{color:inherit} table.grid td.act,table.grid th.act{width:112px;text-align:center}
   .rowbtn{width:92px;height:32px;padding:0;white-space:nowrap;font-size:13px;font-weight:600;border-radius:8px}
   .rowbtn.go{background:var(--ok);border-color:var(--ok);color:#fff} .rowbtn.done{background:color-mix(in srgb,var(--mut) 25%,transparent);border-color:transparent;color:var(--mut)}
   .rowbtn.warn{background:var(--warn);border-color:var(--warn);color:#fff} .rowbtn.err{background:var(--bad);border-color:var(--bad);color:#fff}
@@ -566,7 +566,8 @@ function renderAttention(all){
     const bd=document.createElement('span'); bd.className='badge '+r.status; bd.textContent=r.status;
     const a=document.createElement('a'); a.href=r.url; a.target='_blank'; a.rel='noopener'; a.textContent=r.title||(src==='hpoi'?'HPOI item':'Post '+r.post_id);
     const er=document.createElement('div'); er.className='mut ierr';
-    er.textContent=[src==='hpoi'?'':('#'+r.post_id), r.flagged_at?('since '+fmtShort(r.flagged_at)):'', r.last_error||''].filter(Boolean).join(' · ');
+    const hid=src==='hpoi'?((r.url||'').match(/hobby\/(\d+)/)||[])[1]:r.post_id;
+    er.textContent=[hid?('#'+hid):'', r.flagged_at?('since '+fmtShort(r.flagged_at)):'', r.last_error||''].filter(Boolean).join(' · ');
     tx.append(bd,a,er);
     const ac=document.createElement('div'); ac.className='iact';
     for(const [act,l] of [['posted','It is in the channel'],['retry','Send again'],['skip','Ignore']]){
@@ -619,7 +620,8 @@ $('plan').onclick=async()=>{
     $('pub').textContent=planData.state==='new_since'?('Publish only the '+n+' new post(s)'):('Publish '+n+' post(s)');
     const t=$('plan-tbl'); t.innerHTML=''; t.className='grid';
     const h=t.createTHead().insertRow(); for(const [n,c] of [['ID','id'],['Title',''],['Action','act']]){const th=document.createElement('th'); th.textContent=n; if(c)th.className=c; h.appendChild(th)}
-    const tb=t.createTBody(); for(const p of planData.posts){const tr=tb.insertRow(); const c0=tr.insertCell(); c0.className='id'; c0.textContent=src==='hpoi'?'':p.id;
+    const tb=t.createTBody(); for(const p of planData.posts){const tr=tb.insertRow(); const c0=tr.insertCell(); c0.className='id';
+      const idl=document.createElement('a'); idl.textContent=p.ref||p.id; idl.title='Open the original post'; idl.target='_blank'; idl.rel='noopener'; if(p.url) idl.href=p.url; c0.appendChild(idl);
       const ct=tr.insertCell(); const tt=document.createElement('div'); tt.textContent=p.title||'(no title)'; ct.appendChild(tt);
       if(p.messages&&p.messages.length){const m=document.createElement('div'); m.className='msgs'; m.append('In your channel: ');
         p.messages.forEach((x,i)=>{ if(i) m.append(', '); const cl=chatLinks[src]; const a=document.createElement(cl?'a':'span'); if(cl){a.href=cl+'/'+x.message_id; a.target='_blank'}
