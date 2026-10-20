@@ -332,122 +332,173 @@ class Engine:
 
     UPLOAD_BUDGET = 45 * 1024 * 1024    # keep one request below this (Telegram: 10 MB per photo, 50 MB per video/GIF)
 
-    def _motion_too_big_for_link(self, urls: list[str]) -> bool:
-        """Telegram fetches at most 20 MB of a GIF / video from a link: bigger ones must be uploaded by the app."""
+    def _motion_sizes(self, urls: list[str]) -> dict[str, int | None]:
+        """Size of every GIF / video link (one HEAD request each; photos are not asked about). None = unknown."""
+        out: dict[str, int | None] = {}
         for u in urls:
-            if media_mod.kind_from_url(u) == "photo":
+            if u in out or media_mod.kind_from_url(u) == "photo":
                 continue
             try:
                 r = self.fetcher.client.head(u, headers={"Referer": self.s.site_base}, timeout=20)
-                if int(r.headers.get("content-length") or 0) > media_mod.URL_MOTION_LIMIT:
-                    return True
-            except Exception:  # noqa: BLE001  (cannot tell: let Telegram try the link)
-                continue
-        return False
+                out[u] = int(r.headers.get("content-length") or 0) or None
+            except Exception:  # noqa: BLE001
+                out[u] = None
+        return out
 
-    def _compose(self, art: site.Article, plan: render.MediaPlan, mode: str, motion: bool = True):
-        """-> (html, media entries, files). In 'upload' mode every picture is downloaded and attached: photos as JPEG
-        (WebP & co. converted), GIFs as animations and MP4s as videos when they fit (motion=False: everything becomes a
-        plain photo, videos are left out)."""
+    def _compose(self, art: site.Article, plan: render.MediaPlan, photos: str = "link", small: str = "link",
+                 big: str = "upload", sizes: dict | None = None):
+        """-> (html, media entries, files).
+
+        photos: 'link' (Telegram fetches the picture itself) or 'upload' (the app downloads it, converts it to JPEG and
+        sends the file). small = GIFs / videos Telegram may fetch from a link (up to 20 MB), big = larger ones:
+        'link', 'upload' (sent as a real animation / video) or 'still' (turned into a plain photo; a video, which
+        cannot be turned into a photo, is left out)."""
+        sizes = sizes or {}
         refs: dict[str, str] = {}
-        files: dict[str, bytes] = {}
+        files: dict[str, object] = {}
         media: list[dict] = []
 
         def attach(key: str, kind: str, data: bytes) -> None:
             fid = f"f{len(files)}"
-            files[fid] = data
+            ext, mime = media_mod.upload_name(kind, data)
+            files[fid] = data if kind == "photo" else (fid + ext, data, mime)
             media.append({"id": fid, "media": {"type": kind, "media": f"attach://{fid}"}})
             refs[key] = f"tg://{'photo' if kind == 'photo' else 'video'}?id={fid}"
 
+        def nbytes(v) -> int:
+            return len(v[1]) if isinstance(v, tuple) else len(v)
+
         plan = render.MediaPlan(plan.cover, list(plan.originals), list(plan.overflow))
         urls = ([plan.cover] if plan.cover else []) + plan.originals
-        if mode != "upload" and motion and self._motion_too_big_for_link(urls):
-            mode = "upload"
-        if mode == "upload":
-            raw: dict[str, bytes] = {}
-            for u in urls:
-                if u not in raw:
-                    d = self._download(u)
-                    if d:
-                        raw[u] = d
-            kinds = {u: media_mod.sniff_kind(d) for u, d in raw.items()}
-            moving = {u for u, k in kinds.items() if k != "photo" and motion and len(raw[u]) <= media_mod.MAX_MOTION_BYTES}
-            # the biggest animations become still pictures (videos are left out) until the request fits
-            photos_guess = 1024 * 1024 * sum(1 for u in raw if u not in moving)
-            for u in sorted(moving, key=lambda x: -len(raw[x])):
-                if sum(len(raw[x]) for x in moving) + photos_guess <= self.UPLOAD_BUDGET:
-                    break
-                moving.discard(u)
-                photos_guess += 1024 * 1024
-            usable = {u for u in raw if u in moving or kinds[u] != "video"}       # a video cannot become a photo
-            plan.cover = plan.cover if plan.cover in usable else None
-            plan.originals = [u for u in plan.originals if u in usable]
-            max_side = 2560
-            while True:
-                files.clear(); media.clear(); refs.clear()
-                for u in ([plan.cover] if plan.cover else []) + plan.originals:
-                    if u in refs:
-                        continue
-                    if u in moving:
-                        attach(u, kinds[u], raw[u])
-                        continue
+        treat = {}
+        for u in urls:
+            if media_mod.kind_from_url(u) == "photo":
+                treat[u] = photos
+            else:
+                treat[u] = big if (sizes.get(u) or 0) > media_mod.URL_MOTION_LIMIT else small
+        raw: dict[str, bytes] = {}
+        for u in urls:
+            if treat[u] != "link" and u not in raw:
+                d = self._download(u)
+                if d:
+                    raw[u] = d
+        form: dict[str, str | None] = {}           # what each downloaded file is sent as: photo / animation / video / left out
+        for u, d in raw.items():
+            k = media_mod.sniff_kind(d)
+            if k != "photo" and treat[u] == "upload" and len(d) <= media_mod.MAX_MOTION_BYTES:
+                form[u] = k
+            else:
+                form[u] = None if k == "video" else "photo"
+        # one request must stay within budget: the biggest uploaded animations become stills (videos are left out)
+        moving = sorted((u for u, f in form.items() if f in ("animation", "video")), key=lambda x: -len(raw[x]))
+        photos_guess = 1024 * 1024 * sum(1 for f in form.values() if f == "photo")
+        for u in moving:
+            if sum(len(raw[x]) for x in moving if form[x] in ("animation", "video")) + photos_guess <= self.UPLOAD_BUDGET:
+                break
+            form[u] = "photo" if form[u] == "animation" else None
+            photos_guess += 1024 * 1024
+        keep = lambda u: treat[u] == "link" or form.get(u) is not None
+        plan.cover = plan.cover if plan.cover and keep(plan.cover) else None
+        plan.originals = [u for u in plan.originals if keep(u)]
+        max_side = 2560
+        while True:
+            files.clear(); media.clear(); refs.clear()
+            for u in ([plan.cover] if plan.cover else []) + plan.originals:
+                if u in refs:
+                    continue
+                if treat[u] == "link":
+                    refs[u] = u
+                elif form[u] in ("animation", "video"):
+                    attach(u, form[u], raw[u])
+                else:
                     try:
                         attach(u, "photo", media_mod.prepare_photo(raw[u], max_side))
                     except Exception as e:  # noqa: BLE001  (not a picture after all: leave it out)
                         log.warning("picture %s skipped: %s", u, e)
-                if sum(len(v) for v in files.values()) <= self.UPLOAD_BUDGET or max_side <= 1024:
-                    break
-                max_side = max(1024, max_side // 2)
-            plan.cover = plan.cover if plan.cover in refs else None
-            plan.originals = [u for u in plan.originals if u in refs]
-        else:
-            for u in urls:
-                refs[u] = u
+            if sum(nbytes(v) for v in files.values()) <= self.UPLOAD_BUDGET or max_side <= 1024:
+                break
+            max_side = max(1024, max_side // 2)
+        plan.cover = plan.cover if plan.cover in refs else None
+        plan.originals = [u for u in plan.originals if u in refs]
         if plan.overflow:
             blobs = [b for b in (self._download(u) for u in plan.overflow) if b]
-            if blobs:
-                try:
-                    attach(render.OVERFLOW_KEY, "photo", media_mod.make_collage(blobs))
-                except ValueError:
-                    plan.overflow = []
-            else:
+            try:
+                attach(render.OVERFLOW_KEY, "photo", media_mod.make_collage(blobs)) if blobs else None
+            except ValueError:
+                blobs = []
+            if not blobs:
                 plan.overflow = []
         html = render.build_html(art, self.s, plan, lambda k: refs[k])
         return html, media, files
 
+    def _tries(self, sizes: dict[str, int | None]) -> list[tuple[str, str, str]]:
+        """The ways to send a post, best first: links (the documented way for GIFs / videos up to 20 MB), then the app's
+        own uploads, and as the very last resort every GIF / video as a still picture. Identical requests only once."""
+        has_big = any((v or 0) > media_mod.URL_MOTION_LIMIT for v in sizes.values())
+        has_small = any((v or 0) <= media_mod.URL_MOTION_LIMIT for v in sizes.values())
+        tries = []
+        if self.s.media_mode in ("auto", "url"):
+            tries += [("link", "link", "upload"), ("link", "link", "still")]
+        tries += [("upload", "link", "still"), ("upload", "upload", "upload"), ("upload", "still", "still")]
+        out, seen = [], set()
+        for p, sm, bg in tries:
+            key = (p, sm if has_small else "-", bg if has_big else "-")
+            if key not in seen:
+                seen.add(key)
+                out.append((p, sm, bg))
+        return out
+
+    @staticmethod
+    def _describe(t: tuple[str, str, str]) -> str:
+        p, sm, bg = t
+        if sm == "still" and bg == "still":
+            return "with GIFs / videos as still pictures"
+        if p == "upload" and sm == "upload":
+            return "with every file uploaded by the app"
+        if p == "upload":
+            return "with the pictures uploaded by the app"
+        return "with the big GIF / video as a still picture" if bg == "still" else "with links"
+
     def build_message(self, art: site.Article, mode: str | None = None):
         plan = render.plan_media(art, self.s.max_media)
         mode = mode or ("url" if self.s.media_mode == "auto" else self.s.media_mode)
-        return self._compose(art, plan, mode), plan
+        p = "upload" if mode == "upload" else "link"
+        return self._compose(art, plan, p, "link", "upload"), plan
 
     def publish(self, post_id: int) -> int | None:
         """Fetch -> render -> send one post. Returns Telegram message_id.
 
-        If Telegram cannot use a picture (it was never sent then), try again: with every file uploaded by the app, and
-        as a last resort with every GIF / video turned into a plain photo."""
+        If Telegram cannot use a picture / GIF / video (the message is not sent then), the next way is tried - see
+        _tries. Every refusal is written to the activity log with Telegram's own words."""
         art = self.fetch_article(post_id)
         if not art.title or not (art.paragraphs or art.images or art.cover):
             raise FetchError(f"parse produced an empty post (title={art.title!r}, paragraphs={len(art.paragraphs)}, "
                              f"images={len(art.images)}) - check selectors with 'tpclone inspect {post_id}'")
         plan = render.plan_media(art, self.s.max_media)
         tag_hash = self.s.hashtag_style in ("hashtag", "true", "1")
-        first = "url" if self.s.media_mode == "auto" else self.s.media_mode
-        tries = [(first, True)] + ([("upload", True)] if first != "upload" else []) + [("upload", False)]
+        sizes = self._motion_sizes(([plan.cover] if plan.cover else []) + plan.originals)
+        tries = self._tries(sizes)
         if self.s.dry_run or self.tg is None:
-            html, _, _ = self._compose(art, plan, first)
+            html, _, _ = self._compose(art, plan, *tries[0], sizes=sizes)
             log.info("DRY RUN post %s:\n%s", post_id, html)
             return None
         last: MediaRejected | None = None
-        for mode, motion in tries:
-            html, media, files = self._compose(art, plan, mode, motion)
+        for i, t in enumerate(tries):
+            html, media, files = self._compose(art, plan, *t, sizes=sizes)
             assert render.count_media(html) <= self.s.max_media
             try:
                 res = self.tg.send_rich(html, media, files, skip_entity_detection=not tag_hash)
-                return res.get("message_id")
             except MediaRejected as e:
                 last = e
-                log.warning("post %s: Telegram could not use a picture (%s, mode=%s%s) - trying another way",
-                            post_id, e, mode, "" if motion else ", stills only")
+                nxt = f"trying again {self._describe(tries[i + 1])}" if i + 1 < len(tries) else "no other way left"
+                self.db.log("warn", f"post {post_id}: Telegram refused a picture/GIF/video ({e}) - {nxt}")
+                continue
+            big = any((v or 0) > media_mod.URL_MOTION_LIMIT for v in sizes.values())
+            small = any((v or 0) <= media_mod.URL_MOTION_LIMIT for v in sizes.values())
+            if last is not None and ((t[1] == "still" and small) or (t[2] == "still" and big)):
+                self.db.log("warn", f"post {post_id}: sent, but with a GIF/video as a still picture - Telegram refused "
+                                    f"it as an animation ({last})")
+            return res.get("message_id")
         raise last
 
     def _already_in_channel(self, pid: int) -> str | None:

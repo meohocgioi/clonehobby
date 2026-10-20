@@ -36,6 +36,19 @@ def sniff_kind(data: bytes) -> str:
     return "photo"
 
 
+def upload_name(kind: str, data: bytes) -> tuple[str, str]:
+    """File extension + MIME type Telegram needs to recognise an uploaded file (it decides photo / GIF / video by them)."""
+    if kind == "animation":
+        return ".gif", "image/gif"
+    if kind == "video":
+        if data[:4] == b"\x1aE\xdf\xa3":
+            return ".webm", "video/webm"
+        if data[8:10] == b"qt":
+            return ".mov", "video/quicktime"
+        return ".mp4", "video/mp4"
+    return ".jpg", "image/jpeg"
+
+
 def prepare_photo(data: bytes, max_side: int = 2560) -> bytes:
     """Normalise to a Telegram-acceptable JPEG (flatten alpha, cap size, fix extreme ratios)."""
     im = Image.open(io.BytesIO(data))

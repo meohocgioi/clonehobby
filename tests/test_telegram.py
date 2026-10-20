@@ -131,3 +131,17 @@ def test_rich_message_media_errors_allow_an_upload_retry():
     with pytest.raises(TelegramError) as ei:
         tg.send_rich("<p/>")
     assert not isinstance(ei.value, MediaRejected)
+
+
+def test_uploaded_gif_keeps_its_name_and_type():
+    seen = {}
+
+    def h(req):
+        seen["body"] = req.content
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
+
+    tg_with(h).send_rich("<video src=\"tg://video?id=f0\"></video>",
+                         [{"id": "f0", "media": {"type": "animation", "media": "attach://f0"}}],
+                         {"f0": ("f0.gif", b"GIF89a...", "image/gif"), "f1": b"\xff\xd8JPEG"})
+    assert b'filename="f0.gif"' in seen["body"] and b"Content-Type: image/gif" in seen["body"]
+    assert b'filename="f1.jpg"' in seen["body"] and b"Content-Type: image/jpeg" in seen["body"]

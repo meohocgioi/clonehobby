@@ -50,16 +50,17 @@ class Telegram:
     def _url(self, method: str) -> str:
         return f"{self.base}/bot{self.token}/{method}"
 
-    def call(self, method: str, data: dict | None = None, files: dict[str, bytes] | None = None,
+    def call(self, method: str, data: dict | None = None, files: dict | None = None,
              *, max_429_retries: int = 5) -> dict:
         """POST a Bot API method. Retries 429 (honouring retry_after) and connect failures only:
         anything that may have reached Telegram raises UncertainDelivery instead of being retried blind."""
         data = data or {}
         for attempt in range(max_429_retries + 1):
             try:
-                if files:
+                if files:      # a value is the bytes of a JPEG, or (file name, bytes, MIME type) for GIFs / videos
                     r = self.client.post(self._url(method), data=data,
-                                         files={k: (f"{k}.jpg", v, "image/jpeg") for k, v in files.items()})
+                                         files={k: (v if isinstance(v, tuple) else (f"{k}.jpg", v, "image/jpeg"))
+                                                for k, v in files.items()})
                 else:
                     r = self.client.post(self._url(method), data=data)
             except (httpx.ConnectError, httpx.ConnectTimeout) as e:
@@ -96,7 +97,7 @@ class Telegram:
         raise TelegramError("too many retries")
 
     # ---- high level ----------------------------------------------------
-    def send_rich(self, html: str, media: list[dict] | None = None, files: dict[str, bytes] | None = None,
+    def send_rich(self, html: str, media: list[dict] | None = None, files: dict | None = None,
                   *, skip_entity_detection: bool = True, disable_notification: bool = False) -> dict:
         rich: dict = {"html": html, "skip_entity_detection": skip_entity_detection}
         if media:

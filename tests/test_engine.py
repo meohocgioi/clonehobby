@@ -1080,19 +1080,40 @@ def _gif_article(pid=1):
     return a
 
 
-def test_upload_sends_gifs_as_animations(env):
+def test_gifs_go_as_links_by_default(env):
+    from tpclone import render
+    e, f, tg, db = env
+    art = _gif_article()
+    html, media, files = e._compose(art, render.plan_media(art, 50))          # links; size of the GIF unknown
+    assert '<video src="https://x/anim.gif"></video>' in html and not files and not media
+
+
+def test_only_gifs_too_big_for_a_link_are_uploaded_with_the_right_type(env):
     from conftest import png
     from tpclone import render
     e, f, tg, db = env
     gif = _gif()
     f.get_bytes = lambda url, referer=None: (gif if url.endswith(".gif") else png(), "")
     art = _gif_article()
-    html, media, files = e._compose(art, render.plan_media(art, 50), "upload")
+    html, media, files = e._compose(art, render.plan_media(art, 50), sizes={"https://x/anim.gif": 30 * 1024 * 1024})
+    assert [m["media"]["type"] for m in media] == ["animation"]                  # photos stay links
+    assert files["f0"] == ("f0.gif", gif, "image/gif")                           # named + typed as a GIF
+    assert '<video src="tg://video?id=f0"></video>' in html and '<img src="https://x/b.jpg"/>' in html
+
+
+def test_upload_everything_sends_gifs_as_animations(env):
+    from conftest import png
+    from tpclone import render
+    e, f, tg, db = env
+    gif = _gif()
+    f.get_bytes = lambda url, referer=None: (gif if url.endswith(".gif") else png(), "")
+    art = _gif_article()
+    html, media, files = e._compose(art, render.plan_media(art, 50), "upload", "upload", "upload")
     kinds = [m["media"]["type"] for m in media]
     assert kinds.count("animation") == 1 and kinds.count("photo") == 2           # cover + b.jpg are photos
-    assert '<video src="tg://video?id=' in html and '<img src="tg://photo?id=' in html
     gif_id = next(m["id"] for m in media if m["media"]["type"] == "animation")
-    assert files[gif_id] == gif                                                    # the GIF itself, untouched
+    assert files[gif_id] == (gif_id + ".gif", gif, "image/gif")                  # the GIF itself, untouched
+    assert '<video src="tg://video?id=' in html and '<img src="tg://photo?id=' in html
 
 
 def test_animations_too_big_for_one_request_become_stills(env):
@@ -1102,7 +1123,7 @@ def test_animations_too_big_for_one_request_become_stills(env):
     f.get_bytes = lambda url, referer=None: (gif, "image/gif")
     e.UPLOAD_BUDGET = len(gif) // 2
     art = _gif_article(); art.cover = None; art.images = ["https://x/anim.gif"]
-    html, media, files = e._compose(art, render.plan_media(art, 50), "upload")
+    html, media, files = e._compose(art, render.plan_media(art, 50), "upload", "upload", "upload")
     assert [m["media"]["type"] for m in media] == ["photo"] and "<video" not in html
 
 
@@ -1123,19 +1144,35 @@ class _RejectsFirst:
         return self.tg.send_rich(html, media, files, **kw)
 
 
-def test_picture_problems_retry_with_uploads_then_with_stills(env):
+def test_refused_pictures_are_retried_step_by_step_keeping_the_gif_when_possible(env):
     from conftest import png
     e, f, tg, db = env                                   # media_mode "url"
     gif = _gif()
     f.get_bytes = lambda url, referer=None: (gif if url.endswith(".gif") else png(), "")
     e.fetch_article = lambda pid: _gif_article(pid)
-    e.tg = t = _RejectsFirst(tg, 2)
+    e.tg = t = _RejectsFirst(tg, 1)                      # e.g. a photo link Telegram could not fetch
     assert e.publish(1) == 1001
-    first, second, third = t.calls
-    assert not first["files"] and '<video src="https://x/anim.gif"></video>' in first["html"]      # links, GIF as video
-    assert "animation" in [m["media"]["type"] for m in second["media"]]                             # uploaded
-    assert {m["media"]["type"] for m in third["media"]} == {"photo"} and "<video" not in third["html"]  # stills only
-    assert len(tg.sent) == 1
+    first, second = t.calls
+    assert not first["files"] and '<video src="https://x/anim.gif"></video>' in first["html"]
+    assert {m["media"]["type"] for m in second["media"]} == {"photo"}            # photos uploaded by the app ...
+    assert '<video src="https://x/anim.gif"></video>' in second["html"]          # ... the GIF still animated
+    assert any("Telegram refused" in ev["message"] for ev in db.recent_events())
+
+
+def test_still_pictures_only_as_the_very_last_resort(env):
+    from conftest import png
+    e, f, tg, db = env
+    gif = _gif()
+    f.get_bytes = lambda url, referer=None: (gif if url.endswith(".gif") else png(), "")
+    e.fetch_article = lambda pid: _gif_article(pid)
+    e.tg = t = _RejectsFirst(tg, 3)
+    assert e.publish(1) == 1001
+    assert len(t.calls) == 4
+    third, fourth = t.calls[2], t.calls[3]
+    assert "animation" in [m["media"]["type"] for m in third["media"]]          # uploaded as a real GIF ...
+    assert {m["media"]["type"] for m in fourth["media"]} == {"photo"} and "<video" not in fourth["html"]   # ... then stills
+    msgs = [ev["message"] for ev in db.recent_events()]
+    assert any("as a still picture" in m and "NO_MEDIA_FOUND" in m for m in msgs)  # the reason is in the activity log
 
 
 def test_picture_problem_every_way_is_retried_later(env):
