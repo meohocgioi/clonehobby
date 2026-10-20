@@ -119,3 +119,15 @@ def test_message_exists_classification():
     def boom(req):
         raise httpx.ReadTimeout("x")
     assert tg_with(boom).message_exists(5) is None
+
+
+def test_rich_message_media_errors_allow_an_upload_retry():
+    for desc in ("Bad Request: RICH_MESSAGE_PHOTO_NO_MEDIA_FOUND", "Bad Request: RICH_MESSAGE_VIDEO_INVALID",
+                 "Bad Request: wrong file identifier/HTTP URL specified"):
+        tg = tg_with(lambda req, d=desc: httpx.Response(400, json={"ok": False, "error_code": 400, "description": d}))
+        with pytest.raises(MediaRejected):
+            tg.send_rich("<p/>")
+    tg = tg_with(lambda req: httpx.Response(400, json={"ok": False, "error_code": 400, "description": "Bad Request: chat not found"}))
+    with pytest.raises(TelegramError) as ei:
+        tg.send_rich("<p/>")
+    assert not isinstance(ei.value, MediaRejected)

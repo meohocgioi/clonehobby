@@ -196,6 +196,8 @@ def derive_settings(main: Settings) -> Settings:
         post_delay_seconds=main.hpoi_post_delay_seconds,
         initial_post_latest=main.hpoi_initial_post_latest,
         hashtag_style="hashtag",                       # clickable # tags, as requested for this source
+        media_mode="upload",                           # hpoi's image server serves WebP behind '.jpg' links and is slow
+                                                       # at times: the app downloads and converts the pictures itself
         telegram_chat_id=main.hpoi_chat_id.strip() or main.telegram_chat_id,
         db_path=str(Path(main.db_path).with_name("hpoi.db")),
     )

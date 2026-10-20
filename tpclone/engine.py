@@ -40,6 +40,21 @@ class Engine:
         self.bg_pause_until = 0.0       # set when Telegram says 'slow down'
         self._probe_lock = threading.Lock()
         self._probe_last = 0.0
+        self._revive_fixed_failures()
+
+    def _revive_fixed_failures(self) -> None:
+        """Once: posts that failed in the last 3 days for reasons this version handles (a 404 that was only temporary,
+        pictures Telegram could not fetch - GIFs, WebP, slow image servers) are queued again."""
+        if self.db.kv_get("revived_failures_v1"):
+            return
+        cur = self.db._x(
+            "UPDATE posts SET status='pending', attempts=0, not_before=0, last_error=NULL "
+            "WHERE status='failed' AND COALESCE(flagged_at, 0) > ? AND (last_error LIKE 'article not found%' "
+            "OR last_error LIKE '%NO_MEDIA_FOUND%' OR last_error LIKE '%failed to get HTTP URL content%' "
+            "OR last_error LIKE '%wrong type of the web page content%')", (time.time() - 3 * 86400,))
+        self.db.kv_set("revived_failures_v1", 1)
+        if cur.rowcount:
+            self.db.log("info", f"{cur.rowcount} recently failed post(s) queued again (the problem is fixed in this version)")
 
     def apply_settings(self) -> None:
         """Re-read the (already updated) Settings object: Telegram client, pacing."""
@@ -209,6 +224,7 @@ class Engine:
         self.db.kv_set("last_discover_ts", t0)
         return queued, total
 
+    NOT_FOUND_RETRY = (900, 1800, 3600, 7200, 14400) + (21600,) * 6   # 15 min ... then every 6 h: ~44 h in all
     LOOKAHEAD = 20                      # post numbers probed beyond the newest one known
     MISS_BACKOFF = (300, 900, 1800, 3600)   # seconds before a number that did not exist is asked again; then hourly
                                             # until the website's daily list covers it (posts can be published hours late)
@@ -314,46 +330,86 @@ class Engine:
             log.warning("image download failed %s: %s", url, e)
             return None
 
-    def _compose(self, art: site.Article, plan: render.MediaPlan, mode: str):
-        """-> (html, media entries, files). In 'upload' mode every image is downloaded and attached."""
+    UPLOAD_BUDGET = 45 * 1024 * 1024    # keep one request below this (Telegram: 10 MB per photo, 50 MB per video/GIF)
+
+    def _motion_too_big_for_link(self, urls: list[str]) -> bool:
+        """Telegram fetches at most 20 MB of a GIF / video from a link: bigger ones must be uploaded by the app."""
+        for u in urls:
+            if media_mod.kind_from_url(u) == "photo":
+                continue
+            try:
+                r = self.fetcher.client.head(u, headers={"Referer": self.s.site_base}, timeout=20)
+                if int(r.headers.get("content-length") or 0) > media_mod.URL_MOTION_LIMIT:
+                    return True
+            except Exception:  # noqa: BLE001  (cannot tell: let Telegram try the link)
+                continue
+        return False
+
+    def _compose(self, art: site.Article, plan: render.MediaPlan, mode: str, motion: bool = True):
+        """-> (html, media entries, files). In 'upload' mode every picture is downloaded and attached: photos as JPEG
+        (WebP & co. converted), GIFs as animations and MP4s as videos when they fit (motion=False: everything becomes a
+        plain photo, videos are left out)."""
         refs: dict[str, str] = {}
         files: dict[str, bytes] = {}
         media: list[dict] = []
 
-        def attach(key: str, data: bytes) -> None:
+        def attach(key: str, kind: str, data: bytes) -> None:
             fid = f"f{len(files)}"
             files[fid] = data
-            media.append({"id": fid, "media": {"type": "photo", "media": f"attach://{fid}"}})
-            refs[key] = f"tg://photo?id={fid}"
+            media.append({"id": fid, "media": {"type": kind, "media": f"attach://{fid}"}})
+            refs[key] = f"tg://{'photo' if kind == 'photo' else 'video'}?id={fid}"
 
         plan = render.MediaPlan(plan.cover, list(plan.originals), list(plan.overflow))
+        urls = ([plan.cover] if plan.cover else []) + plan.originals
+        if mode != "upload" and motion and self._motion_too_big_for_link(urls):
+            mode = "upload"
         if mode == "upload":
+            raw: dict[str, bytes] = {}
+            for u in urls:
+                if u not in raw:
+                    d = self._download(u)
+                    if d:
+                        raw[u] = d
+            kinds = {u: media_mod.sniff_kind(d) for u, d in raw.items()}
+            moving = {u for u, k in kinds.items() if k != "photo" and motion and len(raw[u]) <= media_mod.MAX_MOTION_BYTES}
+            # the biggest animations become still pictures (videos are left out) until the request fits
+            photos_guess = 1024 * 1024 * sum(1 for u in raw if u not in moving)
+            for u in sorted(moving, key=lambda x: -len(raw[x])):
+                if sum(len(raw[x]) for x in moving) + photos_guess <= self.UPLOAD_BUDGET:
+                    break
+                moving.discard(u)
+                photos_guess += 1024 * 1024
+            usable = {u for u in raw if u in moving or kinds[u] != "video"}       # a video cannot become a photo
+            plan.cover = plan.cover if plan.cover in usable else None
+            plan.originals = [u for u in plan.originals if u in usable]
             max_side = 2560
             while True:
                 files.clear(); media.clear(); refs.clear()
-                if plan.cover:
-                    d = self._download(plan.cover)
-                    if d:
-                        attach(plan.cover, media_mod.prepare_photo(d, max_side))
-                    else:
-                        plan.cover = None
-                ok = []
-                for u in plan.originals:
-                    d = self._download(u)
-                    if d:
-                        attach(u, media_mod.prepare_photo(d, max_side))
-                        ok.append(u)
-                plan.originals = ok
-                if sum(len(v) for v in files.values()) <= 40 * 1024 * 1024 or max_side <= 1024:
+                for u in ([plan.cover] if plan.cover else []) + plan.originals:
+                    if u in refs:
+                        continue
+                    if u in moving:
+                        attach(u, kinds[u], raw[u])
+                        continue
+                    try:
+                        attach(u, "photo", media_mod.prepare_photo(raw[u], max_side))
+                    except Exception as e:  # noqa: BLE001  (not a picture after all: leave it out)
+                        log.warning("picture %s skipped: %s", u, e)
+                if sum(len(v) for v in files.values()) <= self.UPLOAD_BUDGET or max_side <= 1024:
                     break
-                max_side = max(1024, max_side // 2)    # keep the request below ~40 MB
+                max_side = max(1024, max_side // 2)
+            plan.cover = plan.cover if plan.cover in refs else None
+            plan.originals = [u for u in plan.originals if u in refs]
         else:
-            for u in ([plan.cover] if plan.cover else []) + plan.originals:
+            for u in urls:
                 refs[u] = u
         if plan.overflow:
             blobs = [b for b in (self._download(u) for u in plan.overflow) if b]
             if blobs:
-                attach(render.OVERFLOW_KEY, media_mod.make_collage(blobs))
+                try:
+                    attach(render.OVERFLOW_KEY, "photo", media_mod.make_collage(blobs))
+                except ValueError:
+                    plan.overflow = []
             else:
                 plan.overflow = []
         html = render.build_html(art, self.s, plan, lambda k: refs[k])
@@ -365,28 +421,34 @@ class Engine:
         return self._compose(art, plan, mode), plan
 
     def publish(self, post_id: int) -> int | None:
-        """Fetch -> render -> send one post. Returns Telegram message_id."""
+        """Fetch -> render -> send one post. Returns Telegram message_id.
+
+        If Telegram cannot use a picture (it was never sent then), try again: with every file uploaded by the app, and
+        as a last resort with every GIF / video turned into a plain photo."""
         art = self.fetch_article(post_id)
         if not art.title or not (art.paragraphs or art.images or art.cover):
             raise FetchError(f"parse produced an empty post (title={art.title!r}, paragraphs={len(art.paragraphs)}, "
                              f"images={len(art.images)}) - check selectors with 'tpclone inspect {post_id}'")
         plan = render.plan_media(art, self.s.max_media)
-        mode = self.s.media_mode
         tag_hash = self.s.hashtag_style in ("hashtag", "true", "1")
-        html, media, files = self._compose(art, plan, "url" if mode == "auto" else mode)
-        assert render.count_media(html) <= self.s.max_media
+        first = "url" if self.s.media_mode == "auto" else self.s.media_mode
+        tries = [(first, True)] + ([("upload", True)] if first != "upload" else []) + [("upload", False)]
         if self.s.dry_run or self.tg is None:
+            html, _, _ = self._compose(art, plan, first)
             log.info("DRY RUN post %s:\n%s", post_id, html)
             return None
-        try:
-            res = self.tg.send_rich(html, media, files, skip_entity_detection=not tag_hash)
-        except MediaRejected as e:
-            if mode != "auto":
-                raise
-            log.warning("post %s: Telegram rejected image URLs (%s) - retrying with uploads", post_id, e)
-            html, media, files = self._compose(art, plan, "upload")
-            res = self.tg.send_rich(html, media, files, skip_entity_detection=not tag_hash)
-        return res.get("message_id")
+        last: MediaRejected | None = None
+        for mode, motion in tries:
+            html, media, files = self._compose(art, plan, mode, motion)
+            assert render.count_media(html) <= self.s.max_media
+            try:
+                res = self.tg.send_rich(html, media, files, skip_entity_detection=not tag_hash)
+                return res.get("message_id")
+            except MediaRejected as e:
+                last = e
+                log.warning("post %s: Telegram could not use a picture (%s, mode=%s%s) - trying another way",
+                            post_id, e, mode, "" if motion else ", stills only")
+        raise last
 
     def _already_in_channel(self, pid: int) -> str | None:
         """Last line of defence against duplicates: if the ledger says a message of this post may still be in the
@@ -428,8 +490,16 @@ class Engine:
             self.db.log("warn", f"post {pid}: Cloudflare blocked the fetch; retrying in 15 min")
             return "pending"
         except NotFound:
-            st = self.db.mark_retry(pid, "article not found (404)", 900, give_up_after=4)
-            self.db.log("warn", f"post {pid}: 404 ({st})")
+            # A post can be off the website for a while after it was seen (taken back for editing, English version not
+            # ready yet): keep looking for about two days before giving up.
+            n = (self.db.get(pid) or {}).get("attempts") or 0
+            delay = self.NOT_FOUND_RETRY[min(n, len(self.NOT_FOUND_RETRY) - 1)]
+            st = self.db.mark_retry(pid, "article not found (404)", delay, give_up_after=len(self.NOT_FOUND_RETRY) + 1)
+            if st == "failed":
+                self.db.log("warn", f"post {pid}: still not on the website after two days - gave up (failed)")
+            else:
+                self.db.log("warn", f"post {pid}: not on the website right now (404) - checking again in "
+                                    f"{int(delay // 60)} min")
             return st
         except FetchError as e:
             st = self.db.mark_retry(pid, str(e), 300)

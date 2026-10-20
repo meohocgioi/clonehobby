@@ -7,8 +7,33 @@ import math
 from PIL import Image, ImageOps
 
 MAX_UPLOAD_BYTES = 9 * 1024 * 1024        # Telegram: 10 MB per photo
+MAX_MOTION_BYTES = 49 * 1024 * 1024       # Telegram: 50 MB per uploaded video / animation (GIF)
+URL_MOTION_LIMIT = 19 * 1024 * 1024       # Telegram fetches at most 20 MB of a video / animation from a link
+MOTION_EXT = {".gif": "animation", ".mp4": "video", ".m4v": "video", ".mov": "video", ".webm": "video"}
 MAX_SIDE_SUM = 9500                       # Telegram: width + height <= 10000
 MAX_RATIO = 19.0                          # Telegram: ratio <= 20
+
+
+def kind_from_url(url: str) -> str:
+    """'photo', 'animation' (GIF) or 'video', judged from the file name in the link."""
+    from urllib.parse import urlparse
+    path = urlparse(url).path.lower()
+    for ext, kind in MOTION_EXT.items():
+        if path.endswith(ext):
+            return kind
+    return "photo"
+
+
+def sniff_kind(data: bytes) -> str:
+    """What a downloaded file really is (a '.jpg' link can deliver a WebP, a '.gif' can be a single frame)."""
+    if data[:4] == b"GIF8":
+        try:
+            return "animation" if getattr(Image.open(io.BytesIO(data)), "is_animated", False) else "photo"
+        except Exception:  # noqa: BLE001
+            return "photo"
+    if data[4:8] == b"ftyp" or data[:4] == b"\x1aE\xdf\xa3":       # MP4 / MOV, WebM
+        return "video"
+    return "photo"
 
 
 def prepare_photo(data: bytes, max_side: int = 2560) -> bytes:

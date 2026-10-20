@@ -1061,3 +1061,126 @@ def test_today_counts_for_the_dashboard_chart(env):
     db.upsert_seen(8, "u8", None, "pending", "new"); db.mark_sending(8)
     assert db.resolve_uncertain_stale() == 1 and db.get(8)["flagged_at"] >= now - 5
     assert db.today_counts(now - 3600)["uncertain"] == 2
+
+
+# ---- pictures Telegram cannot use, GIFs / videos, temporary 404s ---------------------------------------------------
+def _gif(frames=2):
+    import io
+    from PIL import Image
+    ims = [Image.new("RGB", (40, 30), c) for c in [(255, 0, 0), (0, 0, 255)][:frames]]
+    b = io.BytesIO()
+    ims[0].save(b, "GIF", save_all=frames > 1, append_images=ims[1:], duration=100, loop=0)
+    return b.getvalue()
+
+
+def _gif_article(pid=1):
+    from conftest import make_article
+    a = make_article(pid=pid, n_images=0)
+    a.images = ["https://x/anim.gif", "https://x/b.jpg"]
+    return a
+
+
+def test_upload_sends_gifs_as_animations(env):
+    from conftest import png
+    from tpclone import render
+    e, f, tg, db = env
+    gif = _gif()
+    f.get_bytes = lambda url, referer=None: (gif if url.endswith(".gif") else png(), "")
+    art = _gif_article()
+    html, media, files = e._compose(art, render.plan_media(art, 50), "upload")
+    kinds = [m["media"]["type"] for m in media]
+    assert kinds.count("animation") == 1 and kinds.count("photo") == 2           # cover + b.jpg are photos
+    assert '<video src="tg://video?id=' in html and '<img src="tg://photo?id=' in html
+    gif_id = next(m["id"] for m in media if m["media"]["type"] == "animation")
+    assert files[gif_id] == gif                                                    # the GIF itself, untouched
+
+
+def test_animations_too_big_for_one_request_become_stills(env):
+    from tpclone import render
+    e, f, tg, db = env
+    gif = _gif()
+    f.get_bytes = lambda url, referer=None: (gif, "image/gif")
+    e.UPLOAD_BUDGET = len(gif) // 2
+    art = _gif_article(); art.cover = None; art.images = ["https://x/anim.gif"]
+    html, media, files = e._compose(art, render.plan_media(art, 50), "upload")
+    assert [m["media"]["type"] for m in media] == ["photo"] and "<video" not in html
+
+
+class _RejectsFirst:
+    """Telegram refusing a picture the first N times (the message is not sent then)."""
+
+    def __init__(self, tg, n):
+        self.tg, self.n, self.calls = tg, n, []
+
+    def __getattr__(self, name):
+        return getattr(self.tg, name)
+
+    def send_rich(self, html, media=None, files=None, **kw):
+        from tpclone.telegram import MediaRejected
+        self.calls.append({"html": html, "media": media or [], "files": files or {}})
+        if len(self.calls) <= self.n:
+            raise MediaRejected("Bad Request: RICH_MESSAGE_PHOTO_NO_MEDIA_FOUND", 400)
+        return self.tg.send_rich(html, media, files, **kw)
+
+
+def test_picture_problems_retry_with_uploads_then_with_stills(env):
+    from conftest import png
+    e, f, tg, db = env                                   # media_mode "url"
+    gif = _gif()
+    f.get_bytes = lambda url, referer=None: (gif if url.endswith(".gif") else png(), "")
+    e.fetch_article = lambda pid: _gif_article(pid)
+    e.tg = t = _RejectsFirst(tg, 2)
+    assert e.publish(1) == 1001
+    first, second, third = t.calls
+    assert not first["files"] and '<video src="https://x/anim.gif"></video>' in first["html"]      # links, GIF as video
+    assert "animation" in [m["media"]["type"] for m in second["media"]]                             # uploaded
+    assert {m["media"]["type"] for m in third["media"]} == {"photo"} and "<video" not in third["html"]  # stills only
+    assert len(tg.sent) == 1
+
+
+def test_picture_problem_every_way_is_retried_later(env):
+    e, f, tg, db = env
+    add_posts(f, {5: ("2026-10-20", "T5")})
+    db.upsert_seen(5, e.post_url(5), None, "pending", "new")
+    e.tg = _RejectsFirst(tg, 99)
+    assert e.process(db.get(5)) == "pending" and not tg.sent
+    assert "NO_MEDIA_FOUND" in db.get(5)["last_error"]
+
+
+def test_404_keeps_looking_for_two_days_then_gives_up(env):
+    e, f, tg, db = env
+    db.upsert_seen(777, e.post_url(777), None, "pending", "new")          # not (yet) on the website
+    delays = []
+    for _ in e.NOT_FOUND_RETRY:
+        db._x("UPDATE posts SET not_before=0 WHERE post_id=777")
+        assert e.process(db.get(777)) == "pending"
+        delays.append(db.get(777)["not_before"] - time.time())
+    assert abs(delays[0] - 900) < 5 and abs(delays[4] - 14400) < 5 and abs(delays[-1] - 21600) < 5
+    assert sum(e.NOT_FOUND_RETRY) > 40 * 3600                                # about two days
+    db._x("UPDATE posts SET not_before=0 WHERE post_id=777")
+    assert e.process(db.get(777)) == "failed"
+    # back on the website while the app is still looking -> posted
+    db.upsert_seen(778, e.post_url(778), None, "pending", "new")
+    assert e.process(db.get(778)) == "pending"
+    f.posts[778] = ("2026-10-20", "Back again")
+    db._x("UPDATE posts SET not_before=0 WHERE post_id=778")
+    assert e.process(db.get(778)) == "posted"
+
+
+def test_failures_fixed_by_this_version_are_queued_again_once(tmp_path):
+    from conftest import FakeFetcher, FakeTG
+    from tpclone.config import Settings
+    from tpclone.db import DB
+    from tpclone.engine import Engine
+    db = DB(str(tmp_path / "x.db"))
+    now = time.time()
+    for pid, err, age in [(1, "article not found (404)", 3600), (2, "Bad Request: RICH_MESSAGE_PHOTO_NO_MEDIA_FOUND", 7200),
+                          (3, "article not found (404)", 5 * 86400), (4, "Bad Request: chat not found", 3600)]:
+        db.upsert_seen(pid, f"u{pid}", None, "failed", "new")
+        db._x("UPDATE posts SET last_error=?, flagged_at=? WHERE post_id=?", (err, now - age, pid))
+    s = Settings(telegram_bot_token="t", telegram_chat_id="@c", db_path=str(tmp_path / "x.db"))
+    Engine(s, db, FakeFetcher(), FakeTG())
+    assert [db.get(i)["status"] for i in (1, 2, 3, 4)] == ["pending", "pending", "failed", "failed"]
+    db.reset_status(1, "failed")
+    Engine(s, db, FakeFetcher(), FakeTG())                                    # only once
+    assert db.get(1)["status"] == "failed"

@@ -148,3 +148,17 @@ def test_block_limit_respected_in_every_spacing_mode():
         blocks = len(re.findall(r"<p>|<h6>|<details>|<summary>|<tg-collage>|<img", h))
         assert blocks <= 500, (mode, blocks)
         assert len(re.sub(r"<[^>]+>", "", h)) < 32768
+
+
+def test_gifs_and_videos_are_video_blocks():
+    a = make_article(n_images=0, cover=False)
+    a.cover = "https://img.toy-people.com/member/1_1200.gif"
+    a.images = ["https://x/1.jpg", "https://x/2.gif", "https://x/3.mp4"]
+    h = render.build_html(a, S, render.plan_media(a, 50), ident)
+    assert h.startswith('<h6>A Title</h6><video src="https://img.toy-people.com/member/1_1200.gif"></video>')
+    assert ('<tg-collage><img src="https://x/1.jpg"/><video src="https://x/2.gif"></video>'
+            '<video src="https://x/3.mp4"></video></tg-collage>') in h
+    assert render.count_media(h) == 4
+    # uploaded files: tg://video for animations / videos, tg://photo for photos
+    assert render.media_html("tg://video?id=f1") == '<video src="tg://video?id=f1"></video>'
+    assert render.media_html("tg://photo?id=f0") == '<img src="tg://photo?id=f0"/>'

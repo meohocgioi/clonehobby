@@ -206,14 +206,33 @@ class Fetcher:
             return self._via_flaresolverr(url)
         return self._via_browser(url)
 
+    MEDIA_GAP = 0.3     # seconds between two picture downloads (pictures come from the sites' image servers)
+
+    def _pace_media(self) -> None:
+        with self._lock:
+            wait = getattr(self, "_last_media", 0.0) + self.MEDIA_GAP - time.monotonic()
+            if wait > 0:
+                time.sleep(wait)
+            self._last_media = time.monotonic()
+
     def get_bytes(self, url: str, referer: str | None = None) -> tuple[bytes, str]:
-        self._pace()
+        """Download a picture / GIF / video. One retry: image servers sometimes drop a connection."""
         h = {"Referer": referer or self.s.site_base, "Accept": "image/avif,image/webp,image/*,*/*;q=0.8"}
-        r = self.client.get(url, headers=h)
-        if r.status_code == 404:
-            raise NotFound(url)
-        r.raise_for_status()
-        return r.content, r.headers.get("content-type", "")
+        for attempt in range(2):
+            self._pace_media()
+            try:
+                r = self.client.get(url, headers=h, timeout=httpx.Timeout(90, connect=20))
+                if r.status_code == 404:
+                    raise NotFound(url)
+                r.raise_for_status()
+                return r.content, r.headers.get("content-type", "")
+            except NotFound:
+                raise
+            except httpx.HTTPError:
+                if attempt:
+                    raise
+                time.sleep(2)
+        raise FetchError(url)
 
     def close(self) -> None:
         self.client.close()

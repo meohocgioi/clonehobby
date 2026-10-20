@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import random
+import re
 import threading
 import time
 from typing import Callable
@@ -31,7 +32,11 @@ class MediaRejected(TelegramError):
 _MEDIA_HINTS = ("wrong file identifier", "failed to get http url content", "wrong type of the web page content",
                 "wrong remote file", "photo_invalid_dimensions", "image_process_failed", "wrong http url",
                 "media_invalid", "failed to download", "unsupported", "dimensions", "file is too big",
-                "too big", "invalid media", "can't fetch", "cannot fetch")
+                "too big", "invalid media", "can't fetch", "cannot fetch", "no_media_found", "media_not_found",
+                "media_empty")
+# any other 'Bad Request' about a picture / video (e.g. RICH_MESSAGE_PHOTO_NO_MEDIA_FOUND): Telegram could not use one of
+# the media files. The message was NOT sent, so it is safe to try again with the files uploaded by the app itself.
+_MEDIA_RX = re.compile(r"media|photo|video|animation|image|picture")
 
 
 class Telegram:
@@ -85,7 +90,7 @@ class Telegram:
             if code >= 500:
                 raise UncertainDelivery(f"Telegram {code}: {desc}")
             low = desc.lower()
-            if any(h in low for h in _MEDIA_HINTS):
+            if any(h in low for h in _MEDIA_HINTS) or (code == 400 and _MEDIA_RX.search(low)):
                 raise MediaRejected(desc, code)
             raise TelegramError(desc, code, float(ra) if ra else None)
         raise TelegramError("too many retries")

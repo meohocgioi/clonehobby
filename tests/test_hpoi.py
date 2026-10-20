@@ -155,6 +155,7 @@ def test_hpoi_settings_use_own_channel_and_db(tmp_path):
     d = hpoi.derive_settings(main)
     assert d.telegram_chat_id == "@other" and d.poll_interval_seconds == 900 and d.hashtag_style == "hashtag"
     assert Path(d.db_path).name == "hpoi.db" and d.site_delay_seconds >= 5
+    assert d.media_mode == "upload"              # the app downloads + converts hpoi's pictures itself
     main.hpoi_chat_id = ""
     assert hpoi.derive_settings(main).telegram_chat_id == "@main"
 

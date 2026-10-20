@@ -25,8 +25,8 @@
   .msg{padding:10px;border-radius:8px;background:color-mix(in srgb,var(--acc) 10%,transparent);margin:10px 0}
   label{display:block;margin:8px 0 3px;font-weight:600;font-size:13px} input[type=text],input[type=password],input[type=number],select{font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);width:100%;max-width:420px}
   details.adv{margin-top:10px} ol.how{margin:6px 0 0;padding-left:20px} .good{color:var(--ok)} .tg{max-width:430px;border:1px solid var(--line);border-radius:12px;padding:10px;background:var(--bg);margin-top:10px}
-  .tg img{max-width:100%;border-radius:8px;display:block;margin:6px 0} .tg h3{margin:4px 0} .tg .more{color:var(--acc);font-weight:600;margin:6px 0} .tg .inner{border-top:1px solid var(--line);margin-top:6px;padding-top:6px}
-  .tg .imgs{display:flex;flex-wrap:wrap;gap:3px} .tg .imgs img{width:calc(33% - 3px);height:80px;object-fit:cover;margin:0}
+  .tg img,.tg video{max-width:100%;border-radius:8px;display:block;margin:6px 0} .tg h3{margin:4px 0} .tg .more{color:var(--acc);font-weight:600;margin:6px 0} .tg .inner{border-top:1px solid var(--line);margin-top:6px;padding-top:6px}
+  .tg .imgs{display:flex;flex-wrap:wrap;gap:3px} .tg .imgs img,.tg .imgs video{width:calc(33% - 3px);height:80px;object-fit:cover;margin:0}
 
   table.grid{width:100%;border-collapse:separate;border-spacing:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:12px}
   table.grid th{background:color-mix(in srgb,var(--fg) 5%,transparent);font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);padding:9px 12px}
@@ -803,11 +803,14 @@ $('pv_go').onclick=async()=>{
 };
 function clearPreview(){$('pv_out').hidden=true; $('pv_box').innerHTML=''; $('pv_go').textContent='Show preview'; delete $('pv_go').dataset.mode; $('pv_prog').textContent=''}
 $('pv_in').addEventListener('input',()=>{if($('pv_go').dataset.mode==='clear')clearPreview()});
+const isClip=u=>/\.(mp4|m4v|mov|webm)(\?|#|$)/i.test(u||'');
+function mediaEl(u){ const m=document.createElement(isClip(u)?'video':'img'); m.src=u; m.referrerPolicy='no-referrer';
+  if(isClip(u)){ m.muted=true; m.loop=true; m.autoplay=true; m.playsInline=true } return m }   // GIFs play in an <img> already
 function showPreview(a){
   const b=$('pv_box'); b.innerHTML=''; $('pv_out').hidden=false;
   const el=(t,txt,cls)=>{const e=document.createElement(t); if(txt!==undefined)e.textContent=txt; if(cls)e.className=cls; b.appendChild(e); return e};
   el('h6',a.title||'(no title found!)');
-  if(a.cover){const i=el('img'); i.src=a.cover; i.referrerPolicy='no-referrer'} else el('div','(no cover photo found)','mut');
+  if(a.cover){b.appendChild(mediaEl(a.cover))} else el('div','(no cover photo found)','mut');
   {const st=a.show_more_effective||a.show_more_style||'classic'; const e=a.show_more_emoji||'';
    const loud=(e?e+' ':'')+(a.show_more_label||'Show More').toUpperCase()+(e?' '+e:'');
    if(st==='telegram'){el('div','(no toggle: the whole post is shown open — Telegram only sometimes folds it by itself)','mut')} else {
@@ -821,10 +824,10 @@ function showPreview(a){
     if(a.hashtag){a.tags_line.split('  ').forEach((h,i)=>{if(i)e.appendChild(document.createTextNode('  ')); const sp=document.createElement('span'); sp.className='hl'; sp.textContent=h; e.appendChild(sp)})}
     else e.textContent=a.tags_line; inner.appendChild(e)}
   for(const p of a.paragraphs){const e=document.createElement('p'); e.style.margin=(a.paragraph_spacing==='tight'?'2px 0':'0 0 14px'); e.textContent=new DOMParser().parseFromString(p.replace(/<br>/g,'\n'),'text/html').body.textContent; inner.appendChild(e)}
-  const g=document.createElement('div'); g.className='imgs'; for(const u of a.images.slice(0,12)){const i=document.createElement('img'); i.src=u; i.referrerPolicy='no-referrer'; g.appendChild(i)} inner.appendChild(g);
+  const g=document.createElement('div'); g.className='imgs'; for(const u of a.images.slice(0,12)){g.appendChild(mediaEl(u))} inner.appendChild(g);
   if(a.credits.length) add('p',a.credit_label+': '+a.credits.map(c=>c[0]).join(', '),'italic');
   const warn=[]; if(!a.title) warn.push('no title'); if(!a.cover) warn.push('no cover photo'); if(!a.post_date&&pvSrc()!=='hpoi') warn.push('no date'); if(!a.paragraphs.length&&pvSrc()!=='hpoi') warn.push('no text'); if(!a.images.length) warn.push('no photos');
-  $('pv_info').textContent=(a.show_more_style&&a.show_more_style!=='classic'?'(button style shown approximately'+''+') · ':'')+(a.post_date?('Date: '+a.post_date+' · '):'')+a.images.length+' photos · photo slots used '+a.slots_used+'/'+a.max_media+(a.overflow?(' ('+a.overflow+' photos merged into the last collage)'):'')+(warn.length?(' · ⚠ missing: '+warn.join(', ')):' · looks complete ✅');
+  $('pv_info').textContent=(a.show_more_style&&a.show_more_style!=='classic'?'(button style shown approximately'+''+') · ':'')+(a.post_date?('Date: '+a.post_date+' · '):'')+a.images.length+' photos/GIFs/videos · media slots used '+a.slots_used+'/'+a.max_media+(a.overflow?(' ('+a.overflow+' photos merged into the last collage)'):'')+(warn.length?(' · ⚠ missing: '+warn.join(', ')):' · looks complete ✅');
 }
 
 // ---- Post / Posted buttons -----------------------------------------------------------------------------------

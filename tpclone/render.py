@@ -20,6 +20,7 @@ from html import escape
 from typing import Callable
 
 from .config import Settings
+from .media import kind_from_url
 from .site import Article
 
 MAX_CHARS = 30000      # Telegram: 32768 incl. text; keep head-room
@@ -115,12 +116,19 @@ def tags_line(tags: list[str], hashtag_style: str) -> str:
     return "  ·  ".join(escape(t, quote=False) for t in tags)
 
 
+def media_html(src: str) -> str:
+    """A photo is an <img>; an animation (GIF) or a video must be a <video> (Telegram rich HTML)."""
+    s = escape(src, quote=True)
+    motion = src.startswith("tg://video?") if src.startswith("tg://") else kind_from_url(src) != "photo"
+    return f'<video src="{s}"></video>' if motion else f'<img src="{s}"/>'
+
+
 def build_html(art: Article, settings: Settings, plan: MediaPlan, src: Callable[[str], str]) -> str:
     """`src` maps a source image URL (or OVERFLOW_KEY) to the src to embed (http URL or tg://photo?id=...)."""
     title = escape(art.title or f"Post {art.post_id}", quote=False)
     head = [f"<h6>{title}</h6>"]
     if plan.cover:
-        head.append(f'<img src="{escape(src(plan.cover), quote=True)}"/>')
+        head.append(media_html(src(plan.cover)))
 
     inner: list[str] = []
     if art.scheduled:
@@ -146,7 +154,7 @@ def build_html(art: Article, settings: Settings, plan: MediaPlan, src: Callable[
     for v in art.videos[:5]:
         inner.append(f'<p><a href="{escape(v, quote=True)}">▶ {escape(v, quote=False)}</a></p>')
 
-    imgs = [f'<img src="{escape(src(u), quote=True)}"/>' for u in plan.originals]
+    imgs = [media_html(src(u)) for u in plan.originals]
     if plan.overflow:
         imgs.append(f'<img src="{escape(src(OVERFLOW_KEY), quote=True)}"/>')
     if len(imgs) == 1:
@@ -172,4 +180,4 @@ def build_html(art: Article, settings: Settings, plan: MediaPlan, src: Callable[
 
 
 def count_media(html: str) -> int:
-    return len(re.findall(r"<img\b", html))
+    return len(re.findall(r"<(?:img|video)\b", html))
