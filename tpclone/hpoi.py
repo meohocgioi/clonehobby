@@ -374,8 +374,9 @@ class HpoiEngine(Engine):
         self.db.kv_set("listing_max_id", max(c["id"] for c in cards))
         for c in cards:
             self.db.upsert_seen(c["key"], f"{BASE}hobby/{c['id']}", None, "known", "hpoi")
-            self.db.set_meta(c["key"], c["headline"],
-                             (self.db.get(c["key"]) or {}).get("post_date") or self._date_of(c, now))   # first sighting decides the day
+            row = self.db.get(c["key"]) or {}
+            # keep the English title once the item was translated (posted); the first sighting decides the day
+            self.db.set_meta(c["key"], row.get("title") or c["headline"], row.get("post_date") or self._date_of(c, now))
         first_run = self.db.kv_get("baseline_done") is None
         ordered = sorted(cards, key=lambda c: c["id"])                         # oldest first
         if first_run:

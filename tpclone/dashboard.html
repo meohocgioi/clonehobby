@@ -114,6 +114,23 @@
   .toast.bad{background:var(--bad);color:#fff}
   @media(max-width:760px){.setgrid{grid-template-columns:minmax(0,1fr)} .setnav{position:static;flex-direction:row;flex-wrap:wrap;gap:4px} .setnav button{white-space:nowrap;padding:7px 10px}
     .srow{grid-template-columns:minmax(0,1fr)} .btns{justify-content:flex-start} .setsec{padding:16px}}
+  /* ---- website cards ---- */
+  #panels{align-items:stretch} .card.panel{display:flex;flex-direction:column;gap:14px}
+  .ph{display:flex;align-items:flex-start;justify-content:space-between;gap:10px 12px;flex-wrap:wrap} .ph h2{margin:0;font-size:18px} .ph>div:first-child{flex:1 1 170px;min-width:0}
+  .phsub{font-size:13px;color:var(--mut);margin-top:2px} .phsub a{color:inherit}
+  .phr{display:flex;align-items:center;gap:12px;flex:none;margin-left:auto} .phr button{min-width:96px}
+  @media(max-width:480px){.tv{font-size:22px} .tile{padding:9px 10px}}
+  .chip{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--mut);white-space:nowrap}
+  .chip i{width:8px;height:8px;border-radius:50%;background:currentColor}
+  .chip.running{color:var(--ok)} .chip.running i{animation:pulse 2s infinite} .chip.stopping{color:var(--warn)} .chip.error{color:var(--bad)}
+  .tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+  .tile{background:color-mix(in srgb,var(--fg) 4%,transparent);border:1px solid transparent;border-radius:10px;padding:10px 12px;text-align:left;font:inherit;color:inherit;min-width:0}
+  .tv{font-size:26px;font-weight:600;line-height:1.15} .tl{font-size:13px;color:var(--mut);margin-top:2px}
+  .ts{font-size:12px;color:var(--mut);margin-top:1px;line-height:1.35}
+  .tile.bad .tv{color:var(--bad)} .tile.bad .ts{color:var(--bad)} .tbtn{cursor:pointer} .tbtn:hover:not(:disabled){border-color:var(--line)} .tbtn:disabled{cursor:default;opacity:1}
+  .facts{display:flex;flex-direction:column;gap:8px;font-size:14px} .fact{display:flex;gap:8px;align-items:flex-start} .fi{width:20px;flex:none;text-align:center}
+  .clamp{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden} .clamp a{color:inherit}
+  .pfoot{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;padding-top:12px;border-top:1px solid var(--line)}
 </style>
 </head>
 <body>
@@ -368,25 +385,37 @@ const midnight=()=>Math.floor(new Date().setHours(0,0,0,0)/1000);
 async function pollJob(job,onProg,src){ for(;;){ const j=await api('/api/jobs/'+job,undefined,src); if(j.state==='running'){onProg&&onProg(j.progress); await new Promise(r=>setTimeout(r,800)); continue} return j } }
 
 
-// ---- one status panel per website ---------------------------------------------------------------
+// ---- one status card per website ----------------------------------------------------------------
 const PANEL=`
-  <div class="panelhead"><h2 data-r="name"></h2><span class="mut" data-r="chat"></span><span class="pill stopped" data-r="state">…</span></div>
-  <div class="row"><button class="go" data-r="start">▶ Start</button><button class="stop" data-r="stop">■ Stop</button><span class="mut" data-r="next"></span></div>
+  <div class="ph">
+    <div><h2 data-r="name"></h2><div class="phsub"><a data-r="chat" target="_blank" rel="noopener"></a><span data-r="every"></span></div></div>
+    <div class="phr"><span class="chip" data-r="state"><i></i><span data-r="state_txt">…</span></span><button data-r="toggle">▶ Start</button></div>
+  </div>
   <div class="msg error" data-r="err" hidden></div>
-  <p class="stats" data-r="stats"></p>
-  <p class="mut" data-r="watch"></p>
-  <p class="mut" data-r="last"></p>
-  <div class="row"><button data-r="checknow">Check website now</button><button data-r="verify">Check channel for deleted posts</button></div>
-  <p class="mut" data-r="out"></p>
-  <p class="error small" data-r="probe" hidden>⚠ Deleted-post detection is OFF (Telegram did not answer reliably). Nothing is re-posted automatically.</p>`;
+  <div class="tiles">
+    <div class="tile"><div class="tv" data-r="t_pub">0</div><div class="tl">Published</div><div class="ts" data-r="t_pub_s"></div></div>
+    <div class="tile"><div class="tv" data-r="t_q">0</div><div class="tl">Queued</div><div class="ts" data-r="t_q_s"></div></div>
+    <button type="button" class="tile tbtn" data-r="t_bad_b"><div class="tv" data-r="t_bad">0</div><div class="tl">Need attention</div><div class="ts" data-r="t_bad_s"></div></button>
+  </div>
+  <div class="facts">
+    <div class="fact"><span class="fi">🔎</span><div><div data-r="watch"></div><div class="small mut" data-r="watch2"></div></div></div>
+    <div class="fact"><span class="fi">📨</span><div class="clamp" data-r="last"></div></div>
+  </div>
+  <p class="error small" data-r="probe" hidden>⚠ Deleted-post detection is off (Telegram did not answer reliably). Nothing is re-posted automatically.</p>
+  <div class="pfoot"><button type="button" class="sm" data-r="checknow">⟳ Check website now</button><button type="button" class="sm" data-r="verify">Check for deleted posts</button></div>
+  <p class="mut small" data-r="out" style="margin:0"></p>`;
 function pq(src,r){return document.querySelector(`[data-panel="${src}"] [data-r="${r}"]`)}
+function ago(ts,now){ const s=Math.max(0,Math.round((now||Date.now()/1000)-ts));
+  return s<45?'just now':s<90?'1 min ago':s<3600?Math.round(s/60)+' min ago':s<86400?Math.round(s/3600)+' h ago':fmt(ts) }
 function buildPanels(){
   const box=$('panels'), lg=$('logs'); box.innerHTML=''; lg.innerHTML='';
   for(const src of ACTIVE){
-    const c=document.createElement('div'); c.className='card'; c.dataset.panel=src; c.innerHTML=PANEL; box.appendChild(c);
+    const c=document.createElement('div'); c.className='card panel'; c.dataset.panel=src; c.innerHTML=PANEL; box.appendChild(c);
     pq(src,'name').textContent=SOURCES[src];
-    pq(src,'start').onclick=async()=>{await api('/api/start',{},src);refresh()};
-    pq(src,'stop').onclick=async()=>{await api('/api/stop',{},src);refresh()};
+    pq(src,'toggle').onclick=async()=>{ const s=S[src]||{}; const on=s.state==='running';
+      if(on&&!confirm('Stop '+SOURCES[src]+'? New posts will wait until you press Start again.')) return;
+      await api(on?'/api/stop':'/api/start',{},src); refresh() };
+    pq(src,'t_bad_b').onclick=()=>{ if(attnTab!==src){ fresh.clear(); attnTab=src; attnAll=false; renderAttention() } $('attn').scrollIntoView({behavior:'smooth',block:'start'}) };
     pq(src,'verify').onclick=()=>verifyChannel(src);
     pq(src,'checknow').onclick=()=>checkNow(src);
     const l=document.createElement('div'); l.className='card'; l.innerHTML=`<h2>Activity — ${SOURCES[src]}</h2><div class="log small" data-log="${src}"></div>`; lg.appendChild(l);
@@ -398,29 +427,42 @@ function buildPanels(){
 function renderPanel(src,s){
   chatLinks[src]=s.chat_link;
   if(src==='toypeople') showUpdate(s);
-  pq(src,'chat').textContent=s.chat?('· '+s.chat):'';
-  const st=pq(src,'state'); st.textContent=s.state.toUpperCase()+(s.dry_run?' (dry-run)':''); st.className='pill '+s.state;
-  pq(src,'start').disabled=(s.state==='running')||!s.configured; pq(src,'stop').disabled=(s.state!=='running');
+  const ch=pq(src,'chat'); ch.textContent=s.chat||'no channel set yet'; if(s.chat_link) ch.href=s.chat_link; else ch.removeAttribute('href');
+  pq(src,'every').textContent=' · checks every '+Math.round(s.poll_every/60)+' min'+(s.dry_run?' · dry-run':'');
+  pq(src,'state').className='chip '+s.state;
+  pq(src,'state_txt').textContent={running:'Running',stopped:'Stopped',stopping:'Stopping…',error:'Stopped by an error'}[s.state]||s.state;
+  const tg=pq(src,'toggle'), on=s.state==='running'||s.state==='stopping';
+  tg.textContent=on?'■ Stop':'▶ Start'; tg.className=on?'stop':'go';
+  tg.disabled=s.state==='stopping'||(!on&&!s.configured); tg.title=(!on&&!s.configured)?'Set the bot token and channel first (⚙ Settings)':'';
   const er=pq(src,'err'); er.hidden=!s.error; er.textContent=s.error||'';
-  const k=s.stats, stats=pq(src,'stats'); stats.innerHTML='';
-  for(const [n,l] of [['posted','Published'],['pending','Queued'],['uncertain','Uncertain'],['failed','Failed'],['skipped','Seen (not posted)'],['total','Tracked']]){
-    const sp=document.createElement('span'); sp.textContent=l+': '+(k[n]||0); stats.appendChild(sp);}
+  const k=s.stats||{}, today=(s.today||{}).posted||0, bad=(k.failed||0)+(k.uncertain||0);
+  pq(src,'t_pub').textContent=(k.posted||0).toLocaleString(); pq(src,'t_pub_s').textContent=today?('+'+today+' today'):'none today';
+  pq(src,'t_q').textContent=(k.pending||0).toLocaleString();
+  pq(src,'t_bad').textContent=bad; const bb=pq(src,'t_bad_b'); bb.classList.toggle('bad',bad>0); bb.disabled=!bad;
+  pq(src,'t_bad_s').textContent=bad?'open the list ›':'all good';
   pq(src,'probe').hidden=s.probe!=='0';
-  pq(src,'last').textContent=s.last_posted?('Last published: '+(s.last_posted.title||s.last_posted.post_id)+' — '+fmt(s.last_posted.posted_at)):'';
   const lg=document.querySelector(`[data-log="${src}"]`); lg.innerHTML='';
   for(const e of s.events){const d=document.createElement('div'); d.className=e.level; d.textContent=fmt(e.ts)+'  '+e.message; lg.appendChild(d);}
 }
-// texts that only depend on the clock ("checked 2 min ago", "next post in ~30s"): updated every second, no request
+// texts that only depend on the clock ("checked 2 min ago", "next post in ~30 s"): updated every second, no request
 function tick(){
   const now=Date.now()/1000;
   for(const src of ACTIVE){ const s=S[src]; if(!s) continue;
     const left=s.next_post_in==null?0:Math.max(0,Math.round(s.next_post_in-(now-s._at)));
-    pq(src,'next').textContent=(s.pending&&s.state==='running')?('next post in ~'+left+'s (delay '+s.delay+'s)'):(s.pending&&s.state!=='running'?'queue waits for Start':'');
-    const w=s.watch, el=pq(src,'watch'), hp=src==='hpoi'; el.className='mut';
-    if(s.state!=='running'){el.textContent='Website watcher: off (press Start)'}
-    else if(!w){el.textContent='Website watcher: first check in progress…'}
-    else if(!w.ok){el.className='error'; el.textContent='⚠ Website check failed '+fmt(w.ts)+': '+w.error}
-    else {const ago=Math.max(0,Math.round(now-w.ts)); el.textContent='🔎 Website watcher: checked '+(ago<90?ago+' s':Math.round(ago/60)+' min')+' ago · '+(hp?((w.total||0)+' items on the Latest Info list'):((w.total||0).toLocaleString()+' posts in the sitemap'))+' · every '+Math.round(s.poll_every/60)+' min'+(!hp&&s.listing&&!s.listing.error?(' · Latest News list: '+s.listing.count+' posts'+(s.listing.count?'':' ⚠ none read')):'')+(!hp&&s.listing&&s.listing.error?' · ⚠ Latest News list failed':'')+' · new posts are posted automatically'}
+    pq(src,'t_q_s').textContent=!s.pending?'nothing waiting':s.state!=='running'?'waiting for Start':('next post in ~'+left+' s');
+    const w=s.watch, el=pq(src,'watch'), el2=pq(src,'watch2'), hp=src==='hpoi'; el.className=''; el2.textContent='';
+    if(s.state!=='running'){ el.className='mut'; el.textContent='Not watching the website — press Start' }
+    else if(!w){ el.textContent='First website check in progress…' }
+    else if(!w.ok){ el.className='error'; el.textContent='Last website check failed ('+ago(w.ts,now)+')'; el2.textContent=w.error||'' }
+    else { const nxt=Math.max(0,Math.round((w.ts+s.poll_every-now)/60));
+      el.textContent='Website checked '+ago(w.ts,now)+(nxt?(' · next in ~'+nxt+' min'):' · checking again now');
+      el2.textContent=hp?((w.total||0)+' items on the Latest Info list')
+        :((w.total||0).toLocaleString()+' posts in the sitemap'+(s.listing?(s.listing.error?' · ⚠ Latest News list failed':(' · '+s.listing.count+' on the Latest News list')):'')) }
+    const lp=s.last_posted, last=pq(src,'last'); last.textContent='';
+    if(!lp){ last.className='clamp mut'; last.textContent='Nothing posted yet' }
+    else { last.className='clamp'; last.append('Last post '+ago(lp.posted_at,now)+': ');
+      const a=document.createElement(s.chat_link&&lp.tg_message_id?'a':'span'); a.textContent=lp.title||('#'+lp.post_id);
+      if(a.tagName==='A'){ a.href=s.chat_link+'/'+lp.tg_message_id; a.target='_blank'; a.rel='noopener'; a.title='Open it in Telegram' } last.append(a) }
   }
 }
 

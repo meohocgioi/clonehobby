@@ -289,3 +289,15 @@ def test_parse_last_time_and_scrolling_pages(tmp_path):
     assert any("lastTime=1792373903415" in u for u in urls[1:])           # and chained the next marker
     assert e.db.count() == 25                                             # 5 homepage + 20 older cards recorded
     assert plan["state"] in ("none", "empty") 
+
+
+def test_english_title_survives_the_next_website_check(tmp_path):
+    e, tg, _ = make(tmp_path)
+    e.discover()
+    key = hpoi.post_key(137248, HEAD)
+    e.db.enqueue(key, 0, "new")
+    assert e.process(e.db.get(key)) == "posted"
+    english = e.db.get(key)["title"]
+    assert english.startswith("EN(")
+    e.discover()                                   # the next poll sees the same (Chinese) card again
+    assert e.db.get(key)["title"] == english and e.db.last_posted()["title"] == english
