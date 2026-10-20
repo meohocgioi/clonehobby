@@ -885,7 +885,7 @@ function showPreview(a){
   if(a.tags.length){const e=document.createElement('p'); e.style.fontStyle='italic';
     if(a.hashtag){a.tags_line.split('  ').forEach((h,i)=>{if(i)e.appendChild(document.createTextNode('  ')); const sp=document.createElement('span'); sp.className='hl'; sp.textContent=h; e.appendChild(sp)})}
     else e.textContent=a.tags_line; inner.appendChild(e)}
-  for(const p of a.paragraphs){const e=document.createElement('p'); e.style.margin=(a.paragraph_spacing==='tight'?'2px 0':'0 0 14px'); e.textContent=new DOMParser().parseFromString(p.replace(/<br>/g,'\n'),'text/html').body.textContent; inner.appendChild(e)}
+  for(const p of a.paragraphs){const e=document.createElement('p'); e.style.whiteSpace='pre-line'; e.style.margin=(a.paragraph_spacing==='tight'?'2px 0':'0 0 14px'); e.textContent=new DOMParser().parseFromString(p.replace(/<br>/g,'\n'),'text/html').body.textContent; inner.appendChild(e)}
   const g=document.createElement('div'); g.className='imgs'; for(const u of a.images.slice(0,12)){g.appendChild(mediaEl(u))} inner.appendChild(g);
   if(a.credits.length) add('p',a.credit_label+': '+a.credits.map(c=>c[0]).join(', '),'italic');
   const warn=[]; if(!a.title) warn.push('no title'); if(!a.cover) warn.push('no cover photo'); if(!a.post_date&&pvSource!=='hpoi') warn.push('no date'); if(!a.paragraphs.length&&pvSource!=='hpoi') warn.push('no text'); if(!a.images.length) warn.push('no photos');

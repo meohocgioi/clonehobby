@@ -37,6 +37,14 @@ class TranslateError(Exception):
     pass
 
 
+# whole lines of product descriptions the machine translates badly ("本体" -> "Ontology")
+LINE_TERMS = {
+    "本体": "Main body", "商品内容": "Set contents", "商品构成": "Set contents", "套装内容": "Set contents",
+    "附属品": "Accessories", "配件": "Accessories", "附件": "Accessories",
+}
+BULLET = re.compile(r"^([・•·●○◆◇■□★☆※\-–—*]+\s*)")
+
+
 def has_cjk(text: str) -> bool:
     return bool(CJK.search(text or ""))
 
@@ -96,6 +104,63 @@ class Translator:
             raise TranslateError(f"empty translation for {text!r}")
         self.db._x("INSERT OR REPLACE INTO translations(src, lang, out) VALUES(?,?,?)", (text, sl, out))
         return out
+
+    def translate_lines(self, lines: list[str], sl: str = "zh-CN") -> list[str]:
+        """Translate a text line by line, keeping its layout: one English line per line, list bullets ("・") kept.
+        Lines are sent together (few requests); if Google merges or splits lines, they are translated one by one."""
+        gloss = self.glossary()
+        out: list[str | None] = [None] * len(lines)
+        marks: list[str] = [""] * len(lines)
+        todo: list[int] = []
+        for i, raw in enumerate(lines):
+            line = re.sub(r"[ \t]+", " ", (raw or "").replace("\u3000", " ")).strip()
+            m = BULLET.match(line)
+            if m:
+                marks[i], line = m.group(1), line[m.end():].strip()
+            if not line or not has_cjk(line):
+                out[i] = line
+            elif line in LINE_TERMS or line in gloss:
+                out[i] = LINE_TERMS.get(line) or gloss[line]
+            else:
+                row = self.db._q("SELECT out FROM translations WHERE src=? AND lang=?", (line, sl))
+                if row:
+                    out[i] = row[0]["out"]
+                else:
+                    out[i] = line                       # translated below
+                    todo.append(i)
+
+        def prepare(s: str) -> str:
+            for k in sorted(gloss, key=len, reverse=True):
+                if k in s:
+                    s = s.replace(k, f" {gloss[k]} ")
+            return re.sub(r"\s+", " ", s).strip()
+
+        # the lines still to translate, in requests of at most ~1200 characters
+        chunks: list[list[int]] = []
+        cur: list[int] = []
+        size = 0
+        for i in todo:
+            if cur and size + len(out[i]) + 1 > 1200:
+                chunks.append(cur)
+                cur, size = [], 0
+            cur.append(i)
+            size += len(out[i]) + 1
+        if cur:
+            chunks.append(cur)
+        for chunk in chunks:
+            src = [out[j] for j in chunk]
+            prep = [prepare(x) for x in src]
+            joined = "\n".join(prep)
+            got = (self._remote(joined, sl) if has_cjk(joined) else joined).split("\n")
+            if len(got) != len(chunk):                  # Google merged / split lines: one line at a time
+                got = [self._remote(x, sl) if has_cjk(x) else x for x in prep]
+            for j, x, g in zip(chunk, src, got):
+                g = self._tidy(g)
+                if not g:
+                    raise TranslateError(f"empty translation for {x!r}")
+                self.db._x("INSERT OR REPLACE INTO translations(src, lang, out) VALUES(?,?,?)", (x, sl, g))
+                out[j] = g
+        return [marks[i] + (out[i] or "") for i in range(len(lines))]
 
     @staticmethod
     def _tidy(s: str) -> str:

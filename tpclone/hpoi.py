@@ -15,6 +15,7 @@ import re
 import time
 import zlib
 from datetime import datetime
+from html import escape
 from zoneinfo import ZoneInfo
 from pathlib import Path
 from urllib.parse import urljoin
@@ -102,8 +103,35 @@ def _links_or_text(p) -> list[str]:
     return [x for x in re.split(r"[、,，/]", _clean(p.get_text())) if x.strip()]
 
 
+def parse_detail(soup) -> list[list[str]]:
+    """The product description ("hpoi-detail-box") as paragraphs of lines, exactly as laid out on the page:
+    <p> blocks and blank lines start a new paragraph, <br> starts a new line."""
+    box = soup.select_one(".hpoi-detail-box-main") or soup.select_one(".hpoi-detail-box")
+    if box is None:
+        return []
+    box = BeautifulSoup(str(box), "lxml")                 # work on a copy
+    for br in box.find_all("br"):
+        br.replace_with("\n")
+    paras: list[list[str]] = []
+    for p in box.find_all("p") or [box]:
+        cur: list[str] = []
+        for line in p.get_text().split("\n"):
+            line = _clean(line)
+            if line:
+                cur.append(line)
+            elif cur:
+                paras.append(cur)
+                cur = []
+        if cur:
+            paras.append(cur)
+    return paras
+
+
 def parse_item(html: str) -> dict:
-    """Product page -> {fields: {label: [values]}, release: [row...], cover, images}"""
+    """Product page -> {fields: {label: [values]}, release: [row...], cover, images, detail: [[line...]...]}
+
+    images: the official pictures (官图 slideshow) and real photos (实物照片), largest size, then the cover of every
+    photo album shown in the 实物相册 section."""
     soup = BeautifulSoup(html, "lxml")
     fields: dict[str, list[str]] = {}
     release: list[str] = []
@@ -138,7 +166,13 @@ def parse_item(html: str) -> dict:
                 u = _img(src, "n")
                 if u not in images and u != cover:
                     images.append(u)
-    return {"fields": fields, "release": release, "cover": cover, "images": images}
+    for img in soup.select(".hpoi-entry-album img, .swiper-album img"):       # 实物相册: users' photo albums
+        src = img.get("data-src") or img.get("src") or ""
+        if "/gk/cover/" in src:
+            u = _img(src)
+            if u not in images and u != cover:
+                images.append(u)
+    return {"fields": fields, "release": release, "cover": cover, "images": images, "detail": parse_detail(soup)}
 
 
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -425,9 +459,23 @@ class HpoiEngine(Engine):
                     if t and t.lower() not in {x.lower() for x in tags}:
                         tags.append(t)
         title = self._tr(it["headline"])
+        # the description, translated line by line so the layout (paragraphs, line breaks, "・" lists) stays the same
+        paragraphs: list[str] = []
+        detail = info.get("detail") or []
+        if detail:
+            try:
+                english = self.translator.translate_lines([line for para in detail for line in para])
+            except TranslateError as e:
+                raise Deferred(f"translation not available yet ({e})", 600) from e
+            i = 0
+            for para in detail:
+                lines = [x for x in english[i:i + len(para)] if x]
+                i += len(para)
+                if lines:
+                    paragraphs.append("<br>".join(escape(x, quote=False) for x in lines))
         art = site.Article(
             post_id=key, url=url, title=title, cover=info["cover"] or it.get("cover"),
-            scheduled=scheduled_line(info["release"]), tags=tags,
+            scheduled=scheduled_line(info["release"]), tags=tags, paragraphs=paragraphs,
             images=info["images"][: self.s.max_media], credits=[], lang="en")      # no "via" footer, by request
         self.db.set_meta(key, title, None)
         return art

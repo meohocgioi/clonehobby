@@ -25,7 +25,8 @@ def mock_google(calls=None, status=200):
             calls.append(q)
         if status != 200:
             return httpx.Response(status, text="Sorry")
-        return httpx.Response(200, json=[[[f"EN({q})", q, None, None, 1]], None, "zh-CN"])
+        out = "\n".join(f"EN({x})" for x in q.split("\n"))           # Google keeps line breaks
+        return httpx.Response(200, json=[[[out, q, None, None, 1]], None, "zh-CN"])
     return httpx.Client(transport=httpx.MockTransport(handler))
 
 
@@ -301,3 +302,46 @@ def test_english_title_survives_the_next_website_check(tmp_path):
     assert english.startswith("EN(")
     e.discover()                                   # the next poll sees the same (Chinese) card again
     assert e.db.get(key)["title"] == english and e.db.last_posted()["title"] == english
+
+
+DESC = (Path(__file__).parent / "fixtures" / "hpoi_item_desc.html").read_text(encoding="utf8")
+
+
+def test_item_with_description_slideshow_photos_and_album():
+    i = hpoi.parse_item(DESC)
+    assert len(i["images"]) == 18                                  # 12 official pictures + 5 real photos + 1 album
+    assert sum("/gk/pic/n/" in u for u in i["images"]) == 17 and "/gk/cover/sr/" in i["images"][-1]
+    assert i["detail"][0] == ["“我相信，我有无限的可能性！”", "“假面骑士灵骑 无限魂”终于在S.H.Figuarts系列登场！"]
+    assert len(i["detail"]) == 3 and i["detail"][2][0] == "商品内容" and i["detail"][2][1] == "・本体"
+
+
+def test_translate_lines_keeps_the_layout(tmp_path):
+    calls = []
+    t = translator(tmp_path, calls=calls)
+    out = t.translate_lines(["“我相信”", "", "商品内容", "・本体", "・眼枪剑", "S.H.Figuarts"])
+    assert out == ["EN(“我相信”)", "", "Set contents", "・Main body", "・EN(眼枪剑)", "S.H.Figuarts"]
+    assert len(calls) == 1                                         # one request for the whole text
+    t.translate_lines(["“我相信”", "・眼枪剑"])
+    assert len(calls) == 1                                         # cached
+
+
+def test_translate_lines_falls_back_to_one_line_at_a_time(tmp_path):
+    def merged(req):                                               # Google returned the lines merged into one
+        q = req.url.params["q"]
+        return httpx.Response(200, json=[[[f"EN({q.replace(chr(10), ' ')})", q, None, None, 1]], None, "zh-CN"])
+    t = Translator(DB(":memory:"), glossary_file=tmp_path / "g.json", client=httpx.Client(transport=httpx.MockTransport(merged)),
+                   endpoint="https://mock.test/t", sleep=lambda s: None)
+    assert t.translate_lines(["第一行", "第二行"]) == ["EN(第一行)", "EN(第二行)"]
+
+
+def test_post_carries_the_translated_description(tmp_path):
+    e, tg, _ = make(tmp_path)
+    e.fetcher.item = DESC
+    e.discover()
+    key = hpoi.post_key(137248, HEAD)
+    e.db.enqueue(key, 0, "new")
+    assert e.process(e.db.get(key)) == "posted"
+    html = tg.sent[0]["html"]
+    assert "<p>EN(“我相信，我有无限的可能性！”)<br>EN(“假面骑士灵骑 无限魂”终于在S.H.Figuarts系列登场！)<br><br>" in html
+    assert "Set contents<br>・Main body<br>・EN(" in html                    # list layout kept
+    assert html.count("<img") + html.count("<video") == 19                 # cover + 18 pictures
