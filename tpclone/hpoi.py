@@ -235,6 +235,7 @@ def derive_settings(main: Settings) -> Settings:
                                                        # at times: the app downloads and converts the pictures itself
         telegram_chat_id=main.hpoi_chat_id.strip() or main.telegram_chat_id,
         db_path=str(Path(main.db_path).with_name("hpoi.db")),
+        to_facebook=main.hpoi_to_facebook, to_instagram=main.hpoi_to_instagram, to_x=main.hpoi_to_x,
     )
 
 

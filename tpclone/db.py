@@ -45,6 +45,20 @@ CREATE TABLE IF NOT EXISTS sent_messages (      -- every channel message ever se
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, level TEXT, message TEXT
 );
+CREATE TABLE IF NOT EXISTS outlet_posts (       -- the same post on Facebook / Instagram / X (after Telegram)
+    post_id    INTEGER NOT NULL,
+    outlet     TEXT NOT NULL,                   -- facebook | instagram | x
+    status     TEXT NOT NULL DEFAULT 'pending', -- pending | sending | posted | failed | uncertain | skipped
+    attempts   INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    not_before REAL NOT NULL DEFAULT 0,
+    remote_id  TEXT,                            -- id of the post on that network
+    link       TEXT,                            -- address of the post on that network
+    payload    TEXT,                            -- the post as sent to Telegram (JSON), so it is not fetched again
+    created_at REAL, posted_at REAL, flagged_at REAL,
+    PRIMARY KEY (post_id, outlet)
+);
+CREATE INDEX IF NOT EXISTS idx_outlet_status ON outlet_posts(outlet, status, not_before, created_at);
 """
 
 
@@ -395,6 +409,78 @@ class DB:
     def posts_in_last_hour(self) -> int:
         return self._q("SELECT COUNT(*) c FROM posts WHERE status='posted' AND source!='import' AND posted_at>?",
                        (time.time() - 3600,))[0]["c"]
+
+    # ---- Facebook / Instagram / X copies ------------------------------
+    def outlet_queue(self, post_id: int, outlets: Iterable[str], payload: str | None) -> list[str]:
+        """Queue a just-published post for the other networks. A post is never queued twice for the same network."""
+        now, added = time.time(), []
+        with self.lock:
+            for o in outlets:
+                cur = self.conn.execute("INSERT OR IGNORE INTO outlet_posts(post_id,outlet,payload,created_at) "
+                                        "VALUES(?,?,?,?)", (post_id, o, payload, now))
+                if cur.rowcount:
+                    added.append(o)
+            self.conn.commit()
+        return added
+
+    def outlet_get(self, post_id: int, outlet: str) -> dict | None:
+        r = self._q("SELECT * FROM outlet_posts WHERE post_id=? AND outlet=?", (post_id, outlet))
+        return dict(r[0]) if r else None
+
+    def outlet_next(self, outlet: str) -> dict | None:
+        r = self._q("SELECT * FROM outlet_posts WHERE outlet=? AND status='pending' AND not_before<=? "
+                    "ORDER BY created_at, post_id LIMIT 1", (outlet, time.time()))
+        return dict(r[0]) if r else None
+
+    def outlet_set(self, post_id: int, outlet: str, status: str, error: str | None = None, **cols) -> None:
+        """Change the state of one copy. failed / uncertain get a time stamp for 'Needs your attention'."""
+        sets, args = ["status=?", "last_error=?"], [status, (error or "")[:500] or None]
+        if status in ("failed", "uncertain"):
+            sets.append("flagged_at=?"); args.append(time.time())
+        if status == "posted":
+            sets.append("posted_at=?"); args.append(time.time())
+        for k, v in cols.items():
+            if k not in ("attempts", "not_before", "remote_id", "link", "created_at"):
+                raise ValueError(k)
+            sets.append(f"{k}=?"); args.append(v)
+        self._x(f"UPDATE outlet_posts SET {', '.join(sets)} WHERE post_id=? AND outlet=?", args + [post_id, outlet])
+
+    def outlet_stale_sending(self) -> int:
+        """At startup: a copy left 'sending' means the app stopped while the last request was on its way."""
+        cur = self._x("UPDATE outlet_posts SET status='uncertain', flagged_at=?, last_error=? WHERE status='sending'",
+                      (time.time(), "the app stopped while this was being posted - it may or may not be there"))
+        return cur.rowcount
+
+    def outlet_expire(self, outlet: str, older_than: float, note: str) -> int:
+        cur = self._x("UPDATE outlet_posts SET status='skipped', last_error=? WHERE outlet=? AND status='pending' "
+                      "AND created_at<?", (note, outlet, older_than))
+        return cur.rowcount
+
+    def outlet_summary(self, since: float) -> dict[str, dict]:
+        """Per network: how many copies are waiting / need a decision / were posted today, and the newest one posted."""
+        out: dict[str, dict] = {}
+        now = time.time()
+        for r in self._q("SELECT outlet, status, COUNT(*) c, SUM(not_before>?) later FROM outlet_posts "
+                         "GROUP BY outlet, status", (now,)):
+            d = out.setdefault(r["outlet"], {"pending": 0, "waiting": 0, "posted": 0, "failed": 0, "uncertain": 0,
+                                             "skipped": 0, "sending": 0, "today": 0, "last": None})
+            d[r["status"]] = d.get(r["status"], 0) + r["c"]
+            if r["status"] == "pending":
+                d["waiting"] = int(r["later"] or 0)
+        for r in self._q("SELECT outlet, COUNT(*) c FROM outlet_posts WHERE status='posted' AND posted_at>=? "
+                         "GROUP BY outlet", (since,)):
+            out[r["outlet"]]["today"] = r["c"]
+        for o, d in out.items():
+            r = self._q("SELECT o.post_id, o.link, o.posted_at, p.title FROM outlet_posts o LEFT JOIN posts p "
+                        "ON p.post_id=o.post_id WHERE o.outlet=? AND o.status='posted' ORDER BY o.posted_at DESC LIMIT 1", (o,))
+            d["last"] = dict(r[0]) if r else None
+        return out
+
+    def outlet_attention(self, limit: int = 50) -> list[dict]:
+        return [dict(r) for r in self._q(
+            "SELECT o.post_id, o.outlet, o.status, o.last_error, o.flagged_at, o.attempts, p.title, p.url "
+            "FROM outlet_posts o LEFT JOIN posts p ON p.post_id=o.post_id WHERE o.status IN ('failed','uncertain') "
+            "ORDER BY o.flagged_at DESC LIMIT ?", (limit,))]
 
     # ---- json kv convenience -------------------------------------------
     def kv_json(self, key: str, default: Any = None) -> Any:

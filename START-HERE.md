@@ -139,3 +139,43 @@ The same app can copy the newest items of **hpoi.net → 最新情报 (Latest In
   Use the date table or the preview box (with a product link) to post older items by hand.
 * It is polite to the website: one page read every 10 minutes, at least 5 seconds between requests, never the `/api/` area.
 * Settings for it are in **⚙ Settings → HPOI** (on/off, wait time, translator); its channel is under ⚙ Settings → Telegram.
+
+## Also posting to Facebook, Instagram and X (optional)
+
+Every post that goes to your Telegram channel can also go — in English, with its photos — to:
+
+| Where | How it looks | Good to know |
+|---|---|---|
+| **Facebook Page** | one post with all its photos (up to 30), shown as an album; title, release date, full text, hashtags | |
+| **Instagram** (the professional account linked to that Page) | a slideshow of up to 10 photos, made square so nothing is cut off; the text is the caption (at most 2,200 characters and 30 hashtags) | Instagram allows 100 posts a day |
+| **X** | one post with up to 4 photos: title, release date and as many hashtags as fit in 280 characters; no link | X charges a small amount per post (credits you buy at developer.x.com); posts with a link cost more, so the app never adds one |
+
+Set it up in **⚙ Settings → Facebook & Instagram** and **⚙ Settings → X** (the steps are written on the page). There you also tick which
+website's posts go where (Toy-People, HPOI or both) and how long to wait between two posts on each network.
+
+**Facebook & Instagram, one time (~15 minutes):**
+1. Instagram only: make it a **professional account** (Business or Creator) and link it to your Facebook Page.
+2. <https://developers.facebook.com/apps> → **Create app** → use case **Manage everything on your Page** (for Instagram also
+   **Manage messaging & content on Instagram**).
+3. **App settings → Basic**: copy the **App ID** and **App secret**; fill in a **Privacy Policy URL** (any public page about your channel).
+4. Switch the app from **Development** to **Live**. *While it is in Development, Facebook shows its posts only to you.*
+5. **Graph API Explorer** (<https://developers.facebook.com/tools/explorer/>) → your app → **Get User Access Token** → tick
+   `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`, `business_management`, and for Instagram `instagram_basic`,
+   `instagram_content_publish` → **Generate Access Token** → allow your Page.
+6. Paste App ID, App secret and the token in the app → **Connect**. The app turns the token into one that does not expire and finds
+   your Page and its Instagram account (if your token sees several Pages, it asks which one).
+
+**X, one time (~10 minutes):** <https://developer.x.com> → sign up for the API with the X account that should post and add credits →
+in your app **User authentication settings**: permissions **Read and write** → **Keys and tokens**: copy the **API Key and Secret** and
+generate the **Access Token and Secret** (after setting Read and write) → paste the 4 keys in the app → **Save changes** (the app checks them).
+
+**How it behaves**
+* A post goes to Facebook / Instagram / X right after it reached Telegram, each network at its own pace (default: 1 minute between
+  Facebook posts, 5 minutes on Instagram, 1 minute on X). Trouble on one network never holds up Telegram or the others.
+* Only posts published after you switch it on go there; nothing old is copied. Posts you publish by hand or by date go there too.
+* If a connection stops working (expired token, missing permission, X credits used up) that network **pauses**: the dashboard shows
+  “⚠ paused” with the reason. Posts wait and go out once you fix it (a post waiting more than 2 days is skipped as old news).
+* A post that fails a few times, or whose last request got no answer, appears under **Needs your attention** (e.g. “X failed”) with
+  **Send again**, **It is on X** and **Ignore**.
+* Instagram fetches pictures from a public web address, which a home computer doesn't have: the app uploads each slide to your
+  Facebook Page as a hidden (unpublished) photo, lets Instagram fetch it, then deletes it again.

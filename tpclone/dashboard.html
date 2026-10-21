@@ -131,6 +131,10 @@
   .facts{display:flex;flex-direction:column;gap:8px;font-size:14px} .fact{display:flex;gap:8px;align-items:flex-start} .fi{width:20px;flex:none;text-align:center}
   .clamp{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden} .clamp a{color:inherit}
   .pfoot{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;padding-top:12px;border-top:1px solid var(--line)}
+  /* ---- Facebook / Instagram / X ---- */
+  .chk.dis{opacity:.5} .nets{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 12px} .nets a{color:inherit} .nets .nb{font-weight:600}
+  .picks{display:flex;flex-direction:column;gap:6px;margin-top:8px} .picks button{text-align:left}
+  .netnote{flex-direction:column;align-items:stretch;gap:6px} .netnote>div{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 </style>
 </head>
 <body>
@@ -159,9 +163,10 @@
       </div>
       <div class="card" id="attn">
         <h2>Needs your attention</h2>
+        <div class="notice netnote" id="attn_net" hidden></div>
         <div class="tabs" id="attn_tabs" role="tablist"></div>
         <div class="attnlist" id="attn_list"></div>
-        <p class="mut small" style="margin:8px 0 0">“uncertain” = may have reached Telegram (usually settled by itself within minutes) · “failed” = gave up after several errors.</p>
+        <p class="mut small" style="margin:8px 0 0">“uncertain” = may have been posted (in Telegram usually settled by itself within minutes) · “failed” = gave up after several errors.</p>
       </div>
     </div>
 
@@ -203,6 +208,8 @@
         <button data-sec="tg" class="on">Telegram<i class="nd" hidden></i></button>
         <button data-sec="tp">Toy-People<i class="nd" hidden></i></button>
         <button data-sec="hp">HPOI<i class="nd" hidden></i></button>
+        <button data-sec="fb">Facebook &amp; Instagram<i class="nd" hidden></i></button>
+        <button data-sec="x">X<i class="nd" hidden></i></button>
         <button data-sec="bk">Backups</button>
         <button data-sec="up">Updates<i class="nd" hidden></i></button>
       </nav>
@@ -329,6 +336,118 @@
           </div>
         </section>
 
+        <!-- Facebook & Instagram -->
+        <section class="card setsec" id="sec_fb" hidden>
+          <h3>Facebook &amp; Instagram</h3>
+          <p class="lead">Every post that goes to Telegram can also go to your Facebook Page — one post with all its photos, shown as an album — and to the Instagram account linked to that Page, as a slideshow. Same English text as in Telegram.</p>
+          <div class="srow">
+            <div><div class="st">Facebook Page</div><div class="sd" id="fb_stat">Not connected yet.</div></div>
+            <div class="sc btns"><button type="button" id="fb_chk">Check connection</button></div>
+          </div>
+          <div class="srow">
+            <div><div class="st">Instagram</div><div class="sd" id="ig_stat">Connect your Facebook Page first.</div></div>
+            <div class="sc btns"><button type="button" id="ig_chk">Check connection</button></div>
+          </div>
+          <h4 id="fb_what">What to post</h4>
+          <div class="srow">
+            <div><div class="st">On the Facebook Page</div><div class="sd">One post per article with up to 30 photos.</div></div>
+            <div class="sc"><label class="chk"><input type="checkbox" id="f_tofb"> Toy-People posts</label><label class="chk hp-on"><input type="checkbox" id="f_htofb"> HPOI posts</label></div>
+          </div>
+          <div class="srow">
+            <div><div class="st">On Instagram</div><div class="sd">A slideshow of up to 10 photos (made square, so nothing is cut off); the text becomes the caption. Instagram allows 100 posts a day.</div></div>
+            <div class="sc"><label class="chk"><input type="checkbox" id="f_toig"> Toy-People posts</label><label class="chk hp-on"><input type="checkbox" id="f_htoig"> HPOI posts</label></div>
+          </div>
+          <div class="srow">
+            <div><div class="st">Wait between posts</div><div class="sd">Least time between two posts on each. 100 Instagram posts a day = one every 15 minutes.</div></div>
+            <div class="sc"><div class="unit"><input type="number" id="f_fbdelay" min="10" step="1"><span>seconds on Facebook</span></div>
+              <div class="unit" style="margin-top:8px"><input type="number" id="f_igdelay" min="10" step="1"><span>seconds on Instagram</span></div></div>
+          </div>
+          <details class="advx" id="fb_conn" open><summary id="fb_conn_sum">Connect your Page (one time, about 15 minutes)</summary>
+            <ol class="how">
+              <li>Instagram only: it must be a <b>professional account</b> (Business or Creator) <b>linked to your Facebook Page</b> (Instagram → Settings → Account type; Facebook Page → Settings → Linked accounts).</li>
+              <li>Open <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">developers.facebook.com/apps</a> with the Facebook account that manages your Page → <b>Create app</b>. Use case: <b>Manage everything on your Page</b>; for Instagram add <b>Manage messaging &amp; content on Instagram</b>.</li>
+              <li>In the app, <b>App settings → Basic</b>: copy the <b>App ID</b> and the <b>App secret</b> into the boxes below. Fill in a <b>Privacy Policy URL</b> (any public page about your channel) and save.</li>
+              <li>Switch the app from <b>Development</b> to <b>Live</b>. <i>Important:</i> while it is in Development, Facebook shows its posts only to you.</li>
+              <li>Open the <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noopener">Graph API Explorer</a>, choose your app → <b>Get User Access Token</b> → tick <code>pages_show_list</code>, <code>pages_read_engagement</code>, <code>pages_manage_posts</code>, <code>business_management</code> and for Instagram <code>instagram_basic</code>, <code>instagram_content_publish</code> → <b>Generate Access Token</b>, allow your Page (and Instagram account). Copy the token below.</li>
+              <li>Press <b>Connect</b>. The app turns it into a token that does not expire and finds your Page and its Instagram account.</li>
+            </ol>
+            <div class="srow">
+              <div><div class="st">App ID</div></div>
+              <div class="sc"><input type="text" id="fbc_app" autocomplete="off" placeholder="1234567890"></div>
+            </div>
+            <div class="srow">
+              <div><div class="st">App secret</div><div class="sd" id="fbc_secret_d"></div></div>
+              <div class="sc"><input type="password" id="fbc_secret" autocomplete="off" placeholder="App secret"></div>
+            </div>
+            <div class="srow">
+              <div><div class="st">Access token</div><div class="sd">From the Graph API Explorer (it is only used once, to connect).</div></div>
+              <div class="sc"><input type="password" id="fbc_token" autocomplete="off" placeholder="EAAG…"></div>
+            </div>
+            <div class="srow">
+              <div><div class="sd" id="fb_conn_out"></div><div class="picks" id="fb_pages" hidden></div></div>
+              <div class="sc btns"><button type="button" class="go" id="fbc_go">Connect</button></div>
+            </div>
+          </details>
+          <div class="srow" id="fb_off_row" hidden>
+            <div><div class="st">Disconnect</div><div class="sd">Stops posting to Facebook and Instagram and forgets the Page's token.</div></div>
+            <div class="sc btns"><button type="button" class="sm" id="fb_off">Disconnect Facebook &amp; Instagram</button></div>
+          </div>
+        </section>
+
+        <!-- X -->
+        <section class="card setsec" id="sec_x" hidden>
+          <h3>X</h3>
+          <p class="lead">Every post can also go to X with up to 4 photos: the title, the release date and as many hashtags as fit in 280 characters. No link in the text — X charges more for posts with a link.</p>
+          <div class="srow">
+            <div><div class="st">Account</div><div class="sd" id="x_stat">Not connected yet.</div></div>
+            <div class="sc btns"><button type="button" id="x_chk">Check connection</button></div>
+          </div>
+          <h4 id="x_what">What to post</h4>
+          <div class="srow">
+            <div><div class="st">On X</div><div class="sd">One post per article.</div></div>
+            <div class="sc"><label class="chk"><input type="checkbox" id="f_tox"> Toy-People posts</label><label class="chk hp-on"><input type="checkbox" id="f_htox"> HPOI posts</label></div>
+          </div>
+          <div class="srow">
+            <div><div class="st">Wait between posts</div><div class="sd">Least time between two posts on X.</div></div>
+            <div class="sc"><div class="unit"><input type="number" id="f_xdelay" min="10" step="1"><span>seconds</span></div></div>
+          </div>
+          <div id="x_keys">
+          <h4>Keys</h4>
+          <details class="advx" id="x_how" open><summary>Where to get the 4 keys (one time, about 10 minutes)</summary>
+            <ol class="how">
+              <li>Open <a href="https://developer.x.com" target="_blank" rel="noopener">developer.x.com</a>, sign in with the X account that should post and sign up for the API. X charges a small amount per post (pay-per-use credits): add some credits there.</li>
+              <li>In your app: <b>User authentication settings → Set up</b>: App permissions <b>Read and write</b>, type <b>Web App, Automated App or Bot</b>, any website and callback address (e.g. your channel link) → Save.</li>
+              <li><b>Keys and tokens</b>: <b>API Key and Secret</b> → Regenerate → copy both. <b>Access Token and Secret</b> → Generate (after step 2, so they may post) → copy both.</li>
+              <li>Paste the 4 keys below and press <b>Save changes</b>. The app checks them right away.</li>
+            </ol>
+          </details>
+          <div class="srow">
+            <div><div class="st">API Key</div></div>
+            <div class="sc"><div class="secret" data-for="f_xkey" hidden><span>Saved · ends with <b data-r="tail"></b></span><button type="button" class="sm" data-r="change">Change</button></div>
+              <input type="password" id="f_xkey" autocomplete="off"></div>
+          </div>
+          <div class="srow">
+            <div><div class="st">API Key Secret</div></div>
+            <div class="sc"><div class="secret" data-for="f_xsecret" hidden><span>Saved · ends with <b data-r="tail"></b></span><button type="button" class="sm" data-r="change">Change</button></div>
+              <input type="password" id="f_xsecret" autocomplete="off"></div>
+          </div>
+          <div class="srow">
+            <div><div class="st">Access Token</div></div>
+            <div class="sc"><div class="secret" data-for="f_xtoken" hidden><span>Saved · ends with <b data-r="tail"></b></span><button type="button" class="sm" data-r="change">Change</button></div>
+              <input type="password" id="f_xtoken" autocomplete="off"></div>
+          </div>
+          <div class="srow">
+            <div><div class="st">Access Token Secret</div></div>
+            <div class="sc"><div class="secret" data-for="f_xtsecret" hidden><span>Saved · ends with <b data-r="tail"></b></span><button type="button" class="sm" data-r="change">Change</button></div>
+              <input type="password" id="f_xtsecret" autocomplete="off"></div>
+          </div>
+          </div>
+          <div class="srow" id="x_off_row" hidden>
+            <div><div class="st">Disconnect</div><div class="sd">Stops posting to X and removes the 4 keys from this app.</div></div>
+            <div class="sc btns"><button type="button" class="sm" id="x_off">Disconnect X</button></div>
+          </div>
+        </section>
+
         <!-- Backups -->
         <section class="card setsec" id="sec_bk" hidden>
           <h3>Backups</h3>
@@ -409,6 +528,7 @@ const PANEL=`
     <div class="fact"><span class="fi">🔎</span><div><div data-r="watch"></div><div class="small mut" data-r="watch2"></div></div></div>
     <div class="fact"><span class="fi">📨</span><div class="clamp" data-r="last"></div></div>
     <div class="fact" data-r="dailyrow"><span class="fi">📅</span><div data-r="daily"></div></div>
+    <div class="fact" data-r="netrow" hidden><span class="fi">📣</span><div class="nets" data-r="nets"></div></div>
   </div>
   <p class="error small" data-r="probe" hidden>⚠ Deleted-post detection is off (Telegram did not answer reliably). Nothing is re-posted automatically.</p>
   <div class="pfoot"><button type="button" class="sm" data-r="checknow">⟳ Check website now</button><button type="button" class="sm" data-r="verify">Check for deleted posts</button></div>
@@ -445,7 +565,7 @@ function renderPanel(src,s){
   tg.textContent=on?'■ Stop':'▶ Start'; tg.className=on?'stop':'go';
   tg.disabled=s.state==='stopping'||(!on&&!s.configured); tg.title=(!on&&!s.configured)?'Set the bot token and channel first (⚙ Settings)':'';
   const er=pq(src,'err'); er.hidden=!s.error; er.textContent=s.error||'';
-  const k=s.stats||{}, today=(s.today||{}).posted||0, bad=(k.failed||0)+(k.uncertain||0);
+  const k=s.stats||{}, today=(s.today||{}).posted||0, bad=(k.failed||0)+(k.uncertain||0)+(s.outlet_attention||[]).length;
   pq(src,'t_pub').textContent=(k.posted||0).toLocaleString(); pq(src,'t_pub_s').textContent=today?('+'+today+' today'):'none today';
   pq(src,'t_q').textContent=((s.ready??k.pending)||0).toLocaleString();
   pq(src,'t_bad').textContent=bad; const bb=pq(src,'t_bad_b'); bb.classList.toggle('bad',bad>0); bb.disabled=!bad;
@@ -456,8 +576,23 @@ function renderPanel(src,s){
     else { const day=new Date(d.day+'T12:00:00').toLocaleDateString(undefined,{day:'numeric',month:'short'});
       el.className=d.queued?'':'mut';
       el.textContent='Daily check of '+day+': '+d.total+' post(s) on the website — '+(d.queued?(d.queued+' missing post(s) found and queued'):'nothing missing ✓') } }
+  renderNets(src,s);
   const lg=document.querySelector(`[data-log="${src}"]`); lg.innerHTML='';
   for(const e of s.events){const d=document.createElement('div'); d.className=e.level; d.textContent=fmt(e.ts)+'  '+e.message; lg.appendChild(d);}
+}
+// "Also on Facebook 3 today · X ⚠ paused": where this website's posts also go
+function renderNets(src,s){
+  const sum=s.outlets||{}, nw=s.networks||{}, tg=s.outlet_targets||[];
+  const list=Object.keys(NETS).filter(o=>tg.includes(o)||(sum[o]&&(sum[o].pending||sum[o].sending)));
+  const row=pq(src,'netrow'), el=pq(src,'nets'); row.hidden=!list.length; el.textContent=''; if(!list.length) return;
+  for(const o of list){
+    const d=sum[o]||{}, n=nw[o]||{}, last=d.last;
+    const a=document.createElement(last&&last.link?'a':'span'); a.className='nb'; a.textContent=NETS[o];
+    if(last&&last.link){ a.href=last.link; a.target='_blank'; a.rel='noopener'; a.title='Open the newest post there' }
+    const bits=[(d.today||0)+' today']; if(d.pending) bits.push(d.pending+' queued');
+    if(n.paused) bits.unshift('⚠ paused — fix in ⚙ Settings'); else if(n.hold) bits.push('next in '+dur(n.hold));
+    const sp=document.createElement('span'); sp.className=n.paused?'error':'mut'; sp.textContent=bits.join(' · ');
+    if(n.paused||n.hold) sp.title=n.paused||n.hold_reason||''; el.append(a,sp) }
 }
 // texts that only depend on the clock ("checked 2 min ago", "next post in ~30 s"): updated every second, no request
 function tick(){
@@ -593,7 +728,7 @@ function hover(key,ev){
 const SEEN_KEY='tpclone.attnSeen.v1', ATTN_SHOW=3; let attnTab=null, attnVisible=false, attnSig='', attnAll=false; const attnRows={}, fresh=new Set();
 function seenGet(){try{return JSON.parse(localStorage.getItem(SEEN_KEY)||'{}')||{}}catch(e){return {}}}
 function seenPut(o){try{localStorage.setItem(SEEN_KEY,JSON.stringify(o))}catch(e){}}
-const keyOf=r=>r.post_id+':'+r.status+':'+Math.round(r.flagged_at||0);
+const keyOf=r=>(r.net?r.net+':':'')+r.post_id+':'+r.status+':'+Math.round(r.flagged_at||0);
 function unseen(src,seen){const s=new Set(seen[src]||[]); return (attnRows[src]||[]).filter(r=>!s.has(keyOf(r)))}
 function markSeen(){            // what is on screen in the open tab counts as seen (shown with a small dot this time)
   if(!attnTab||!attnVisible||document.visibilityState!=='visible'||!$('view_set').hidden) return;
@@ -602,12 +737,18 @@ function markSeen(){            // what is on screen in the open tab counts as s
   if(news.length||(seen[attnTab]||[]).length!==cur.length){ seen[attnTab]=cur; seenPut(seen) }
 }
 function renderAttention(all){
-  if(all) for(const [src,s] of all) attnRows[src]=[...(s.uncertain||[]),...(s.failed||[])].sort((a,b)=>(b.flagged_at||0)-(a.flagged_at||0)||b.post_id-a.post_id);
+  if(all) for(const [src,s] of all) attnRows[src]=[...(s.uncertain||[]),...(s.failed||[]),...(s.outlet_attention||[]).map(r=>({...r,net:r.outlet}))]
+    .sort((a,b)=>(b.flagged_at||0)-(a.flagged_at||0)||b.post_id-a.post_id);
+  const nets=((lastAll||[])[0]||[,{}])[1].networks||{}, paused=Object.entries(nets).filter(([o,n])=>n.ready&&n.paused);
   if(!attnTab){const s0=seenGet(); attnTab=ACTIVE.find(src=>unseen(src,s0).length)||ACTIVE[0]}
   markSeen();
   const seen=seenGet();
-  const sig=JSON.stringify([attnTab,attnAll,ACTIVE.map(src=>[(attnRows[src]||[]).map(keyOf),unseen(src,seen).length]),[...fresh]]);
+  const sig=JSON.stringify([attnTab,attnAll,ACTIVE.map(src=>[(attnRows[src]||[]).map(keyOf),unseen(src,seen).length]),[...fresh],paused]);
   if(sig===attnSig) return; attnSig=sig;
+  const nb=$('attn_net'); nb.textContent=''; nb.hidden=!paused.length;
+  for(const [o,n] of paused){ const d=document.createElement('div'); d.append('⚠ '+NETS[o]+' is paused: '+n.paused+' ');
+    const b=document.createElement('button'); b.className='sm'; b.textContent='Fix in Settings'; b.onclick=()=>showView('set',o==='x'?'x':'fb');
+    d.append(b); nb.append(d) }
   const tabs=$('attn_tabs'); tabs.textContent='';
   for(const src of ACTIVE){
     const b=document.createElement('button'); b.className='tab'+(src===attnTab?' active':''); b.setAttribute('role','tab'); b.setAttribute('aria-selected',String(src===attnTab));
@@ -623,16 +764,18 @@ function renderAttention(all){
     const it=document.createElement('div'); it.className='item';
     const tx=document.createElement('div'); tx.className='itxt';
     if(fresh.has(keyOf(r))){const dt=document.createElement('span'); dt.className='dot'; dt.title='new'; tx.append(dt)}
-    const bd=document.createElement('span'); bd.className='badge '+r.status; bd.textContent=r.status;
+    const bd=document.createElement('span'); bd.className='badge '+r.status; bd.textContent=r.net?(NETS[r.net]+' '+r.status):r.status;
     const a=document.createElement('a'); a.href=r.url; a.target='_blank'; a.rel='noopener'; a.textContent=r.title||(src==='hpoi'?'HPOI item':'Post '+r.post_id);
     const er=document.createElement('div'); er.className='mut ierr';
     const hid=src==='hpoi'?((r.url||'').match(/hobby\/(\d+)/)||[])[1]:r.post_id;
     er.textContent=[hid?('#'+hid):'', r.flagged_at?('since '+fmtShort(r.flagged_at)):'', r.last_error||''].filter(Boolean).join(' · ');
     tx.append(bd,a,er);
     const ac=document.createElement('div'); ac.className='iact';
-    for(const [act,l] of [['posted','It is in the channel'],['retry','Send again'],['skip','Ignore']]){
+    const acts=r.net?[['posted','It is on '+NETS[r.net]],['retry','Send again'],['skip','Ignore']]:[['posted','It is in the channel'],['retry','Send again'],['skip','Ignore']];
+    for(const [act,l] of acts){
       const b=document.createElement('button'); b.className='sm'; b.textContent=l;
-      b.onclick=async()=>{ ac.querySelectorAll('button').forEach(x=>x.disabled=true); await api('/api/post/resolve',{id:r.post_id,action:act},src); refresh() };
+      b.onclick=async()=>{ ac.querySelectorAll('button').forEach(x=>x.disabled=true);
+        await (r.net?api('/api/outlet/resolve',{id:r.post_id,outlet:r.net,action:act},src):api('/api/post/resolve',{id:r.post_id,action:act},src)); refresh() };
       ac.append(b) }
     it.append(tx,ac); list.append(it);
   }
@@ -707,8 +850,14 @@ const F=[
   ['f_hon','hpoi_enabled','bool','hp'], ['f_hdelay','hpoi_post_delay_seconds','num','hp'], ['f_hpoll','hpoi_poll_interval_seconds','min','hp'], ['f_hinit','hpoi_initial_post_latest','num','hp'], ['f_hdaily','hpoi_daily_check','bool','hp'],
   ['f_tr','translator','text','hp'], ['f_key','translate_api_key','secret','hp'],
   ['f_urepo','update_repo','text','up'], ['f_ubranch','update_branch','text','up'], ['f_utoken','update_token','secret','up'],
+  ['f_tofb','to_facebook','bool','fb'], ['f_htofb','hpoi_to_facebook','bool','fb'], ['f_toig','to_instagram','bool','fb'], ['f_htoig','hpoi_to_instagram','bool','fb'],
+  ['f_fbdelay','facebook_delay_seconds','num','fb'], ['f_igdelay','instagram_delay_seconds','num','fb'],
+  ['f_tox','to_x','bool','x'], ['f_htox','hpoi_to_x','bool','x'], ['f_xdelay','x_delay_seconds','num','x'],
+  ['f_xkey','x_api_key','secret','x'], ['f_xsecret','x_api_secret','secret','x'], ['f_xtoken','x_access_token','secret','x'], ['f_xtsecret','x_access_secret','secret','x'],
 ];
 const TG_KEYS=['telegram_bot_token','telegram_chat_id','hpoi_chat_id'];
+const X_KEYS=['x_api_key','x_api_secret','x_access_token','x_access_secret'];
+const NETS={facebook:'Facebook',instagram:'Instagram',x:'X'};
 let SV=null, ORIG={}, settingsLoaded=false, dataDir='', curSec='tg';
 function readField([id,key,kind]){
   const el=$(id);
@@ -749,12 +898,12 @@ async function loadSettings(force){
   const need=!!v.hpoi_enabled!==!!v.hpoi_available;                                  // saved on/off differs from what runs now
   $('hp_restart').hidden=!need; $('restart_now').hidden=!v.can_restart;
   $('hp_restart_txt').textContent=(v.hpoi_enabled?'HPOI is switched on but not running yet.':'HPOI is switched off but still running.')+(v.can_restart?'':' Close the app and start it again.');
-  updateDirty(); return v;
+  renderNetSettings(v); updateDirty(); return v;
 }
 function showSec(sec){
   curSec=sec;
   document.querySelectorAll('#setnav button').forEach(b=>b.classList.toggle('on',b.dataset.sec===sec));
-  for(const s of ['tg','tp','hp','bk','up']) $('sec_'+s).hidden=(s!==sec);
+  for(const s of ['tg','tp','hp','fb','x','bk','up']) $('sec_'+s).hidden=(s!==sec);
   history.replaceState(null,'','#settings/'+sec);
 }
 function showView(v,sec){
@@ -785,6 +934,7 @@ async function saveSettings(){
   if(!r||r.error||!r.saved){ toast('❌ Not saved: '+((r&&r.error)||'unknown error'),true); return }
   await loadSettings(true); refresh(); toast('✓ Saved');
   if(TG_KEYS.some(k=>k in ch)) checkConnection();
+  if(X_KEYS.some(k=>k in ch)) checkNet('x');
 }
 $('save').onclick=saveSettings; $('discard').onclick=()=>loadSettings(true);
 
@@ -829,6 +979,64 @@ $('restart_now').onclick=async()=>{
 };
 document.querySelectorAll('.copy-dir').forEach(b=>b.onclick=async()=>{
   try{ await navigator.clipboard.writeText(dataDir); toast('✓ Copied: '+dataDir) }catch(e){ prompt('Copy this path:',dataDir) } });
+
+// ---- Facebook / Instagram / X (settings) ----------------------------------------------------------------------
+function netStat(id,n,text){
+  const el=$(id), bad=n.ready&&n.paused; el.className='sd'+(bad?' error':n.ready?' good':'');
+  el.textContent=bad?('⚠ Paused: '+n.paused+(n.account?(' (account '+n.account+')'):'')):text;
+  if(n.ready&&!bad&&n.hold) el.textContent+=' — waiting '+dur(n.hold)+(n.hold_reason?(' ('+n.hold_reason+')'):'');
+}
+function renderNetSettings(v){
+  const n=v.networks||{}, fb=n.facebook||{}, ig=n.instagram||{}, x=n.x||{};
+  netStat('fb_stat',fb,fb.ready?('✓ Connected to the Page “'+(v.fb_page_name||v.fb_page_id)+'”'):'Not connected yet — see “Connect your Page” below.');
+  netStat('ig_stat',ig,ig.ready?('✓ Connected: @'+(v.ig_username||v.ig_user_id)):(fb.ready
+    ?'No Instagram account is linked to this Page. Make Instagram a professional account, link it to the Page, then connect again.'
+    :'Connect your Facebook Page first (Instagram posts through it).'));
+  netStat('x_stat',x,x.ready?(v.x_username?('✓ Connected as @'+v.x_username):'Keys saved — press “Check connection”.'):'Not connected yet — paste the 4 keys below.');
+  $('fb_chk').hidden=!fb.ready; $('ig_chk').hidden=!ig.ready; $('x_chk').hidden=!x.ready;
+  $('fb_off_row').hidden=!fb.ready; $('x_off_row').hidden=!x.ready;
+  for(const [id,ok] of [['f_tofb',fb.ready],['f_htofb',fb.ready],['f_toig',ig.ready],['f_htoig',ig.ready],['f_tox',x.ready],['f_htox',x.ready]]){
+    const el=$(id), l=el.closest('label'); el.disabled=!ok; l.classList.toggle('dis',!ok); l.title=ok?'':'Connect first' }
+  $('fb_conn').open=!fb.ready; $('x_how').open=!x.ready;
+  // not connected yet: the connect steps come first; once connected they move to the bottom
+  const fbA=fb.ready?$('fb_off_row'):$('fb_what'), xA=x.ready?$('x_off_row'):$('x_what');
+  fbA.parentNode.insertBefore($('fb_conn'),fbA); xA.parentNode.insertBefore($('x_keys'),xA);
+  $('fb_conn_sum').textContent=fb.ready?'Connect again, or switch to another Page':'Connect your Page (one time, about 15 minutes)';
+  if(!$('fbc_app').value) $('fbc_app').value=v.fb_app_id||'';
+  $('fbc_secret_d').textContent=v.fb_app_secret?('Saved (ends with '+v.fb_app_secret.slice(-4)+') — leave empty to keep it.'):'';
+}
+async function refreshNets(){ try{ const v=await api('/api/settings'); SV=v; renderNetSettings(v) }catch(e){} }
+async function checkNet(o){
+  const id={facebook:'fb_stat',instagram:'ig_stat',x:'x_stat'}[o], el=$(id); el.className='sd'; el.textContent='Checking…';
+  let r; try{ r=await api('/api/outlets/check',{outlet:o}) }catch(e){ r={error:'the app is not reachable'} }
+  await refreshNets(); refresh();
+  $(id).className='sd '+(r.ok?'good':'error'); $(id).textContent=r.ok?('✅ '+r.text):('❌ '+r.error);
+}
+$('fb_chk').onclick=()=>checkNet('facebook'); $('ig_chk').onclick=()=>checkNet('instagram'); $('x_chk').onclick=()=>checkNet('x');
+async function connectFb(pageId){
+  const out=$('fb_conn_out'), go=$('fbc_go'); out.className='sd'; out.textContent='Connecting…'; go.disabled=true;
+  let r; try{ r=await api('/api/outlets/facebook/connect',{app_id:$('fbc_app').value.trim(),app_secret:$('fbc_secret').value.trim(),
+    user_token:$('fbc_token').value.trim(),page_id:pageId||''}) }catch(e){ r={error:'the app is not reachable'} }
+  go.disabled=false; const box=$('fb_pages'); box.hidden=true; box.textContent='';
+  if(r.error){ out.className='sd error'; out.textContent='❌ '+r.error; return }
+  if(r.pages){ out.textContent='Your token sees several Pages. Which one should the app post to?'; box.hidden=false;
+    for(const pg of r.pages){ const b=document.createElement('button'); b.type='button'; b.className='sm';
+      b.textContent=pg.name+(pg.instagram?(' (with Instagram @'+pg.instagram+')'):''); b.onclick=()=>connectFb(pg.id); box.append(b) }
+    return }
+  $('fbc_token').value=''; $('fbc_secret').value='';
+  out.className='sd '+(r.missing&&r.missing.length?'error':'good');
+  out.textContent='✅ Connected to “'+r.page+'”'+(r.instagram?(' and Instagram @'+r.instagram):' (no Instagram account is linked to this Page)')+'.'
+    +(r.missing&&r.missing.length?(' ⚠ Missing permission: '+r.missing.join(', ')+' — make a new token with it ticked and connect again.'):' Now tick what to post above and press Save changes.');
+  await refreshNets(); refresh();
+}
+$('fbc_go').onclick=()=>connectFb('');
+async function disconnectNet(o,label){
+  if(!confirm('Disconnect '+label+'? Posts will no longer go there.')) return;
+  const r=await api('/api/outlets/disconnect',{outlet:o}).catch(()=>({error:'the app is not reachable'}));
+  if(r.error){ toast('❌ '+r.error,true); return }
+  await loadSettings(true); refresh(); toast('✓ '+label+' disconnected');
+}
+$('fb_off').onclick=()=>disconnectNet('facebook','Facebook & Instagram'); $('x_off').onclick=()=>disconnectNet('x','X');
 
 // ---- backups -----------------------------------------------------------------------------------------------------
 function renderBackups(all){

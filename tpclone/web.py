@@ -12,8 +12,9 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import tpclone
+from . import outlets as outlets_mod
 from . import render, updater
-from .config import UI_FIELDS, _coerce, save_ui_settings
+from .config import SECRET_FIELDS, UI_FIELDS, _coerce, save_ui_settings
 from .engine import Engine, Worker
 from .telegram import TelegramError
 
@@ -43,8 +44,10 @@ class Jobs:
         return jid
 
 
-def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | None = None) -> ThreadingHTTPServer:
-    """`sources` = extra {name: (Engine, Worker)} (e.g. "hpoi"); every API call may carry ?source=<name>."""
+def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | None = None,
+                outlets=None) -> ThreadingHTTPServer:
+    """`sources` = extra {name: (Engine, Worker)} (e.g. "hpoi"); every API call may carry ?source=<name>.
+    `outlets` = the OutletRunner (Facebook / Instagram / X), if any."""
     s = engine.s
     all_sources = {"toypeople": (engine, worker), **(sources or {})}
 
@@ -95,15 +98,16 @@ def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | No
             "watch": db.kv_json("discover_status"), "listing": db.kv_json("listing_info"), "listing_max": db.kv_get("listing_max_id"), "poll_every": s.poll_interval_seconds, "data_dir": str(s.data_dir.resolve()), "probe": db.kv_get("probe_ok"), "version": tpclone.code_version(), "code_dir": tpclone.__path__[0], "update": db.kv_json("update_info"),
             "sources": list(all_sources), "today": db.today_counts(since), "boot": BOOT,
             "daily": db.kv_json("daily_check_info"), "daily_on": bool(s.daily_check),
+            "outlets": db.outlet_summary(since), "outlet_targets": outlets_mod.targets(s),
+            "outlet_attention": db.outlet_attention(50), "networks": outlets.public() if outlets else {},
         }
 
     def settings_view() -> dict:
         out = {k: getattr(s, k) for k in UI_FIELDS}
-        t = s.telegram_bot_token
-        out["telegram_bot_token"] = ("••••••" + t[-4:]) if t else ""
-        for k in ("update_token", "translate_api_key"):
+        for k in SECRET_FIELDS:                            # passwords never leave the app: only their last 4 characters
             v = getattr(s, k)
             out[k] = ("••••••" + v[-4:]) if v else ""
+        out["networks"] = outlets.public() if outlets else {}
         out["hpoi_available"] = "hpoi" in all_sources
         out["data_dir"] = str(s.data_dir.resolve())
         out["can_restart"] = restart is not None
@@ -118,18 +122,25 @@ def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | No
             if k not in body:
                 continue
             v = body[k]
-            if k in ("telegram_bot_token", "update_token", "translate_api_key") and str(v).startswith("•"):
+            if k in SECRET_FIELDS and str(v).startswith("•"):
                 continue                                   # unchanged (masked) token
             if k == "telegram_bot_token" and not str(v).strip():
                 continue
             changes[k] = _coerce(getattr(s, k), v)
         if "post_delay_seconds" in changes and changes["post_delay_seconds"] < s.MIN_DELAY:
             changes["post_delay_seconds"] = s.MIN_DELAY
+        for k in ("facebook_delay_seconds", "instagram_delay_seconds", "x_delay_seconds"):
+            if k in changes and changes[k] < 10:
+                changes[k] = 10.0
+        if any(k.startswith("x_") and k in SECRET_FIELDS for k in changes):
+            changes["x_username"] = ""                    # new keys: the account name is read again by the check
         for k, v in changes.items():
             setattr(s, k, v)
         save_ui_settings(s, changes)
         for eng, _ in all_sources.values():
             eng.apply_settings()
+        if outlets and any(k.startswith("x_") and k in SECRET_FIELDS for k in changes):
+            outlets.resume("x")
         res = {"saved": True, "configured": s.telegram_ready}
         if engine.tg:
             try:
@@ -137,6 +148,38 @@ def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | No
             except Exception as e:  # noqa: BLE001
                 res["telegram_error"] = str(e)
         return res
+
+    def connect_facebook(body: dict) -> dict:
+        """Settings → Facebook & Instagram → Connect. With several Pages and none chosen yet, the list is returned
+        (names only: tokens never go to the browser) and the page asks which one."""
+        app_id = str(body.get("app_id") or s.fb_app_id).strip()
+        secret = str(body.get("app_secret") or "").strip()
+        secret = s.fb_app_secret if (not secret or secret.startswith("•")) else secret
+        try:
+            pages = outlets_mod.connect_facebook(app_id, secret, str(body.get("user_token") or ""),
+                                                 outlets.client if outlets else None)
+        except outlets_mod.OutletError as e:
+            return {"error": str(e)}
+        want = str(body.get("page_id") or "")
+        page = next((p for p in pages if p["id"] == want), None) or (pages[0] if len(pages) == 1 else None)
+        if page is None:
+            return {"pages": [{"id": p["id"], "name": p["name"], "instagram": p["ig_username"]} for p in pages]}
+        ch = {"fb_app_id": app_id, "fb_app_secret": secret, "fb_page_id": page["id"], "fb_page_name": page["name"],
+              "fb_page_token": page["token"], "ig_user_id": page["ig_id"], "ig_username": page["ig_username"]}
+        for k, v in ch.items():
+            setattr(s, k, v)
+        save_ui_settings(s, ch)
+        for e2, _ in all_sources.values():
+            e2.apply_settings()
+        if outlets:
+            outlets.resume("facebook")
+            outlets.resume("instagram")
+        need = {"pages_manage_posts"} | ({"instagram_basic", "instagram_content_publish"} if page["ig_id"] else set())
+        got = outlets_mod.token_scopes(app_id, secret, page["token"], outlets.client if outlets else None)
+        engine.db.log("info", f"Facebook Page “{page['name']}” connected"
+                              + (f" with Instagram @{page['ig_username']}" if page["ig_username"] else ""))
+        return {"ok": True, "page": page["name"], "instagram": page["ig_username"],
+                "missing": sorted(need - got) if got is not None else []}
 
     def preview(engine: Engine, target: str, prog) -> dict:
         s = engine.s
@@ -414,6 +457,47 @@ def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | No
                     ids = [int(x) for x in body.get("ids", [])]
                     n = eng.enqueue_date(d, ids)
                     return self._json({"queued": n, "worker": wk.state()})
+                if path == "/api/outlets/check":      # Settings: does the Facebook / Instagram / X connection work?
+                    o = body.get("outlet")
+                    if outlets is None or o not in outlets_mod.OUTLETS:
+                        return self._json({"error": "unknown network"}, 400)
+                    return self._json(outlets.check(o))
+                if path == "/api/outlets/facebook/connect":
+                    return self._json(connect_facebook(body))
+                if path == "/api/outlets/disconnect":
+                    o = body.get("outlet")
+                    keys = {"facebook": ("fb_page_id", "fb_page_name", "fb_page_token", "ig_user_id", "ig_username",
+                                         "to_facebook", "to_instagram", "hpoi_to_facebook", "hpoi_to_instagram"),
+                            "x": ("x_api_key", "x_api_secret", "x_access_token", "x_access_secret", "x_username",
+                                  "to_x", "hpoi_to_x")}.get(o)
+                    if not keys:
+                        return self._json({"error": "unknown network"}, 400)
+                    ch = {k: (False if isinstance(getattr(s, k), bool) else "") for k in keys}
+                    for k, v in ch.items():
+                        setattr(s, k, v)
+                    save_ui_settings(s, ch)
+                    for e2, _ in all_sources.values():
+                        e2.apply_settings()
+                    engine.db.log("info", f"{'Facebook & Instagram' if o == 'facebook' else 'X'} disconnected (by you)")
+                    return self._json({"ok": True})
+                if path == "/api/outlet/resolve":     # a Facebook / Instagram / X copy that failed or is uncertain
+                    pid, o, action = int(body["id"]), str(body.get("outlet")), body.get("action")
+                    if eng.db.outlet_get(pid, o) is None:
+                        return self._json({"error": "no such post"}, 404)
+                    name = (eng.db.get(pid) or {}).get("title") or pid
+                    net = outlets_mod.NAMES.get(o, o)
+                    if action == "retry":
+                        eng.db.outlet_set(pid, o, "pending", None, attempts=0, not_before=0, created_at=time.time())
+                        eng.db.log("info", f"{net}: queued again (by you): {name}")
+                    elif action == "posted":
+                        eng.db.outlet_set(pid, o, "posted", None)
+                        eng.db.log("info", f"{net}: marked as already there (by you): {name}")
+                    elif action == "skip":
+                        eng.db.outlet_set(pid, o, "skipped", "ignored (by you)")
+                        eng.db.log("info", f"{net}: will not be posted (by you): {name}")
+                    else:
+                        return self._json({"error": "bad action"}, 400)
+                    return self._json({"ok": True})
                 if path == "/api/post/resolve":   # uncertain / failed rows
                     pid, action = int(body["id"]), body["action"]
                     name = (eng.db.get(pid) or {}).get("title") or pid

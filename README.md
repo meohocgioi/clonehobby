@@ -39,6 +39,7 @@ For 24/7 operation on a VPS use `deploy/tpclone.service` (systemd restarts it an
 | **Delay / rate limit** | `POST_DELAY_SECONDS` (default 45 s, floor 3 s, persisted across restarts, ±10 % jitter) + optional `MAX_POSTS_PER_HOUR`. Telegram's published limits are ~20 messages/min per chat and 30/s overall, so 45 s is far below them. `429 retry_after` is always honoured and holds the whole queue. |
 | **Repost by date** | Dashboard → pick a date → *Check date*. Or `python -m tpclone repost-date 2026-09-25 [--run]`. Already-published posts are never sent again; if the site later adds posts to a date you already published you get: *"You have already published all posts from 2026-09-25. However, the website has added N new post(s) since then. Would you like to publish only the new posts?"* |
 | **>50 photos** | A rich message holds ≤ 50 media. The **cover counts as one**. If the gallery doesn't fit, the first photos stay original and the **last slot is one collage image** of the remaining photos (built with Pillow). The renderer asserts it never emits more than `MAX_MEDIA` (≤ 50) images. |
+| **Facebook / Instagram / X** | Optional: after Telegram, each post also goes to a Facebook Page (one post with up to 30 photos via unpublished photos + `/feed` `attached_media`), Instagram (carousel of up to 10 square JPEGs, hosted as hidden Page photos for Instagram to fetch) and X (`/2/media/upload` + `/2/tweets`, OAuth 1.0a, up to 4 photos, ≤ 280 weighted characters, no link). Own queue (`outlet_posts`), pace and error handling per network: broken connection → that network pauses; rate limit → waits; repeated errors / unanswered publish → *Needs your attention*. Setup in ⚙ Settings (see START-HERE). |
 | **Cloudflare** | The site sits behind Cloudflare. `FETCH_BACKEND=auto` tries plain HTTP, then FlareSolverr (`FLARESOLVERR_URL`) or a real Chromium (`pip install playwright && playwright install chromium`). |
 
 ## Things you should know (honest limitations)
@@ -51,6 +52,9 @@ For 24/7 operation on a VPS use `deploy/tpclone.service` (systemd restarts it an
   ```json
   {"title":"h1.post-title","body":".post-content","tags":".tag-list a","scheduled":".release","credit":".via","date":"time.date","remove":[".ad"]}
   ```
+* **Facebook / Instagram / X are not tested against real accounts** (none available here): the requests follow Meta's Graph API
+  (v25.0) and X API v2 documentation and are covered by mock tests (the OAuth 1.0a signature matches X's documented example).
+  Use ⚙ Settings → *Check connection* after connecting.
 * **Not tested against real Telegram** (no bot token here). The payload follows the Bot API spec for
   `sendRichMessage` / `<details>` / `<tg-collage>` and is covered by mock tests. `send-test` is the quick real check.
 * **"Scan the Telegram channel" is impossible with a bot** – the Bot API cannot read channel history. The ledger is the

@@ -8,7 +8,7 @@ import time
 from typing import Callable
 
 from . import media as media_mod
-from . import render, site, updater
+from . import outlets, render, site, updater
 from .config import Settings
 from .db import DB
 from .fetch import ChallengeError, Fetcher, FetchError, NotFound
@@ -40,6 +40,7 @@ class Engine:
         self.bg_pause_until = 0.0       # set when Telegram says 'slow down'
         self._probe_lock = threading.Lock()
         self._probe_last = 0.0
+        self._published: dict[int, site.Article] = {}   # post -> what was sent (handed to Facebook / Instagram / X)
         self._revive_fixed_failures()
         self.db._x("UPDATE posts SET status='failed', last_error=?, flagged_at=? "
                    "WHERE status='pending' AND last_error LIKE 'article not found%' AND attempts >= ?",
@@ -508,6 +509,7 @@ class Engine:
         If Telegram cannot use a picture / GIF / video (the message is not sent then), the next way is tried - see
         _tries. Every refusal is written to the activity log with Telegram's own words."""
         art = self.fetch_article(post_id)
+        self._published[post_id] = art
         if not art.title or not (art.paragraphs or art.images or art.cover):
             raise FetchError(f"parse produced an empty post (title={art.title!r}, paragraphs={len(art.paragraphs)}, "
                              f"images={len(art.images)}) - check selectors with 'tpclone inspect {post_id}'")
@@ -564,6 +566,7 @@ class Engine:
         pid = row["post_id"]
         if not self.db.mark_sending(pid):
             return "skipped"
+        self._published.pop(pid, None)
         guard = None if force else self._already_in_channel(pid)
         if guard:
             return guard
@@ -624,8 +627,23 @@ class Engine:
         self.pacer.mark_sent()
         self._calibrate_probe(mid)
         row = self.db.get(pid) or {}
-        self.db.log("info", f"posted {pid}: {row.get('title') or ''}")
+        more = self.queue_outlets(pid, self._published.pop(pid, None))
+        self.db.log("info", f"posted {pid}: {row.get('title') or ''}"
+                            + (f" (next: {', '.join(outlets.NAMES[o] for o in more)})" if more else ""))
         return "posted"
+
+    def queue_outlets(self, pid: int, art: site.Article | None = None) -> list[str]:
+        """A post that reached Telegram also goes to the networks switched on for this website (Settings). The post as
+        it was sent is kept with it, so the website is not asked again (without it, the outlet fetches it itself)."""
+        try:
+            want = outlets.targets(self.s)
+            if not want:
+                return []
+            payload = json.dumps(art.to_dict(), ensure_ascii=False) if art else None
+            return self.db.outlet_queue(pid, want, payload)
+        except Exception as e:  # noqa: BLE001  (never disturb Telegram posting)
+            log.warning("could not queue post %s for the other networks: %s", pid, e)
+            return []
 
     # ------------------------------------------------------------------ update check
     def maybe_check_update(self, every: float = 43200.0) -> None:
@@ -754,6 +772,7 @@ class Engine:
         if len(candidates) == len(rows):                    # exactly one unknown message of ours per uncertain post
             for r, m in zip(rows, candidates):
                 self.db.mark_posted(r["post_id"], m)
+                self.queue_outlets(r["post_id"])
                 self.db.log("info", f"post {r['post_id']}: found in the channel as message {m} -> marked as posted")
             return True
         self.db.log("warn", f"uncertain posts: found {len(candidates)} unknown message(s) for {len(rows)} uncertain "

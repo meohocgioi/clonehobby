@@ -73,6 +73,28 @@ class Settings:
     hpoi_daily_check: bool = True
     translator: str = "google_free"     # google_free | google_cloud
     translate_api_key: str = ""         # only for google_cloud
+    # ---- also post to a Facebook Page, Instagram and X (same English text as Telegram) ----
+    fb_app_id: str = ""                 # the user's own Meta app (developers.facebook.com)
+    fb_app_secret: str = ""
+    fb_page_id: str = ""                # filled in by "Connect" in Settings
+    fb_page_name: str = ""
+    fb_page_token: str = ""             # Page access token (does not expire when made from a long-lived user token)
+    ig_user_id: str = ""                # the Instagram professional account linked to that Page
+    ig_username: str = ""
+    x_api_key: str = ""                 # X developer portal -> your app -> Keys and tokens (OAuth 1.0a)
+    x_api_secret: str = ""
+    x_access_token: str = ""
+    x_access_secret: str = ""
+    x_username: str = ""
+    to_facebook: bool = False           # Toy-People posts also go to ...
+    to_instagram: bool = False
+    to_x: bool = False
+    hpoi_to_facebook: bool = False      # HPOI posts also go to ...
+    hpoi_to_instagram: bool = False
+    hpoi_to_x: bool = False
+    facebook_delay_seconds: float = 60.0     # least time between two posts on each network
+    instagram_delay_seconds: float = 300.0
+    x_delay_seconds: float = 60.0
     user_agent: str = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -107,7 +129,14 @@ UI_FIELDS = ("telegram_bot_token", "telegram_chat_id", "post_delay_seconds", "po
              "initial_post_latest", "hashtag_style", "media_mode", "show_more_label", "show_more_style", "show_more_emoji", "paragraph_spacing",
              "max_posts_per_hour", "site_tz", "update_repo", "update_branch", "update_token",
              "hpoi_enabled", "hpoi_chat_id", "hpoi_poll_interval_seconds", "hpoi_post_delay_seconds",
-             "hpoi_initial_post_latest", "translator", "translate_api_key", "daily_check", "hpoi_daily_check")
+             "hpoi_initial_post_latest", "translator", "translate_api_key", "daily_check", "hpoi_daily_check",
+             "fb_app_id", "fb_app_secret", "fb_page_id", "fb_page_name", "fb_page_token", "ig_user_id", "ig_username",
+             "x_api_key", "x_api_secret", "x_access_token", "x_access_secret", "x_username",
+             "to_facebook", "to_instagram", "to_x", "hpoi_to_facebook", "hpoi_to_instagram", "hpoi_to_x",
+             "facebook_delay_seconds", "instagram_delay_seconds", "x_delay_seconds")
+# Settings that are passwords: the dashboard only ever sees "••••••" + the last 4 characters
+SECRET_FIELDS = ("telegram_bot_token", "update_token", "translate_api_key", "fb_app_secret", "fb_page_token",
+                 "x_api_key", "x_api_secret", "x_access_token", "x_access_secret")
 
 
 def app_dir() -> Path:

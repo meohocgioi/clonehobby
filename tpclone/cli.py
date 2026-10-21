@@ -21,6 +21,7 @@ from .db import DB
 from .engine import Engine, Worker
 from .fetch import Fetcher
 from .hpoi import HpoiEngine
+from .outlets import OutletRunner
 from .site import parse_article, load_selectors
 from .telegram import Telegram, TelegramError
 from .web import make_server
@@ -42,10 +43,12 @@ def _post_id(arg: str) -> int:
     return int(m.group(1))
 
 
-def restart_process(worker: Worker, workers: list | None = None) -> None:
+def restart_process(worker: Worker, workers: list | None = None, outlets: OutletRunner | None = None) -> None:
     """Apply an update: let the in-flight post finish, then start again (same command, new code)."""
     for w in (workers or [worker]):
         w.halt()           # keeps the saved Start/Stop state, so AUTO_RESUME continues exactly as before
+    if outlets:
+        outlets.stop()
     logging.info("restarting to apply the update")
     if sys.platform == "win32" or getattr(sys, "frozen", False):
         os._exit(0)        # the Start-Windows.bat loop starts it again
@@ -68,7 +71,10 @@ def cmd_run(s: Settings, a) -> None:
         hp_worker = Worker(hp_engine)
         sources["hpoi"] = (hp_engine, hp_worker)
         workers.append(hp_worker)
-    server = make_server(engine, worker, restart=lambda: restart_process(worker, workers), sources=sources)
+    outlets = OutletRunner(s, {"toypeople": (engine, worker), **sources}, engine.db)    # Facebook / Instagram / X
+    outlets.start()
+    server = make_server(engine, worker, restart=lambda: restart_process(worker, workers, outlets), sources=sources,
+                         outlets=outlets)
     stopping = threading.Event()
 
     def shutdown(*_):
@@ -78,6 +84,7 @@ def cmd_run(s: Settings, a) -> None:
         logging.info("shutting down: letting the in-flight post finish; progress is already saved")
         for w in workers:
             w.halt()
+        outlets.stop(wait=30)
         threading.Thread(target=server.shutdown, daemon=True).start()
 
     for sig in (signal.SIGINT, signal.SIGTERM):

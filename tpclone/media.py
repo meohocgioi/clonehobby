@@ -49,17 +49,21 @@ def upload_name(kind: str, data: bytes) -> tuple[str, str]:
     return ".jpg", "image/jpeg"
 
 
-def prepare_photo(data: bytes, max_side: int = 2560) -> bytes:
-    """Normalise to a Telegram-acceptable JPEG (flatten alpha, cap size, fix extreme ratios)."""
+def _rgb(data: bytes) -> Image.Image:
+    """Decoded picture, upright, transparency flattened onto white (the first frame of a GIF)."""
     im = Image.open(io.BytesIO(data))
     im = ImageOps.exif_transpose(im)
     if im.mode in ("RGBA", "LA", "P"):
         im = im.convert("RGBA")
         bg = Image.new("RGB", im.size, (255, 255, 255))
         bg.paste(im, mask=im.split()[-1])
-        im = bg
-    else:
-        im = im.convert("RGB")
+        return bg
+    return im.convert("RGB")
+
+
+def prepare_photo(data: bytes, max_side: int = 2560, max_bytes: int = MAX_UPLOAD_BYTES) -> bytes:
+    """Normalise to a Telegram-acceptable JPEG (flatten alpha, cap size, fix extreme ratios)."""
+    im = _rgb(data)
     w, h = im.size
     if max(w, h) > max_side:
         k = max_side / max(w, h)
@@ -73,16 +77,32 @@ def prepare_photo(data: bytes, max_side: int = 2560) -> bytes:
     if w + h > MAX_SIDE_SUM:
         k = MAX_SIDE_SUM / (w + h)
         im = im.resize((int(w * k), int(h * k)), Image.LANCZOS)
+    return _jpeg(im, max_bytes)
+
+
+def _jpeg(im: Image.Image, max_bytes: int) -> bytes:
     for q in (90, 82, 74, 66, 55):
         buf = io.BytesIO()
         im.save(buf, "JPEG", quality=q, optimize=True)
-        if buf.tell() <= MAX_UPLOAD_BYTES:
+        if buf.tell() <= max_bytes:
             return buf.getvalue()
-    k = 0.7  # still too big: shrink
-    im = im.resize((int(im.width * k), int(im.height * k)), Image.LANCZOS)
-    buf = io.BytesIO()
-    im.save(buf, "JPEG", quality=70, optimize=True)
-    return buf.getvalue()
+    while True:                          # still too big: shrink
+        im = im.resize((max(1, int(im.width * 0.7)), max(1, int(im.height * 0.7))), Image.LANCZOS)
+        buf = io.BytesIO()
+        im.save(buf, "JPEG", quality=70, optimize=True)
+        if buf.tell() <= max_bytes or im.width < 200:
+            return buf.getvalue()
+
+
+def square_photo(data: bytes, side: int = 1080, bg=(255, 255, 255)) -> bytes:
+    """The whole picture centred on a white square (Instagram crops every slide of a carousel to the shape of the first
+    one, so all slides are made square and nothing of a figure is cut off)."""
+    im = _rgb(data)
+    k = side / max(im.size)
+    im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.LANCZOS)
+    canvas = Image.new("RGB", (side, side), bg)
+    canvas.paste(im, ((side - im.width) // 2, (side - im.height) // 2))
+    return _jpeg(canvas, 8 * 1024 * 1024)
 
 
 def make_collage(images: list[bytes], canvas_w: int = 2400, gap: int = 6, row_h: int | None = None) -> bytes:
