@@ -94,6 +94,7 @@ def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | No
             "last_backup": float(db.kv_get("last_backup_ts", "0") or 0) or None,
             "watch": db.kv_json("discover_status"), "listing": db.kv_json("listing_info"), "listing_max": db.kv_get("listing_max_id"), "poll_every": s.poll_interval_seconds, "data_dir": str(s.data_dir.resolve()), "probe": db.kv_get("probe_ok"), "version": tpclone.code_version(), "code_dir": tpclone.__path__[0], "update": db.kv_json("update_info"),
             "sources": list(all_sources), "today": db.today_counts(since), "boot": BOOT,
+            "daily": db.kv_json("daily_check_info"), "daily_on": bool(s.daily_check),
         }
 
     def settings_view() -> dict:
@@ -424,6 +425,7 @@ def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | No
                         eng.db.log("info", f"queued again (by you): {name}")
                     elif action == "skip":
                         eng.db.reset_status(pid, "skipped")
+                        eng.db._x("UPDATE posts SET source='user-skip' WHERE post_id=?", (pid,))   # the daily check respects it
                         eng.db.log("info", f"will not be posted automatically (by you): {name}")
                     else:
                         return self._json({"error": "bad action"}, 400)

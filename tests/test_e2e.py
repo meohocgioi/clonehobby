@@ -295,3 +295,12 @@ def test_restart_button_restarts_the_app(tmp_path):
         assert "token" in post(base, "/api/telegram/check")["error"]       # Telegram not set up yet
     finally:
         api.shutdown()
+
+
+def test_ignore_is_remembered_as_your_choice(stack):
+    e, w, db, base = stack
+    db.upsert_seen(42, e.post_url(42), None, "failed", "new")
+    assert post(base, "/api/post/resolve", {"id": 42, "action": "skip"})["ok"]
+    assert db.get(42)["status"] == "skipped" and db.get(42)["source"] == "user-skip"     # the daily check leaves it alone
+    st = httpx.get(base + "/api/status").json()
+    assert st["daily_on"] is True and "daily" in st

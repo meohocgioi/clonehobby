@@ -1041,6 +1041,49 @@ class Engine:
                        "messages": msgs.get(p, [])} for p in sorted(found)],
         }
 
+    DAILY_CHECK_HOUR = 6        # website time; by then toy-people's daily list of posts has been rebuilt
+
+    def maybe_daily_check(self, now=None) -> dict | None:
+        """Once a day (from DAILY_CHECK_HOUR, website time): check every post of yesterday - see daily_check."""
+        if not self.s.daily_check:
+            return None
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        now = now or datetime.now(ZoneInfo(self.s.site_tz))
+        if now.hour < self.DAILY_CHECK_HOUR:
+            return None
+        day = (now.date() - timedelta(days=1)).isoformat()
+        if self.db.kv_get("daily_check_day") == day:
+            return None
+        if time.time() - float(self.db.kv_get("daily_check_try", "0") or 0) < 1800:
+            return None                                      # it failed a moment ago (no internet?): again in 30 min
+        self.db.kv_set("daily_check_try", time.time())
+        info = self.daily_check(day)
+        self.db.kv_set("daily_check_day", day)
+        return info
+
+    def daily_check(self, day: str) -> dict:
+        """The date check, done by the app itself: every post of `day` on the website is compared with the ledger and
+        the channel; posts that were never published are queued. Posts you chose not to post ('Ignore', "don't
+        auto-post"), posts that were on the website before the app was first started, and posts waiting for a decision
+        in 'Needs your attention' are left alone."""
+        plan = self.plan_date(day)
+        missing = []
+        for pid in plan["to_publish"]:
+            row = self.db.get(pid) or {}
+            if row.get("status") in ("known", "skipped") and row.get("source") not in ("baseline", "user-skip"):
+                missing.append(pid)
+        queued = [p for p in sorted(missing) if self.db.enqueue(p, 1, "daily-check")]
+        info = {"day": day, "total": plan["total"], "published": len(plan["published"]), "queued": len(queued),
+                "ts": time.time()}
+        self.db.kv_set("daily_check_info", json.dumps(info))
+        if queued:
+            self.db.log("warn", f"daily check of {day}: {len(queued)} post(s) were missing from the channel - queued: "
+                                + ", ".join(str(p) for p in queued[:10]))
+        else:
+            self.db.log("info", f"daily check of {day}: {plan['total']} post(s) on the website, nothing missing")
+        return info
+
     def enqueue_date(self, date: str, post_ids: list[int]) -> int:
         n = 0
         for p in sorted(post_ids):
@@ -1131,6 +1174,11 @@ class Worker:
                     except Exception as ex:
                         log.exception("discovery failed")
                         self.db.log("error", f"discovery failed: {ex}")
+                    try:
+                        e.maybe_daily_check()
+                    except Exception as ex:   # noqa: BLE001  (tried again in 30 min)
+                        log.warning("daily check failed: %s", ex)
+                        self.db.log("warn", f"daily check of yesterday's posts failed ({ex}) - trying again in 30 min")
                     self.next_poll = time.time() + self.s.poll_interval_seconds
                 row = self.db.next_pending()
                 if row is None:

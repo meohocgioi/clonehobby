@@ -229,6 +229,7 @@ def derive_settings(main: Settings) -> Settings:
         poll_interval_seconds=max(60, main.hpoi_poll_interval_seconds),
         post_delay_seconds=main.hpoi_post_delay_seconds,
         initial_post_latest=main.hpoi_initial_post_latest,
+        daily_check=main.hpoi_daily_check,
         hashtag_style="hashtag",                       # clickable # tags, as requested for this source
         media_mode="upload",                           # hpoi's image server serves WebP behind '.jpg' links and is slow
                                                        # at times: the app downloads and converts the pictures itself

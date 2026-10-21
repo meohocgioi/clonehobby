@@ -1256,3 +1256,32 @@ def test_failures_fixed_by_this_version_are_queued_again_once(tmp_path):
     db.reset_status(1, "failed")
     Engine(s, db, FakeFetcher(), FakeTG())                                    # only once
     assert db.get(1)["status"] == "failed"
+
+
+def test_daily_check_posts_what_is_missing_from_yesterday(env):
+    e, f, tg, db = env
+    seed_site(f, {1: "2026-10-19", 2: "2026-10-19", 3: "2026-10-19", 4: "2026-10-19", 5: "2026-10-19", 6: "2026-10-20"})
+    db.upsert_seen(1, e.post_url(1), None, "pending", "new"); db.mark_posted(1, 501)     # published
+    db.upsert_seen(2, e.post_url(2), None, "skipped", "user-skip")                     # "Ignore" / "don't auto-post"
+    db.upsert_seen(3, e.post_url(3), None, "skipped", "baseline")                      # on the site before the first start
+    db.upsert_seen(4, e.post_url(4), None, "failed", "new")                            # waiting in 'Needs your attention'
+    # 5: never seen by the watcher at all
+    info = e.daily_check("2026-10-19")
+    assert info["total"] == 5 and info["queued"] == 1
+    assert db.get(5)["status"] == "pending" and db.get(5)["source"] == "daily-check"
+    assert [db.get(i)["status"] for i in (2, 3, 4)] == ["skipped", "skipped", "failed"]
+    assert any("1 post(s) were missing" in ev["message"] for ev in db.recent_events())
+
+
+def test_daily_check_runs_once_a_day_after_6(env):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    e, f, tg, db = env
+    seed_site(f, {1: "2026-10-19"})
+    tz = ZoneInfo(e.s.site_tz)
+    assert e.maybe_daily_check(datetime(2026, 10, 20, 5, 30, tzinfo=tz)) is None            # too early
+    assert e.maybe_daily_check(datetime(2026, 10, 20, 6, 5, tzinfo=tz))["day"] == "2026-10-19"
+    assert e.maybe_daily_check(datetime(2026, 10, 20, 23, 0, tzinfo=tz)) is None            # done for today
+    e.s.daily_check = False
+    db._x("DELETE FROM kv WHERE key IN ('daily_check_day','daily_check_try')")
+    assert e.maybe_daily_check(datetime(2026, 10, 21, 7, 0, tzinfo=tz)) is None             # switched off

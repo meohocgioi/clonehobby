@@ -261,6 +261,10 @@
             <div><div class="st">On the very first start</div><div class="sd">Also post this many of the newest posts. 0 = only posts that appear after that.</div></div>
             <div class="sc"><div class="unit"><input type="number" id="f_init" min="0" step="1"><span>posts</span></div></div>
           </div>
+          <div class="srow">
+            <div><div class="st">Daily check of yesterday</div><div class="sd">Every morning at 6:00 (website time) the app checks all posts of the day before and posts any that are missing. Posts you chose not to post are left alone.</div></div>
+            <div class="sc btns"><label class="switch"><input type="checkbox" id="f_daily"><span class="knob"></span></label></div>
+          </div>
           <h4>Look of the posts</h4>
           <div class="srow">
             <div><div class="st">Hashtags</div><div class="sd">Plain words, or tappable #hashtags.</div></div>
@@ -303,6 +307,10 @@
             <div class="srow">
               <div><div class="st">On the very first start</div><div class="sd">Also post this many of the newest items. 0 = only items that appear after that.</div></div>
               <div class="sc"><div class="unit"><input type="number" id="f_hinit" min="0" step="1"><span>items</span></div></div>
+            </div>
+            <div class="srow">
+              <div><div class="st">Daily check of yesterday</div><div class="sd">Every morning at 6:00 (website time) the app checks all HPOI items of the day before and posts any that are missing.</div></div>
+              <div class="sc btns"><label class="switch"><input type="checkbox" id="f_hdaily"><span class="knob"></span></label></div>
             </div>
             <h4>Translation</h4>
             <div class="srow">
@@ -400,6 +408,7 @@ const PANEL=`
   <div class="facts">
     <div class="fact"><span class="fi">🔎</span><div><div data-r="watch"></div><div class="small mut" data-r="watch2"></div></div></div>
     <div class="fact"><span class="fi">📨</span><div class="clamp" data-r="last"></div></div>
+    <div class="fact" data-r="dailyrow"><span class="fi">📅</span><div data-r="daily"></div></div>
   </div>
   <p class="error small" data-r="probe" hidden>⚠ Deleted-post detection is off (Telegram did not answer reliably). Nothing is re-posted automatically.</p>
   <div class="pfoot"><button type="button" class="sm" data-r="checknow">⟳ Check website now</button><button type="button" class="sm" data-r="verify">Check for deleted posts</button></div>
@@ -442,6 +451,11 @@ function renderPanel(src,s){
   pq(src,'t_bad').textContent=bad; const bb=pq(src,'t_bad_b'); bb.classList.toggle('bad',bad>0); bb.disabled=!bad;
   pq(src,'t_bad_s').textContent=bad?'open the list ›':'all good';
   pq(src,'probe').hidden=s.probe!=='0';
+  { const d=s.daily, row=pq(src,'dailyrow'), el=pq(src,'daily'); row.hidden=!s.daily_on;
+    if(!d){ el.className='mut'; el.textContent="Every morning (6:00 website time) the app checks all of yesterday's posts and posts any that are missing" }
+    else { const day=new Date(d.day+'T12:00:00').toLocaleDateString(undefined,{day:'numeric',month:'short'});
+      el.className=d.queued?'':'mut';
+      el.textContent='Daily check of '+day+': '+d.total+' post(s) on the website — '+(d.queued?(d.queued+' missing post(s) found and queued'):'nothing missing ✓') } }
   const lg=document.querySelector(`[data-log="${src}"]`); lg.innerHTML='';
   for(const e of s.events){const d=document.createElement('div'); d.className=e.level; d.textContent=fmt(e.ts)+'  '+e.message; lg.appendChild(d);}
 }
@@ -688,9 +702,9 @@ $('cancel').onclick=()=>{$('plan-out').hidden=true};
 // every editable setting: [element id, setting name, kind, section]
 const F=[
   ['f_token','telegram_bot_token','secret','tg'], ['f_chat','telegram_chat_id','text','tg'], ['f_hchat','hpoi_chat_id','hchat','tg'],
-  ['f_delay','post_delay_seconds','num','tp'], ['f_poll','poll_interval_seconds','min','tp'], ['f_init','initial_post_latest','num','tp'],
+  ['f_delay','post_delay_seconds','num','tp'], ['f_poll','poll_interval_seconds','min','tp'], ['f_init','initial_post_latest','num','tp'], ['f_daily','daily_check','bool','tp'],
   ['f_hash','hashtag_style','text','tp'], ['f_style','show_more_style','text','tp'], ['f_emoji','show_more_emoji','text','tp'], ['f_spacing','paragraph_spacing','text','tp'],
-  ['f_hon','hpoi_enabled','bool','hp'], ['f_hdelay','hpoi_post_delay_seconds','num','hp'], ['f_hpoll','hpoi_poll_interval_seconds','min','hp'], ['f_hinit','hpoi_initial_post_latest','num','hp'],
+  ['f_hon','hpoi_enabled','bool','hp'], ['f_hdelay','hpoi_post_delay_seconds','num','hp'], ['f_hpoll','hpoi_poll_interval_seconds','min','hp'], ['f_hinit','hpoi_initial_post_latest','num','hp'], ['f_hdaily','hpoi_daily_check','bool','hp'],
   ['f_tr','translator','text','hp'], ['f_key','translate_api_key','secret','hp'],
   ['f_urepo','update_repo','text','up'], ['f_ubranch','update_branch','text','up'], ['f_utoken','update_token','secret','up'],
 ];

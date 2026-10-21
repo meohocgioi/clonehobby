@@ -32,6 +32,7 @@ class Settings:
     site_base: str = "https://www.toy-people.com/en/"
     listing_url: str = ""               # page whose "Latest News" list is read every check (default: SITE_BASE)
     listing_max_age_days: int = 3       # never auto-post a listed post older than this
+    daily_check: bool = True            # every morning: compare all posts of yesterday with the channel, post what is missing
     sitemap_url: str = "https://www.toy-people.com/sitemap/sitemap-en.xml"
     site_tz: str = "Asia/Taipei"
     poll_interval_seconds: int = 300
@@ -69,6 +70,7 @@ class Settings:
     hpoi_poll_interval_seconds: int = 600
     hpoi_post_delay_seconds: float = 45.0
     hpoi_initial_post_latest: int = 0
+    hpoi_daily_check: bool = True
     translator: str = "google_free"     # google_free | google_cloud
     translate_api_key: str = ""         # only for google_cloud
     user_agent: str = (
@@ -105,7 +107,7 @@ UI_FIELDS = ("telegram_bot_token", "telegram_chat_id", "post_delay_seconds", "po
              "initial_post_latest", "hashtag_style", "media_mode", "show_more_label", "show_more_style", "show_more_emoji", "paragraph_spacing",
              "max_posts_per_hour", "site_tz", "update_repo", "update_branch", "update_token",
              "hpoi_enabled", "hpoi_chat_id", "hpoi_poll_interval_seconds", "hpoi_post_delay_seconds",
-             "hpoi_initial_post_latest", "translator", "translate_api_key")
+             "hpoi_initial_post_latest", "translator", "translate_api_key", "daily_check", "hpoi_daily_check")
 
 
 def app_dir() -> Path:
