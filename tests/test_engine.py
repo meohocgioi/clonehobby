@@ -1184,24 +1184,59 @@ def test_picture_problem_every_way_is_retried_later(env):
     assert "NO_MEDIA_FOUND" in db.get(5)["last_error"]
 
 
-def test_404_keeps_looking_for_two_days_then_gives_up(env):
+def test_404_a_few_quick_retries_then_needs_attention_and_is_looked_for_in_the_background(env):
     e, f, tg, db = env
-    db.upsert_seen(777, e.post_url(777), None, "pending", "new")          # not (yet) on the website
+    db.upsert_seen(777, e.post_url(777), None, "pending", "new")          # taken down by the website
     delays = []
     for _ in e.NOT_FOUND_RETRY:
         db._x("UPDATE posts SET not_before=0 WHERE post_id=777")
         assert e.process(db.get(777)) == "pending"
         delays.append(db.get(777)["not_before"] - time.time())
-    assert abs(delays[0] - 900) < 5 and abs(delays[4] - 14400) < 5 and abs(delays[-1] - 21600) < 5
-    assert sum(e.NOT_FOUND_RETRY) > 40 * 3600                                # about two days
+    assert [round(d / 60) for d in delays] == [15, 30, 60]
+    assert db.pending_breakdown()[:2] == (0, 1)                             # waiting to retry, not ready to post
     db._x("UPDATE posts SET not_before=0 WHERE post_id=777")
-    assert e.process(db.get(777)) == "failed"
-    # back on the website while the app is still looking -> posted
-    db.upsert_seen(778, e.post_url(778), None, "pending", "new")
-    assert e.process(db.get(778)) == "pending"
-    f.posts[778] = ("2026-10-20", "Back again")
-    db._x("UPDATE posts SET not_before=0 WHERE post_id=778")
-    assert e.process(db.get(778)) == "posted"
+    assert e.process(db.get(777)) == "failed"                               # -> Needs your attention
+    row = db.get(777)
+    assert row["last_error"].startswith("article not found (404)") and "every 4 hours" in row["last_error"]
+    assert abs(row["not_before"] - time.time() - e.MISSING_RECHECK) < 5
+    assert db.pending_breakdown()[:2] == (0, 0)
+    # background look: not due yet -> nothing; due and still gone -> next look in 4 h; back -> queued and posted
+    assert e.recheck_missing() == 0
+    db._x("UPDATE posts SET not_before=0 WHERE post_id=777")
+    assert e.recheck_missing() == 0 and db.get(777)["not_before"] > time.time() + 3 * 3600
+    db._x("UPDATE posts SET not_before=0 WHERE post_id=777")
+    f.posts[777] = ("2026-10-21", "Back again")
+    assert e.recheck_missing() == 1 and db.get(777)["status"] == "pending"
+    assert e.process(db.get(777)) == "posted"
+    # after two days nobody looks any more
+    db.upsert_seen(778, e.post_url(778), None, "failed", "new")
+    db._x("UPDATE posts SET last_error=?, flagged_at=?, not_before=0 WHERE post_id=778", (e.MISSING_NOTE, time.time() - 3 * 86400))
+    f.posts[778] = ("2026-10-21", "Too late")
+    assert e.recheck_missing() == 0 and db.get(778)["status"] == "failed"
+
+
+def test_posts_stuck_in_long_404_retries_move_to_needs_attention(tmp_path):
+    from conftest import FakeFetcher, FakeTG
+    from tpclone.config import Settings
+    from tpclone.db import DB
+    from tpclone.engine import Engine
+    db = DB(str(tmp_path / "x.db"))
+    db.upsert_seen(5, "u5", None, "pending", "new")
+    db._x("UPDATE posts SET last_error='article not found (404)', attempts=5, not_before=? WHERE post_id=5", (time.time() + 9000,))
+    db.upsert_seen(6, "u6", None, "pending", "new")
+    db._x("UPDATE posts SET last_error='article not found (404)', attempts=1 WHERE post_id=6")
+    Engine(Settings(telegram_bot_token="t", telegram_chat_id="@c", db_path=str(tmp_path / "x.db")), db, FakeFetcher(), FakeTG())
+    assert db.get(5)["status"] == "failed" and "every 4 hours" in db.get(5)["last_error"]
+    assert db.get(6)["status"] == "pending"                                    # still in its quick retries
+
+
+def test_queue_breakdown_ready_and_waiting(env):
+    e, f, tg, db = env
+    for pid in (1, 2, 3):
+        db.upsert_seen(pid, f"u{pid}", None, "pending", "new")
+    db._x("UPDATE posts SET not_before=? WHERE post_id IN (2,3)", (time.time() + 600,))
+    ready, waiting, nxt = db.pending_breakdown()
+    assert (ready, waiting) == (1, 2) and 590 < nxt - time.time() <= 600
 
 
 def test_failures_fixed_by_this_version_are_queued_again_once(tmp_path):

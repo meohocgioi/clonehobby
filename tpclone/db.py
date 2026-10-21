@@ -213,6 +213,13 @@ class DB:
                     "ORDER BY priority, COALESCE(post_date,'9999'), post_id LIMIT 1", (time.time(),))
         return dict(r[0]) if r else None
 
+    def pending_breakdown(self) -> tuple[int, int, float | None]:
+        """(ready to post now, waiting for a retry time, earliest retry time) of the queued posts."""
+        now = time.time()
+        r = self._q("SELECT SUM(not_before<=?) ready, SUM(not_before>?) waiting, MIN(CASE WHEN not_before>? "
+                    "THEN not_before END) nxt FROM posts WHERE status='pending'", (now, now, now))[0]
+        return int(r["ready"] or 0), int(r["waiting"] or 0), r["nxt"]
+
     def pending_count(self) -> int:
         return self.count("pending")
 

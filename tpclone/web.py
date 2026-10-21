@@ -80,10 +80,13 @@ def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | No
             from datetime import datetime
             since = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
         nxt = engine.pacer.next_allowed_at()
+        ready, waiting, next_try = db.pending_breakdown()       # queued: ready to post / waiting for a retry time
         return {
             "state": worker.state(), "error": worker.error, "stats": db.stats(),
             "pending": db.pending_count(), "delay": s.effective_delay,
-            "next_post_in": max(0, int(nxt - time.time())) if db.pending_count() else None,
+            "next_post_in": max(0, int(nxt - time.time())) if ready else None,
+            "ready": ready, "waiting": waiting,
+            "next_try_in": max(0, int(next_try - time.time())) if (waiting and next_try) else None,
             "last_posted": db.last_posted(), "dry_run": s.dry_run,
             "events": db.recent_events(40),
             "uncertain": db.by_status("uncertain", 50), "failed": db.by_status("failed", 50),

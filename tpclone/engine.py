@@ -41,6 +41,31 @@ class Engine:
         self._probe_lock = threading.Lock()
         self._probe_last = 0.0
         self._revive_fixed_failures()
+        self.db._x("UPDATE posts SET status='failed', last_error=?, flagged_at=? "
+                   "WHERE status='pending' AND last_error LIKE 'article not found%' AND attempts >= ?",
+                   (self.MISSING_NOTE, time.time(), len(self.NOT_FOUND_RETRY)))
+
+    def recheck_missing(self, limit: int = 3) -> int:
+        """Posts the website took down (failed with a 404): look again every few hours for two days; one that is back
+        is queued again. Returns how many came back."""
+        now = time.time()
+        rows = self.db._q("SELECT post_id FROM posts WHERE status='failed' AND last_error LIKE 'article not found%' "
+                          "AND COALESCE(flagged_at, 0) > ? AND not_before <= ? ORDER BY not_before LIMIT ?",
+                          (now - self.MISSING_FOR, now, limit))
+        back = 0
+        for r in rows:
+            pid = r["post_id"]
+            try:
+                art = self.fetch_article(pid)
+            except NotFound:
+                self.db._x("UPDATE posts SET not_before=? WHERE post_id=?", (now + self.MISSING_RECHECK, pid))
+                continue
+            except FetchError:
+                continue
+            if art.title and self.db.enqueue(pid, 0, "back"):
+                back += 1
+                self.db.log("info", f"post {pid} is back on the website - queued: {art.title}")
+        return back
 
     def _revive_fixed_failures(self) -> None:
         """Once: posts that failed in the last 3 days for reasons this version handles (a 404 that was only temporary,
@@ -232,7 +257,11 @@ class Engine:
         self.db.kv_set("last_discover_ts", t0)
         return queued, total
 
-    NOT_FOUND_RETRY = (900, 1800, 3600, 7200, 14400) + (21600,) * 6   # 15 min ... then every 6 h: ~44 h in all
+    NOT_FOUND_RETRY = (900, 1800, 3600)     # a post the website shows as 404 is tried again after 15, 30, 60 min ...
+    MISSING_RECHECK = 4 * 3600              # ... then it is a failed post ('Needs your attention'), still looked for
+    MISSING_FOR = 2 * 86400                 # every 4 h for 2 days and queued again by itself if it comes back
+    MISSING_NOTE = ("article not found (404) - the website took it down or has not published it yet. "
+                    "The app looks again every 4 hours for 2 days and posts it if it comes back.")
     LOOKAHEAD = 20                      # post numbers probed beyond the newest one known
     MISS_BACKOFF = (300, 900, 1800, 3600)   # seconds before a number that did not exist is asked again; then hourly
                                             # until the website's daily list covers it (posts can be published hours late)
@@ -550,15 +579,17 @@ class Engine:
             return "pending"
         except NotFound:
             # A post can be off the website for a while after it was seen (taken back for editing, English version not
-            # ready yet): keep looking for about two days before giving up.
+            # ready yet): a few quick retries, then it becomes a failed post that is still looked for in the background.
             n = (self.db.get(pid) or {}).get("attempts") or 0
-            delay = self.NOT_FOUND_RETRY[min(n, len(self.NOT_FOUND_RETRY) - 1)]
-            st = self.db.mark_retry(pid, "article not found (404)", delay, give_up_after=len(self.NOT_FOUND_RETRY) + 1)
-            if st == "failed":
-                self.db.log("warn", f"post {pid}: still not on the website after two days - gave up (failed)")
-            else:
+            if n < len(self.NOT_FOUND_RETRY):
+                delay = self.NOT_FOUND_RETRY[n]
+                st = self.db.mark_retry(pid, "article not found (404)", delay, give_up_after=99)
                 self.db.log("warn", f"post {pid}: not on the website right now (404) - checking again in "
                                     f"{int(delay // 60)} min")
+            else:
+                st = self.db.mark_retry(pid, self.MISSING_NOTE, self.MISSING_RECHECK, give_up_after=1)
+                self.db.log("warn", f"post {pid}: still not on the website - moved to 'Needs your attention' "
+                                    f"(looked for every 4 h for 2 days)")
             return st
         except FetchError as e:
             st = self.db.mark_retry(pid, str(e), 300)
@@ -1094,6 +1125,7 @@ class Worker:
                         log.info("update check failed: %s", ex)
                     try:
                         e.discover()
+                        e.recheck_missing()
                     except ChallengeError as ex:
                         self.db.log("warn", f"discovery blocked by Cloudflare: {ex}")
                     except Exception as ex:

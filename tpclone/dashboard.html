@@ -405,6 +405,7 @@ const PANEL=`
   <div class="pfoot"><button type="button" class="sm" data-r="checknow">⟳ Check website now</button><button type="button" class="sm" data-r="verify">Check for deleted posts</button></div>
   <p class="mut small" data-r="out" style="margin:0"></p>`;
 function pq(src,r){return document.querySelector(`[data-panel="${src}"] [data-r="${r}"]`)}
+function dur(s){ return s<60?s+' s':s<3600?Math.round(s/60)+' min':Math.round(s/3600)+' h' }
 function ago(ts,now){ const s=Math.max(0,Math.round((now||Date.now()/1000)-ts));
   return s<45?'just now':s<90?'1 min ago':s<3600?Math.round(s/60)+' min ago':s<86400?Math.round(s/3600)+' h ago':fmt(ts) }
 function buildPanels(){
@@ -437,7 +438,7 @@ function renderPanel(src,s){
   const er=pq(src,'err'); er.hidden=!s.error; er.textContent=s.error||'';
   const k=s.stats||{}, today=(s.today||{}).posted||0, bad=(k.failed||0)+(k.uncertain||0);
   pq(src,'t_pub').textContent=(k.posted||0).toLocaleString(); pq(src,'t_pub_s').textContent=today?('+'+today+' today'):'none today';
-  pq(src,'t_q').textContent=(k.pending||0).toLocaleString();
+  pq(src,'t_q').textContent=((s.ready??k.pending)||0).toLocaleString();
   pq(src,'t_bad').textContent=bad; const bb=pq(src,'t_bad_b'); bb.classList.toggle('bad',bad>0); bb.disabled=!bad;
   pq(src,'t_bad_s').textContent=bad?'open the list ›':'all good';
   pq(src,'probe').hidden=s.probe!=='0';
@@ -449,7 +450,11 @@ function tick(){
   const now=Date.now()/1000;
   for(const src of ACTIVE){ const s=S[src]; if(!s) continue;
     const left=s.next_post_in==null?0:Math.max(0,Math.round(s.next_post_in-(now-s._at)));
-    pq(src,'t_q_s').textContent=!s.pending?'nothing waiting':s.state!=='running'?'waiting for Start':('next post in ~'+left+' s');
+    const ready=(s.ready??s.pending)||0, waiting=s.waiting||0;
+    let qs=!ready?(waiting?'':'nothing waiting'):s.state!=='running'?'waiting for Start':('next post in ~'+left+' s');
+    if(waiting){ const tl=s.next_try_in==null?null:Math.max(0,Math.round(s.next_try_in-(now-s._at)));
+      qs+=(qs?' · ':'')+waiting+' waiting to retry'+(tl!=null&&!ready?(' (next try in '+dur(tl)+')'):'') }
+    pq(src,'t_q_s').textContent=qs;
     const w=s.watch, el=pq(src,'watch'), el2=pq(src,'watch2'), hp=src==='hpoi'; el.className=''; el2.textContent='';
     if(s.state!=='running'){ el.className='mut'; el.textContent='Not watching the website — press Start' }
     else if(!w){ el.textContent='First website check in progress…' }
