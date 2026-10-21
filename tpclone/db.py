@@ -74,7 +74,8 @@ class DB:
                 self.conn.execute("PRAGMA journal_mode=WAL")
             self.conn.execute("PRAGMA synchronous=FULL")  # a crash must not forget a published post
             self.conn.executescript(SCHEMA)
-            for col in ("uncertain_anchor INTEGER", "uncertain_at REAL", "uncertain_tried REAL", "flagged_at REAL"):
+            for col in ("uncertain_anchor INTEGER", "uncertain_at REAL", "uncertain_tried REAL", "flagged_at REAL",
+                        "uncertain_from REAL"):
                 try:   # ledgers created before the automatic resolution of uncertain deliveries
                     self.conn.execute(f"ALTER TABLE posts ADD COLUMN {col}")
                 except sqlite3.OperationalError:
@@ -309,12 +310,16 @@ class DB:
             self.conn.commit()
             return status
 
-    def mark_uncertain(self, post_id: int, error: str, anchor: int | None = None) -> None:
-        """anchor = highest channel message number we knew when the send was attempted. Only set for 'did it arrive?'
-        cases; the app then resolves them by itself by looking at the numbers after it."""
-        self._x("UPDATE posts SET status='uncertain', last_error=?, uncertain_anchor=?, "
-                "uncertain_at=?, uncertain_tried=NULL, flagged_at=? WHERE post_id=?",
-                (error[:500], anchor, time.time() if anchor is not None else None, time.time(), post_id))
+    def mark_uncertain(self, post_id: int, error: str, anchor: int | None = None, started: float | None = None,
+                       ended: float | None = None) -> None:
+        """anchor = highest channel message number known when the send began. Only set for 'did it arrive?' cases; the
+        app then settles them by itself (see Engine.resolve_uncertain_step). started / ended = when that send began and
+        when it broke off (uncertain_from / uncertain_at)."""
+        now = time.time()
+        has = anchor is not None
+        self._x("UPDATE posts SET status='uncertain', last_error=?, uncertain_anchor=?, uncertain_at=?, uncertain_from=?, "
+                "uncertain_tried=NULL, flagged_at=? WHERE post_id=?",
+                (error[:500], anchor, (ended or now) if has else None, started if has else None, now, post_id))
 
     def max_message_id(self) -> int:
         r = self._q("SELECT MAX(message_id) m FROM sent_messages")
@@ -322,6 +327,16 @@ class DB:
 
     def known_message_ids(self, above: int = 0) -> set[int]:
         return {r["message_id"] for r in self._q("SELECT message_id FROM sent_messages WHERE message_id>?", (above,))}
+
+    def last_message_before(self, ts: float) -> int:
+        """Highest message number written down at or before `ts` (0 = none)."""
+        r = self._q("SELECT MAX(message_id) m FROM sent_messages WHERE COALESCE(sent_at, 0) <= ?", (ts,))
+        return int(r[0]["m"] or 0)
+
+    def first_message_after(self, ts: float, above: int) -> int | None:
+        """Lowest message number above `above` written down after `ts` (None = none yet)."""
+        r = self._q("SELECT MIN(message_id) m FROM sent_messages WHERE sent_at > ? AND message_id > ?", (ts, above))
+        return r[0]["m"]
 
     def delivery_uncertain(self) -> list[dict]:
         """Posts whose send may or may not have arrived (oldest first)."""

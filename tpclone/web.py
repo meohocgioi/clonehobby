@@ -342,9 +342,8 @@ def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | No
                                     f"<details>{render.summary_html(s.show_more_label, key, s.show_more_emoji)}"
                                     f"<p><i>This is the expanded text. If you read this, the style “{key}” works.</i></p></details>")
                         try:
-                            res = eng.tg.send_rich(html)
+                            res = eng.send_to_channel(0, html)
                             eng._calibrate_probe(res.get("message_id"))
-                            eng.db.add_message(0, res["message_id"])
                             results[key] = "sent"
                         except Exception as e:  # noqa: BLE001
                             results[key] = f"Telegram refused it: {e}"
@@ -356,9 +355,8 @@ def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | No
                     for mode in render.PARAGRAPH_SPACING:
                         html = f"<h6>Spacing sample: {mode}</h6>" + "".join(render.body_blocks(sample, mode))
                         try:
-                            res = eng.tg.send_rich(html)
+                            res = eng.send_to_channel(0, html)
                             eng._calibrate_probe(res.get("message_id"))
-                            eng.db.add_message(0, res["message_id"])
                             results[f"spacing: {mode}"] = "sent"
                         except Exception as e:  # noqa: BLE001
                             results[f"spacing: {mode}"] = f"Telegram refused it: {e}"
@@ -368,10 +366,9 @@ def make_server(engine: Engine, worker: Worker, restart=None, sources: dict | No
                     if not eng.tg:
                         return self._json({"error": "Set the bot token and channel first (Settings)."}, 400)
                     try:
-                        res = eng.tg.send_rich("<h6>Test post</h6><details><summary>Show More</summary>"
-                                                  "<p><i>If you can open this, rich messages work in your channel.</i></p></details>")
+                        res = eng.send_to_channel(0, "<h6>Test post</h6><details><summary>Show More</summary>"
+                                                     "<p><i>If you can open this, rich messages work in your channel.</i></p></details>")
                         eng._calibrate_probe(res.get("message_id"))   # also switches on deleted-post detection
-                        eng.db.add_message(0, res["message_id"])
                     except TelegramError as e:
                         return self._json({"error": str(e)}, 400)
                     return self._json({"ok": True})

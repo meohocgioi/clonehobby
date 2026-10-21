@@ -116,10 +116,13 @@ until the website's daily list covers it. A late post is therefore posted within
 on the homepage list). **Check website now** asks about all of them immediately.
 
 ## "Uncertain" posts settle themselves
-If the connection drops while a post is being sent, nobody knows whether it arrived. The app waits a couple of minutes, then looks at the
-message numbers in your channel right after the last one it knew about: a message of its own that it does not know yet **is** that post
-(it gets marked as posted), and no such message up to the end of the channel means the post **never arrived** (it is sent again, once).
-If anything is unclear - for example two unknown messages for one uncertain post - the post stays under "Needs your attention" for you to decide.
+If the connection drops while a post is being sent (for example *"An existing connection was forcibly closed by the remote host"*),
+nobody knows whether it arrived. The app waits a couple of minutes, then looks at your channel: it writes down every message number
+the moment it knows it and sends one post at a time per channel, so a post that arrived must be one of the few numbers between the
+last message written down before that send and the first one after it. A message of its own there that no list knows **is** that
+post (marked as posted); nothing there means it **never arrived** (it is sent again, once). This works when Toy-People and HPOI share
+one channel: the numbers of both websites are taken into account. If anything is unclear - for example one unknown message for two
+unconfirmed posts sent right after each other - the post stays under "Needs your attention" with the message numbers to look at.
 
 ## Also copying hpoi.net (optional, built in)
 

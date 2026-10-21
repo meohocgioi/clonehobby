@@ -903,7 +903,9 @@ from tpclone.telegram import UncertainDelivery  # noqa: E402
 
 
 def _age_uncertain(db, seconds=600):
-    db._x("UPDATE posts SET uncertain_at = uncertain_at - ?, uncertain_tried = NULL WHERE status='uncertain'", (seconds,))
+    db._x("UPDATE posts SET uncertain_at = uncertain_at - ?, uncertain_from = uncertain_from - ?, uncertain_tried = NULL "
+          "WHERE status='uncertain'", (seconds, seconds))
+    db._x("UPDATE sent_messages SET sent_at = sent_at - ?", (seconds,))
 
 
 def _uncertain_setup(env, delivered: bool, human_between=0):
@@ -1038,6 +1040,122 @@ def test_worker_resolves_uncertain_posts_when_idle(env):
         time.sleep(0.1)
     w.stop(wait=True)
     assert db.get(2)["status"] == "posted" and len(tg.sent) == 2
+
+
+# ---------------------------------------------------------------- two websites, one channel
+def _two_websites(env):
+    """Toy-People and HPOI posting to the same channel: one Telegram channel, two ledgers."""
+    from conftest import FakeFetcher
+    from tpclone.config import Settings
+    from tpclone.db import DB
+    from tpclone.engine import Engine
+    e, f, tg, db = env
+    s2 = Settings(telegram_bot_token="t", telegram_chat_id="https://t.me/C", db_path=e.s.db_path,
+                  post_delay_seconds=5, media_mode="url")
+    f2 = FakeFetcher()
+    e2 = Engine(s2, DB(":memory:"), f2, tg)
+    e2.probe_gap = 0
+    e.peers, e2.peers = [e2], [e]
+    seed_site(f, {1: "2026-10-17", 2: "2026-10-17", 3: "2026-10-17"})
+    seed_site(f2, {21: "2026-10-17", 22: "2026-10-17", 23: "2026-10-17"})
+    return e, e2, tg
+
+
+def _age_all(*dbs, seconds=600):
+    for d in dbs:
+        _age_uncertain(d, seconds)
+
+
+def test_shared_channel_never_takes_the_other_website_s_message(env):
+    e, e2, tg = _two_websites(env)
+    assert e.same_channel() == [e, e2]                      # '@c' and 't.me/C' are the same channel
+    e.post_now(1)                                           # 1001
+    e2.post_now(21)                                         # 1002
+    tg.fail_with = UncertainDelivery("ReadError 10054"); tg.deliver_then_fail = True
+    assert e2.post_now(22)["status"] == "uncertain"         # arrived as 1003, answer lost
+    e.post_now(2)                                           # 1004
+    tg.fail_with = UncertainDelivery("ReadError 10054"); tg.deliver_then_fail = False
+    assert e.post_now(3)["status"] == "uncertain"           # never arrived
+    e2.post_now(23)                                         # 1005 (the old check took this one for post 3)
+    _age_all(e.db, e2.db)
+    assert e.resolve_uncertain_step() is True               # one check settles both websites
+    assert e2.db.get(22)["status"] == "posted" and e2.db.live_messages(22) == [1003]
+    assert e.db.get(3)["status"] == "pending" and e.db.live_messages(3) == []      # sent again, not 'found' as 1005
+    assert e2.resolve_uncertain_step() is False             # nothing left to settle
+    e.db._x("UPDATE posts SET not_before=0 WHERE post_id=3")
+    assert e.process(e.db.next_pending()) == "posted" and e.db.live_messages(3) == [1006]
+
+
+def test_posts_noted_by_the_older_version_are_settled_too(env):
+    e, e2, tg = _two_websites(env)
+    e.post_now(1)                                           # 1001
+    e2.post_now(21)                                         # 1002
+    tg.fail_with = UncertainDelivery("ReadError 10054"); tg.deliver_then_fail = True
+    e2.post_now(22)                                         # 1003, unconfirmed
+    e.post_now(2)                                           # 1004
+    tg.fail_with = UncertainDelivery("ReadError 10054"); tg.deliver_then_fail = False
+    e.post_now(3)                                           # never arrived
+    e2.post_now(23)                                         # 1005
+    # what the older version wrote down: only the failure time, and its own ledger's newest message as the anchor
+    e2.db._x("UPDATE posts SET uncertain_from=NULL, uncertain_anchor=1002 WHERE post_id=22")
+    e.db._x("UPDATE posts SET uncertain_from=NULL, uncertain_anchor=1004 WHERE post_id=3")
+    _age_all(e.db, e2.db, seconds=7200)
+    e2.resolve_uncertain_step()
+    assert e2.db.get(22)["status"] == "posted" and e2.db.live_messages(22) == [1003]
+    assert e.db.get(3)["status"] == "pending"
+
+
+def test_back_to_back_unconfirmed_posts_are_matched_in_order(env):
+    e, f, tg, db = env
+    seed_site(f, {1: "2026-10-17", 2: "2026-10-17", 3: "2026-10-17"})
+    e.post_now(1)
+    for pid in (2, 3):
+        tg.fail_with = UncertainDelivery("timeout"); tg.deliver_then_fail = True
+        assert e.post_now(pid)["status"] == "uncertain"
+    _age_uncertain(db)
+    e.resolve_uncertain_step()
+    assert db.live_messages(2) == [1002] and db.live_messages(3) == [1003]
+
+
+def test_one_of_two_back_to_back_posts_arrived_stays_with_the_user(env):
+    e, f, tg, db = env
+    seed_site(f, {1: "2026-10-17", 2: "2026-10-17", 3: "2026-10-17"})
+    e.post_now(1)
+    tg.fail_with = UncertainDelivery("timeout"); tg.deliver_then_fail = True
+    e.post_now(2)
+    tg.fail_with = UncertainDelivery("timeout"); tg.deliver_then_fail = False
+    e.post_now(3)
+    _age_uncertain(db)
+    e.resolve_uncertain_step()
+    assert db.get(2)["status"] == db.get(3)["status"] == "uncertain"
+    assert "could not tell by itself" in db.get(3)["last_error"] and "1002" in db.get(3)["last_error"]
+    n = len(db.recent_events(200))
+    db._x("UPDATE posts SET uncertain_tried=NULL")
+    e.resolve_uncertain_step()
+    assert len(db.recent_events(200)) == n                 # the same doubt is not written to the log again and again
+
+
+def test_two_websites_never_send_to_one_channel_at_the_same_moment(env):
+    import threading
+    e, e2, tg = _two_websites(env)
+    inside, most = [0], [0]
+    real = tg.send_rich
+
+    def slow(*a, **kw):
+        inside[0] += 1
+        most[0] = max(most[0], inside[0])
+        time.sleep(0.15)
+        try:
+            return real(*a, **kw)
+        finally:
+            inside[0] -= 1
+    tg.send_rich = slow
+    ts = [threading.Thread(target=e.post_now, args=(1,)), threading.Thread(target=e2.post_now, args=(21,))]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert most[0] == 1 and e.db.get(1)["status"] == e2.db.get(21)["status"] == "posted"
 
 
 def test_today_counts_for_the_dashboard_chart(env):

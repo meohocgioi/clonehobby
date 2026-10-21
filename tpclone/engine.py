@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 import time
 from typing import Callable
@@ -27,6 +28,24 @@ class Deferred(Exception):
 FATAL_CODES = (401, 403)   # bad token / kicked from the channel: stop instead of burning every post
 
 
+def chat_key(chat_id: str) -> str:
+    """One spelling per channel ('@Name', 'name', 't.me/name' are the same channel)."""
+    c = (chat_id or "").strip().lower()
+    c = re.sub(r"^(https?://)?t\.me/", "", c)
+    return c if c.startswith("-") or c.startswith("@") or not c else "@" + c
+
+
+_LOCKS: dict[tuple[str, str], threading.Lock] = {}
+_LOCKS_GUARD = threading.Lock()
+
+
+def channel_lock(chat_id: str, purpose: str = "send") -> threading.Lock:
+    """Toy-People and HPOI may post to the same channel. Their sends go one at a time ("send"), and only one of them
+    settles the channel's unconfirmed posts at a time ("settle"), so message numbers can be told apart."""
+    with _LOCKS_GUARD:
+        return _LOCKS.setdefault((chat_key(chat_id), purpose), threading.Lock())
+
+
 class Engine:
     source = "toypeople"
 
@@ -41,6 +60,8 @@ class Engine:
         self._probe_lock = threading.Lock()
         self._probe_last = 0.0
         self._published: dict[int, site.Article] = {}   # post -> what was sent (handed to Facebook / Instagram / X)
+        self.peers: list[Engine] = []   # the other websites' engines: when they post to the same channel, they share
+                                        # its message numbers (see same_channel)
         self._revive_fixed_failures()
         self.db._x("UPDATE posts SET status='failed', last_error=?, flagged_at=? "
                    "WHERE status='pending' AND last_error LIKE 'article not found%' AND attempts >= ?",
@@ -526,7 +547,7 @@ class Engine:
             html, media, files = self._compose(art, plan, *t, sizes=sizes)
             assert render.count_media(html) <= self.s.max_media
             try:
-                res = self.tg.send_rich(html, media, files, skip_entity_detection=not tag_hash)
+                res = self.send_to_channel(post_id, html, media, files, skip_entity_detection=not tag_hash)
             except MediaRejected as e:
                 last = e
                 nxt = f"trying again {self._describe(tries[i + 1])}" if i + 1 < len(tries) else "no other way left"
@@ -539,6 +560,30 @@ class Engine:
                                     f"it as an animation ({last})")
             return res.get("message_id")
         raise last
+
+    def same_channel(self) -> list["Engine"]:
+        """This engine and every other website's engine that posts to the same Telegram channel."""
+        me = chat_key(self.s.telegram_chat_id)
+        return [self] + [p for p in self.peers if chat_key(p.s.telegram_chat_id) == me]
+
+    def channel_max_message(self) -> int:
+        """Highest message number of the channel written down by any website."""
+        return max(e.db.max_message_id() for e in self.same_channel())
+
+    def send_to_channel(self, post_id: int, html: str, media=None, files=None, **kw) -> dict:
+        """One send to the channel, never at the same time as another website's send to the same channel. The new
+        message number is written down before the next send may begin, and a send that breaks off carries when it began
+        and ended plus the highest number known before it - what resolve_uncertain_step needs to find it later."""
+        with channel_lock(self.s.telegram_chat_id):
+            anchor, started = self.channel_max_message(), time.time()
+            try:
+                res = self.tg.send_rich(html, media, files, **kw)
+            except UncertainDelivery as e:
+                e.anchor, e.window = anchor, (started, time.time())
+                raise
+            if res.get("message_id"):
+                self.db.add_message(post_id, res["message_id"])
+            return res
 
     def _already_in_channel(self, pid: int) -> str | None:
         """Last line of defence against duplicates: if the ledger says a message of this post may still be in the
@@ -599,7 +644,12 @@ class Engine:
             self.db.log("warn", f"post {pid}: {e} ({st})")
             return st
         except UncertainDelivery as e:
-            self.db.mark_uncertain(pid, str(e), anchor=self.db.max_message_id())
+            started, ended = getattr(e, "window", (None, None))
+            anchor = getattr(e, "anchor", None)
+            self.db.mark_uncertain(pid, f"the connection broke while sending ({e}) - the app looks at your channel and "
+                                        f"settles this by itself within minutes",
+                                   anchor=self.channel_max_message() if anchor is None else anchor,
+                                   started=started, ended=ended)
             self.pacer.push_back(300)
             self.db.log("warn", f"post {pid}: delivery UNCONFIRMED ({e}). The app will look at your channel in a few "
                                 f"minutes and fix this by itself (re-send only if it proves the post never arrived).")
@@ -722,61 +772,106 @@ class Engine:
     UNCERTAIN_WAIT = 120        # seconds to let a possibly-delivered message settle before looking for it
     UNCERTAIN_RETRY = 600       # seconds between two attempts to settle the same uncertain post
     UNCERTAIN_SCAN_CAP = 40     # most message numbers asked about in one resolution round
+    UNCERTAIN_MARGIN = 600      # posts noted by an older version (no exact send times): how far around to look
 
     def resolve_uncertain_step(self) -> bool:
-        """Settle posts whose delivery was unconfirmed (timeout / server error after the request left).
+        """Settle posts whose delivery was unconfirmed (the connection broke / timed out after the request left).
 
-        If a send succeeded it got the next free message number of the channel, so look at the numbers after the
-        highest one we knew when the send was attempted:
-          * a message that the bot can edit and that our ledger does not know  -> that is the post: mark it posted;
-          * none such, up to the end of the channel                            -> it never arrived: send it again.
-        Anything doubtful (flood control, unreadable answers, more or fewer candidates than uncertain posts) leaves
-        the post 'uncertain' for you. Returns True if Telegram was asked."""
+        A post that did arrive got the next message number of the channel. Every website writes its message numbers
+        down the moment it knows them and sends one at a time per channel, so the post's number lies between the
+        newest message written down before its send began and the oldest one written down after it ended - in the
+        ledger of ANY website posting to that channel. Only the unknown numbers in that gap are looked at:
+          * exactly one message the bot can edit there (claimed by no other unsettled post) -> that is the post: posted;
+          * none (up to the next known message, or to the end of the channel)              -> never arrived: send again.
+        Several unsettled posts sent one after the other share a gap and are matched in the order they were sent.
+        Anything doubtful (flood control, unreadable answers, more messages than posts) stays with you.
+        Returns True if Telegram was asked."""
         if self.tg is None or self.s.dry_run or not self.probe_trusted() or time.time() < self.bg_pause_until:
             return False
+        lock = channel_lock(self.s.telegram_chat_id, "settle")
+        if not lock.acquire(blocking=False):
+            return False                             # the other website is settling this channel right now
+        try:
+            return self._settle_uncertain()
+        finally:
+            lock.release()
+
+    def _send_window(self, group: list["Engine"], r: dict) -> tuple[int, int | None]:
+        """(lo, hi): if the post arrived, its message number is between these (hi None: up to the end of the channel)."""
+        start, end = r.get("uncertain_from"), r["uncertain_at"] or 0
+        if start is None:                            # noted by an older version: no exact send times, look wider
+            start, end = end - self.UNCERTAIN_MARGIN, end + self.UNCERTAIN_MARGIN
+        lo = max([r["uncertain_anchor"] or 0] + [e.db.last_message_before(start) for e in group])
+        his = [h for h in (e.db.first_message_after(end, lo) for e in group) if h is not None]
+        return lo, (min(his) if his else None)
+
+    def _settle_uncertain(self) -> bool:
+        group = self.same_channel()
         now = time.time()
-        rows = [r for r in self.db.delivery_uncertain()
+        rows = [(e, r) for e in group for r in e.db.delivery_uncertain()
                 if now - (r["uncertain_at"] or now) >= self.UNCERTAIN_WAIT]
-        if not rows or any(now - (r["uncertain_tried"] or 0) < self.UNCERTAIN_RETRY for r in rows):
+        if not rows or any(now - (r["uncertain_tried"] or 0) < self.UNCERTAIN_RETRY for _, r in rows):
             return False
-        for r in rows:
-            self.db.touch_uncertain_tried(r["post_id"])
-        anchor = min(r["uncertain_anchor"] or 0 for r in rows)
-        known = self.db.known_message_ids(anchor)
-        max_known = max([anchor] + list(known))
-        candidates: list[int] = []
-        mid, asked, reached_end = anchor + 1, 0, False
-        while asked < self.UNCERTAIN_SCAN_CAP:
-            if mid in known:
+        for e, r in rows:
+            e.db.touch_uncertain_tried(r["post_id"])
+        rows.sort(key=lambda er: (er[1].get("uncertain_from") or er[1]["uncertain_at"] or 0, er[1]["post_id"]))
+        wins = [self._send_window(group, r) for _, r in rows]
+        low = min(w[0] for w in wins)
+        known: set[int] = set().union(*(e.db.known_message_ids(low) for e in group))
+        max_known = max(known | {low})
+        answers: dict[int, str] = {}
+        found: list[list[int]] = []
+        for lo, hi in wins:
+            got, mid = [], lo + 1
+            while hi is None or mid < hi:
+                if mid in known:
+                    mid += 1
+                    continue
+                st = answers.get(mid)
+                if st is None:
+                    if len(answers) >= self.UNCERTAIN_SCAN_CAP:
+                        self.db.log("info", "uncertain posts: too many messages to look at; will look again later")
+                        return True
+                    st = self._probe_status(mid)
+                    if st is None or st == "unknown":
+                        self.db.log("info", "uncertain posts: Telegram gave no clear answer; will look again later")
+                        return True
+                    answers[mid] = st
+                if st == "mine":
+                    got.append(mid)
+                elif st == "missing" and hi is None and mid > max_known:
+                    break                                          # the end of the channel
                 mid += 1
+            found.append(got)
+        claimed: dict[int, set[int]] = {}
+        for i, got in enumerate(found):
+            for m in got:
+                claimed.setdefault(m, set()).add(i)
+        done: set[int] = set()
+        for i, ((e, r), got) in enumerate(zip(rows, found)):
+            if i in done:
                 continue
-            st = self._probe_status(mid)
-            asked += 1
-            if st is None or st == "unknown":
-                self.db.log("info", "uncertain posts: Telegram gave no clear answer; will look again later")
-                return True
-            if st == "mine":
-                candidates.append(mid)
-            elif st == "missing" and mid > max_known:
-                reached_end = True
-                break
-            mid += 1
-        if not reached_end:
-            self.db.log("info", "uncertain posts: could not reach the end of the channel; will look again later")
-            return True
-        if not candidates:                                  # nothing of ours is there: the posts never arrived
-            for r in rows:
-                st = self.db.mark_retry(r["post_id"], "delivery was unconfirmed and proved not to have arrived", 30)
-                self.db.log("info", f"post {r['post_id']}: proved NOT delivered -> sending it again ({st})")
-            return True
-        if len(candidates) == len(rows):                    # exactly one unknown message of ours per uncertain post
-            for r, m in zip(rows, candidates):
-                self.db.mark_posted(r["post_id"], m)
-                self.queue_outlets(r["post_id"])
-                self.db.log("info", f"post {r['post_id']}: found in the channel as message {m} -> marked as posted")
-            return True
-        self.db.log("warn", f"uncertain posts: found {len(candidates)} unknown message(s) for {len(rows)} uncertain "
-                            f"post(s) - not sure which is which, please look at the channel")
+            pid = r["post_id"]
+            if not got:                                            # nothing of ours where it would be: never arrived
+                st = e.db.mark_retry(pid, "delivery was unconfirmed and proved not to have arrived", 30)
+                e.db.log("info", f"post {e.display_id(pid)}: proved NOT delivered -> sending it again ({st})")
+                done.add(i)
+                continue
+            same = [j for j in range(len(rows)) if wins[j] == wins[i] and found[j] == got]
+            if len(got) == len(same) and all(claimed[m] == set(same) for m in got):
+                for j, m in zip(same, got):                        # in the order they were sent
+                    ej, rj = rows[j]
+                    ej.db.mark_posted(rj["post_id"], m)
+                    ej.queue_outlets(rj["post_id"])
+                    ej.db.log("info", f"post {ej.display_id(rj['post_id'])}: found in the channel as message {m} "
+                                      f"-> marked as posted")
+                    done.add(j)
+                continue
+            note = (f"the app could not tell by itself whether this arrived ({len(got)} unknown message(s) of the bot "
+                    f"where it would be: {', '.join(map(str, got[:5]))}) - look in your channel, then choose")
+            if r["last_error"] != note:
+                e.db._x("UPDATE posts SET last_error=? WHERE post_id=?", (note, pid))
+                e.db.log("warn", f"post {e.display_id(pid)}: {note}")
         return True
 
     def _calibrate_probe(self, mid) -> None:

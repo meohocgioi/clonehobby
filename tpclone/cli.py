@@ -71,6 +71,8 @@ def cmd_run(s: Settings, a) -> None:
         hp_worker = Worker(hp_engine)
         sources["hpoi"] = (hp_engine, hp_worker)
         workers.append(hp_worker)
+        engine.peers.append(hp_engine)       # they may share one channel: its message numbers are told apart together
+        hp_engine.peers.append(engine)
     outlets = OutletRunner(s, {"toypeople": (engine, worker), **sources}, engine.db)    # Facebook / Instagram / X
     outlets.start()
     server = make_server(engine, worker, restart=lambda: restart_process(worker, workers, outlets), sources=sources,
@@ -199,8 +201,7 @@ def cmd_send_test(s: Settings, a) -> None:
     engine, _ = build(s)
     html = ("<h6>tpclone test</h6><details><summary>Show More</summary><p><i>If you can expand this, "
             "rich messages work in this channel.</i></p></details>")
-    res = engine.tg.send_rich(html)
-    engine.db.add_message(0, res["message_id"])
+    res = engine.send_to_channel(0, html)
     print(res)
 
 
